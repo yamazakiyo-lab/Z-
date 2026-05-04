@@ -100,7 +100,7 @@ function Remove-EmptyDirectories {
 
 Write-SummaryLine ("Summary generated: {0}" -f $now)
 Write-SummaryLine ""
-Write-SummaryLine ("Retention rules: root logs=14d, daily summaries=30d, archive/logs=90d")
+Write-SummaryLine ("Retention rules: root logs=14d, daily summaries=30d, sync logs=14d, archive/logs=90d")
 Write-SummaryLine ""
 
 $patterns = @('gdx_run_*.txt','other_run_*.txt','gdx_production_run_log*.txt','schedule_*_log.txt','re_register_tasks_log*.txt')
@@ -130,6 +130,7 @@ if ($found.Count -eq 0) {
 Move-FilesOlderThan -SourceDir $pw -Filter 'photo_video_91_*.log' -Cutoff $rootLogCutoff -DestinationDir $retentionDir
 Move-FilesOlderThan -SourceDir $pw -Filter 'photo_video_general_*.log' -Cutoff $rootLogCutoff -DestinationDir $retentionDir
 Move-FilesOlderThan -SourceDir $pw -Filter 'attention_general_*.txt' -Cutoff $rootLogCutoff -DestinationDir $retentionDir
+Move-FilesOlderThan -SourceDir $logDir -Filter 'sync_*.log' -Cutoff $rootLogCutoff -DestinationDir $retentionDir
 
 Move-FilesOlderThan -SourceDir $pw -Filter 'daily_runs_summary_*.txt' -Cutoff $dailySummaryCutoff -DestinationDir $retentionDir -ExcludePaths @($summaryFile)
 Move-FilesOlderThan -SourceDir $pw -Filter 'daily_runs_attention_*.txt' -Cutoff $dailySummaryCutoff -DestinationDir $retentionDir
