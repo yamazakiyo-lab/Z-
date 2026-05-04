@@ -1,0 +1,1349 @@
+import os
+import re
+import time
+import shutil
+import stat
+import subprocess
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Optional, Tuple, List, Set, Dict
+import json
+
+from PIL import Image, ImageOps
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# =========================================================
+# HEIC/HEIF support (requires: pip install pillow-heif)
+# =========================================================
+try:
+    from pillow_heif import register_heif_opener
+    register_heif_opener()
+except Exception:
+    register_heif_opener = None
+
+# =========================================================
+# Config
+# =========================================================
+@dataclass(frozen=True)
+class Config:
+    """
+    設定クラス。JSONファイルから読み込む。
+    """
+    base_dir: Path
+    excluded_dirs: Tuple[Path, ...]
+    photo_ext: Set[str]
+    video_ext: Set[str]
+    max_kb: int
+    junk_files: Set[str]
+    use_long_path_ops: bool
+    enable_copy_fallback: bool
+    progress_interval_sec: float
+    show_progress_bar: bool
+    dry_run: bool
+    exclude_names: Tuple[str, ...]
+    restore_english_spaces: bool
+    allowed_top_dirs: Tuple[str, ...]
+
+    @classmethod
+    def from_json(cls, json_path: Path) -> 'Config':
+        with open(json_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return cls(
+            base_dir=Path(data['base_dir']),
+            excluded_dirs=tuple(Path(p) for p in data['excluded_dirs']),
+            photo_ext=set(data['photo_ext']),
+            video_ext=set(data['video_ext']),
+            max_kb=data['max_kb'],
+            junk_files=set(data['junk_files']),
+            use_long_path_ops=data['use_long_path_ops'],
+            enable_copy_fallback=data['enable_copy_fallback'],
+            progress_interval_sec=data['progress_interval_sec'],
+            show_progress_bar=data['show_progress_bar'],
+            dry_run=data['dry_run'],
+            exclude_names=tuple(data['exclude_names']),
+            restore_english_spaces=data['restore_english_spaces'],
+            allowed_top_dirs=tuple(data.get('allowed_top_dirs', []))
+        )
+
+# =========================================================
+# Utils
+# =========================================================
+def is_windows() -> bool:
+    """OSがWindowsかを判定。"""
+    return os.name == "nt"
+
+def norm_abs(p: Path) -> str:
+    """パスを正規化（比較用）。Windowsでは大小文字を無視。"""
+    try:
+        s = os.path.abspath(str(p))
+    except Exception:
+        s = str(p)
+    if is_windows():
+        try:
+            s = os.path.normcase(s)
+        except Exception:
+            pass
+    return s
+
+def to_long_path(p: Path) -> str:
+    """長パス対応（Windows用）。"""
+    try:
+        s = os.path.abspath(str(p))
+    except Exception:
+        s = str(p)
+    if not is_windows():
+        return s
+    if s.startswith("\\\\?\\"):
+        return s
+    if s.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + s[2:]
+    return "\\\\?\\" + s
+
+def _is_under(ap: str, sp: str) -> bool:
+    """パスが指定ディレクトリ下かを判定。"""
+    sp_prefix = sp if sp.endswith(os.sep) else sp + os.sep
+    return ap == sp or ap.startswith(sp_prefix)
+
+def clear_attrib_recursive(path: Path):
+    """Windowsの属性を再帰的にクリア。"""
+    if not is_windows():
+        return
+    try:
+        subprocess.run(
+            ["attrib", "-R", "-S", "-H", str(path), "/S", "/D"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except Exception:
+        pass
+
+def english_word_token(s: str) -> bool:
+    """英単語かを判定。"""
+    return bool(re.fullmatch(r"[A-Za-z]+", s))
+
+
+ENGLISH_SPACE_EXACT_EXCLUSIONS = {
+    "AUDIO_TS",
+    "VIDEO_TS",
+}
+
+def restore_english_spaces_in_stem(name_stem: str) -> str:
+    """英単語間の'_'をスペースに変換。"""
+    if name_stem in ENGLISH_SPACE_EXACT_EXCLUSIONS:
+        return name_stem
+    parts = name_stem.split("_")
+    if len(parts) <= 1:
+        return name_stem
+    out: List[str] = []
+    i = 0
+    while i < len(parts):
+        if english_word_token(parts[i]):
+            phrase = [parts[i]]
+            j = i + 1
+            while j < len(parts) and english_word_token(parts[j]):
+                phrase.append(parts[j])
+                j += 1
+            out.appe(" ".join(phrase))
+            i = j
+        else:
+            out.append(parts[i])
+            i += 1
+    return "_".join(out)
+
+# =========================================================
+# Logger
+# =========================================================
+class Logger:
+    """ログ出力クラス。ファイルとコンソールに出力。"""
+    def __init__(self, log_path: Path):
+        self.log_path = log_path
+        self._fp = None
+        self._file_enabled = False
+        self.attention_entries: List[str] = []
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._fp = open(log_path, "a", encoding="utf-8", errors="replace", newline="\n")
+            self._file_enabled = True
+        except Exception:
+            self._fp = None
+            self._file_enabled = False
+
+    @staticmethod
+    def _ts() -> str:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _write_file(self, line: str):
+        if not self._file_enabled or not self._fp:
+            return
+        try:
+            self._fp.write(line + "\n")
+            self._fp.flush()
+        except Exception:
+            self._file_enabled = False
+
+    def info(self, msg: str):
+        print(f"[{self._ts()}][INFO] {msg}", flush=True)
+
+    def warn(self, msg: str):
+        line = f"[{self._ts()}][WARN] {msg}"
+        print(line, flush=True)
+        self._write_file(line)
+        self.attention_entries.append(line)
+
+    def error(self, msg: str):
+        line = f"[{self._ts()}][ERROR] {msg}"
+        print(line, flush=True)
+        self._write_file(line)
+        self.attention_entries.append(line)
+
+    def write_attention_report(self, report_path: Path, stats: Optional[Dict[str, int]] = None):
+        try:
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            lines = [
+                f"Generated: {self._ts()}",
+                f"Source log: {self.log_path}",
+                "",
+                "[Attention Stats]",
+            ]
+            if stats:
+                interesting = [(k, v) for k, v in sorted(stats.items()) if v]
+                if interesting:
+                    lines.extend(f"{k}: {v}" for k, v in interesting)
+                else:
+                    lines.append("none")
+            else:
+                lines.append("none")
+            lines.extend(["", "[Attention Lines]"])
+            if self.attention_entries:
+                lines.extend(self.attention_entries)
+            else:
+                lines.append("none")
+            report_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        except Exception:
+            pass
+
+    def close(self):
+        try:
+            if self._fp:
+                self._fp.close()
+        except Exception:
+            pass
+
+# =========================================================
+# Progress
+# =========================================================
+class Progress:
+    """進捗表示クラス。ETA付き。"""
+    def __init__(self, interval_sec: float = 0.4, show_bar: bool = True):
+        self.total = 0
+        self.done = 0
+        self.start = 0.0
+        self._last_print = 0.0
+        self._phase = ""
+        self._folder = ""
+        self._last_current = ""
+        self.interval_sec = max(float(interval_sec), 0.1)
+        self.show_bar = bool(show_bar)
+
+    def set_phase(self, phase: str):
+        self._phase = phase
+
+    def set_folder(self, folder: str):
+        self._folder = folder
+
+    def start_all(self, total: int):
+        self.total = max(int(total), 0)
+        self.done = 0
+        self.start = time.time()
+        self._last_print = 0.0
+
+    def _fmt_line(self) -> str:
+        now = time.time()
+        elapsed = max(now - self.start, 1e-9)
+        rate = self.done / self.total if self.total else 1.0
+        remain = (elapsed / rate - elapsed) if rate > 1e-12 else 0
+        eta = datetime.fromtimestamp(now + max(remain, 0)).strftime("%H:%M:%S")
+        speed = self.done / elapsed if elapsed > 0 else 0.0
+        fol = f" | {self._folder}" if self._folder else ""
+        cur = f" | {self._last_current}" if self._last_current else ""
+        if not self.show_bar:
+            return f"\r[{self._phase}] {self.done}/{self.total} {rate*100:6.2f}%  {speed:6.1f} it/s  残 {int(remain):5d}s ETA {eta}{fol}{cur}"
+        width = shutil.get_terminal_size((120, 20)).columns
+        bar_w = max(10, min(30, width - 80))
+        filled = int(bar_w * max(0.0, min(1.0, rate)))
+        bar = "█" * filled + " " * (bar_w - filled)
+        return f"\r[{self._phase}] {self.done}/{self.total} {rate*100:6.2f}% |{bar}| {speed:6.1f} it/s  残 {int(remain):5d}s ETA {eta}{fol}{cur}"
+
+    def tick(self, current: str = ""):
+        self.done += 1
+        if current:
+            self._last_current = current
+        now = time.time()
+        if now - self._last_print < self.interval_sec and self.done < self.total:
+            return
+        self._last_print = now
+        print(self._fmt_line(), end="", flush=True)
+
+    def finish(self):
+        print(self._fmt_line(), flush=True)
+        print()
+
+# =========================================================
+# Date extraction
+# =========================================================
+def _parse_exif_dt(s: str) -> Optional[datetime]:
+    """EXIF日時をパース。"""
+    try:
+        s = s.strip().replace("-", ":")
+        if len(s) >= 19:
+            s = s[:19]
+        return datetime.strptime(s, "%Y:%m:%d %H:%M:%S")
+    except Exception:
+        return None
+
+def _ffprobe_creation_time(path: Path) -> Optional[datetime]:
+    """ffprobeで動画の作成日時を取得。"""
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format_tags=creation_time",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ]
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if p.returncode != 0:
+            return None
+        s = (p.stdout or "").strip()
+        if not s:
+            return None
+        s = s.replace("Z", "")
+        if "." in s:
+            s = s.split(".", 1)[0]
+        if "T" in s:
+            return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
+        return datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+def get_media_capture_datetime(path: Path, cfg: Config) -> datetime:
+    """メディアの撮影日時を取得。"""
+    ext = path.suffix.lower()
+    if ext in cfg.photo_ext:
+        try:
+            with Image.open(path) as img:
+                exif = img.getexif()
+                if exif:
+                    for tag in (36867, 36868, 306):
+                        v = exif.get(tag)
+                        if v:
+                            dt = _parse_exif_dt(str(v))
+                            if dt:
+                                return dt
+        except Exception:
+            pass
+    if ext in cfg.video_ext:
+        dt = _ffprobe_creation_time(path)
+        if dt:
+            return dt
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime)
+    except Exception:
+        return datetime.now()
+
+# =========================================================
+# FileOps
+# =========================================================
+class FileOps:
+    """ファイル操作クラス。"""
+    def __init__(self, cfg: Config, log: Logger, stats: Dict[str, int]):
+        self.cfg = cfg
+        self.log = log
+        self.stats = stats
+
+    def is_media(self, path: Path) -> bool:
+        ext = path.suffix.lower()
+        return ext in self.cfg.photo_ext or ext in self.cfg.video_ext
+
+    def clear_readonly_if_media(self, path: Path):
+        try:
+            if path.is_file() and self.is_media(path):
+                clear_attrib_recursive(path)
+                os.chmod(str(path), stat.S_IWRITE)
+        except Exception:
+            pass
+
+    def _exists(self, p: Path) -> bool:
+        try:
+            if self.cfg.use_long_path_ops and is_windows():
+                return os.path.exists(to_long_path(p))
+            return p.exists()
+        except Exception:
+            self.stats["EXISTS_check_error"] = self.stats.get("EXISTS_check_error", 0) + 1
+            return True
+
+    def _unlink(self, p: Path):
+        if self.cfg.use_long_path_ops and is_windows():
+            os.unlink(to_long_path(p))
+        else:
+            p.unlink()
+
+    def _utime(self, p: Path, atime: float, mtime: float):
+        if self.cfg.use_long_path_ops and is_windows():
+            os.utime(to_long_path(p), (atime, mtime))
+        else:
+            os.utime(str(p), (atime, mtime))
+
+    def ensure_unique_path(self, dst: Path) -> Path:
+        if not self._exists(dst):
+            return dst
+        folder = dst.parent
+        stem = dst.stem
+        ext = dst.suffix
+        for n in range(2, 10000):
+            cand = folder / f"{stem}_{n}{ext}"
+            if not self._exists(cand):
+                return cand
+        raise OSError(f"unique name not found: {dst}")
+
+    def _rename_impl(self, src: Path, dst: Path) -> Path:
+        if self.cfg.dry_run:
+            return dst
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            src.rename(dst)
+            return dst
+        except Exception:
+            pass
+        if self.cfg.use_long_path_ops and is_windows():
+            try:
+                os.replace(to_long_path(src), to_long_path(dst))
+                return dst
+            except Exception:
+                pass
+        if self.cfg.enable_copy_fallback and src.is_file():
+            dst_safe = self.ensure_unique_path(dst)
+            shutil.copy2(str(src), str(dst_safe))
+            try:
+                self._unlink(src)
+            except Exception:
+                self.log.warn(f"rename(copy)後の元削除失敗: {src}")
+            return dst_safe
+        raise OSError(f"rename failed: {src} -> {dst}")
+
+    def safe_rename_unique(self, src: Path, dst: Path) -> Optional[Path]:
+        try:
+            if norm_abs(src) == norm_abs(dst):
+                return src
+        except Exception:
+            pass
+        try:
+            self.clear_readonly_if_media(src)
+            dst2 = self.ensure_unique_path(dst)
+            return self._rename_impl(src, dst2)
+        except PermissionError:
+            self.stats["SKIP_permission"] = self.stats.get("SKIP_permission", 0) + 1
+            self.log.warn(f"[SKIP] 使用中/権限不足: {src}")
+            return None
+        except Exception as e:
+            self.stats["SKIP_rename_failed"] = self.stats.get("SKIP_rename_failed", 0) + 1
+            self.log.warn(f"[SKIP] rename失敗: {src} ({e})")
+            return None
+
+# =========================================================
+# ImageCompressor
+# =========================================================
+class ImageCompressor:
+    """画像圧縮・変換クラス。"""
+    def __init__(self, cfg: Config, ops: FileOps, log: Logger, stats: Dict[str, int]):
+        self.cfg = cfg
+        self.ops = ops
+        self.log = log
+        self.stats = stats
+
+    def _replace(self, src: Path, dst: Path):
+        if self.cfg.use_long_path_ops and is_windows():
+            os.replace(to_long_path(src), to_long_path(dst))
+        else:
+            os.replace(str(src), str(dst))
+
+    def compress_or_convert(self, path: Path) -> Path:
+        if self.cfg.dry_run:
+            return path
+        tmp: Optional[Path] = None
+        final_path = path
+        try:
+            ext = path.suffix.lower()
+            if ext not in self.cfg.photo_ext:
+                return path
+            if ext in {".heic", ".heif"} and register_heif_opener is None:
+                self.stats["SKIP_heif_not_supported"] = self.stats.get("SKIP_heif_not_supported", 0) + 1
+                self.log.warn(f"[SKIP] HEIC/HEIF未対応: {path}")
+                return path
+            self.ops.clear_readonly_if_media(path)
+            stat0 = path.stat()
+            if ext in {".png", ".heic", ".heif"}:
+                dst_path = self.ops.ensure_unique_path(path.with_suffix(".jpg"))
+            else:
+                dst_path = path
+            if ext in {".jpg", ".jpeg"} and path.stat().st_size / 1024 <= self.cfg.max_kb:
+                return path
+            tmp = dst_path.parent / f"~cmp_{uuid.uuid4().hex}.jpg"
+            with Image.open(path) as img:
+                img = ImageOps.exif_transpose(img)
+                exif_bytes = img.info.get("exif")
+                if img.mode in ("RGBA", "LA"):
+                    bg = Image.new("RGB", img.size, (255, 255, 255))
+                    bg.paste(img, mask=img.split()[-1])
+                    img = bg
+                else:
+                    img = img.convert("RGB")
+                saved_ok = False
+                work_img = img
+                for _resize_try in range(10):
+                    quality = 95
+                    while quality >= 30:
+                        save_kwargs = {"quality": quality, "optimize": True}
+                        if exif_bytes:
+                            save_kwargs["exif"] = exif_bytes
+                        work_img.save(tmp, "JPEG", **save_kwargs)
+                        if tmp.stat().st_size / 1024 <= self.cfg.max_kb:
+                            saved_ok = True
+                            break
+                        quality -= 5
+                    if saved_ok:
+                        break
+                    w, h = work_img.size
+                    if w <= 1 or h <= 1:
+                        break
+                    work_img = work_img.resize((max(1, int(w * 0.9)), max(1, int(h * 0.9))))
+            self.ops.clear_readonly_if_media(dst_path)
+            self._replace(tmp, dst_path)
+            self.ops._utime(dst_path, stat0.st_atime, stat0.st_mtime)
+            final_path = dst_path
+            if ext in {".png", ".heic", ".heif"}:
+                try:
+                    self.ops.clear_readonly_if_media(path)
+                    self.ops._unlink(path)
+                except PermissionError:
+                    self.log.warn(f"[SKIP] 変換元削除不可: {path}")
+            return final_path
+        except Exception as e:
+            self.stats["SKIP_compress_failed"] = self.stats.get("SKIP_compress_failed", 0) + 1
+            self.log.warn(f"[SKIP] 圧縮/変換失敗: {path} ({e})")
+            return final_path
+        finally:
+            if tmp:
+                try:
+                    if self.ops._exists(tmp):
+                        self.ops._unlink(tmp)
+                except Exception:
+                    pass
+
+# =========================================================
+# GeneralOrganizer
+# =========================================================
+class GeneralOrganizer:
+    """一般整理クラス。"""
+    def __init__(self, cfg: Config, prog: Progress, log: Logger):
+        self.cfg = cfg
+        self.prog = prog
+        self.log = log
+        self.stats: Dict[str, int] = {}
+        self.ops = FileOps(cfg, log, self.stats)
+        self.compressor = ImageCompressor(cfg, self.ops, log, self.stats)
+        self._excluded_abs: List[str] = [norm_abs(p) for p in cfg.excluded_dirs]
+        self._scan_roots = self._build_scan_roots()
+
+    def _build_scan_roots(self) -> List[Path]:
+        if not self.cfg.allowed_top_dirs:
+            return [self.cfg.base_dir]
+
+        roots: List[Path] = []
+        for name in self.cfg.allowed_top_dirs:
+            candidate = self.cfg.base_dir / name
+            if not candidate.is_dir():
+                self.log.warn(f"[GENERAL] 許可ルート未検出: {candidate}")
+                continue
+            if self.is_excluded_dirname(candidate.name) or self._is_under_excluded_dir(candidate):
+                self.log.warn(f"[GENERAL] 許可ルートが除外対象: {candidate}")
+                continue
+            roots.append(candidate)
+        return roots
+
+    def iter_scan_roots(self) -> List[Path]:
+        return list(self._scan_roots)
+
+    def is_excluded_dirname(self, name: str) -> bool:
+        return name in self.cfg.exclude_names
+
+    def _is_under_excluded_dir(self, p: Path) -> bool:
+        ap = norm_abs(p)
+        for ex in self._excluded_abs:
+            if _is_under(ap, ex):
+                return True
+        return False
+
+    def _normalize_output_name(self, p: Path) -> Path:
+        if not self.cfg.restore_english_spaces:
+            return p
+        fixed_stem = restore_english_spaces_in_stem(p.stem)
+        if fixed_stem == p.stem:
+            return p
+        return p.with_name(fixed_stem + p.suffix)
+
+    def _normalize_existing_child_name(self, path: Path) -> Path:
+        if not self.cfg.restore_english_spaces:
+            return path
+
+        if path.is_dir():
+            fixed_name = restore_english_spaces_in_stem(path.name)
+        else:
+            fixed_stem = restore_english_spaces_in_stem(path.stem)
+            fixed_name = fixed_stem + path.suffix
+
+        if fixed_name == path.name:
+            return path
+
+        moved = self.ops.safe_rename_unique(path, path.with_name(fixed_name))
+        if moved:
+            self.stats["RENAME_english_spaces"] = self.stats.get("RENAME_english_spaces", 0) + 1
+            self.log.info(f"[GENERAL] 英単語アンダーバー補正: {path.name} -> {moved.name}")
+            return moved
+        return path
+
+    def _normalize_existing_names_in_folder(self, folder: Path, dirs: List[str], files: List[str]):
+        renamed_dirs: List[str] = []
+        for dn in dirs:
+            path = folder / dn
+            renamed = self._normalize_existing_child_name(path)
+            renamed_dirs.append(renamed.name)
+        dirs[:] = renamed_dirs
+
+        for fn in files:
+            if fn in self.cfg.junk_files:
+                continue
+            self._normalize_existing_child_name(folder / fn)
+
+    def count_media_files_excluding_special(self, base: Path) -> int:
+        total = 0
+        media_ext = self.cfg.photo_ext | self.cfg.video_ext
+        for scan_root in self.iter_scan_roots():
+            for root, dirs, files in os.walk(scan_root):
+                root_p = Path(root)
+                dirs[:] = [d for d in dirs if not self.is_excluded_dirname(d)]
+                if self._is_under_excluded_dir(root_p):
+                    dirs[:] = []
+                    continue
+                total += sum(1 for f in files if Path(f).suffix.lower() in media_ext)
+        return total
+
+    def _process_one_folder(self, folder: Path):
+        try:
+            files = [
+                p for p in folder.iterdir()
+                if p.is_file() and self.ops.is_media(p) and p.name not in self.cfg.junk_files
+            ]
+        except Exception as e:
+            self.log.warn(f"[GENERAL] iterdir失敗: {folder} ({e})")
+            return
+        if not files:
+            return
+        tmp_prefix = f"__TMP__{int(time.time()*1000)}__"
+        tmp_paths: List[Path] = []
+        for i, p in enumerate(sorted(files, key=lambda x: x.name.lower()), 1):
+            tmp_name = f"{tmp_prefix}{i:06d}__{p.name}"
+            moved = self.ops.safe_rename_unique(p, folder / tmp_name)
+            if moved:
+                tmp_paths.append(moved)
+            else:
+                self.prog.tick(current=p.name)
+        parsed = []
+        for tp in tmp_paths:
+            dt = get_media_capture_datetime(tp, self.cfg)
+            yymmdd = dt.strftime("%y%m%d")
+            parsed.append((tp, tp.suffix.lower(), dt, yymmdd))
+        parsed.sort(key=lambda x: (x[2], x[0].name.lower()))
+        for idx, (tp, ext_l, _dt, yymmdd) in enumerate(parsed, 1):
+            dst = folder / f"{idx:03d}_{yymmdd}{ext_l}"
+            dst = self._normalize_output_name(dst)
+            moved = self.ops.safe_rename_unique(tp, dst)
+            final_path = moved
+            if moved and moved.suffix.lower() in self.cfg.photo_ext:
+                final_path = self.compressor.compress_or_convert(moved)
+            self.prog.tick(current=final_path.name if final_path else dst.name)
+
+    def run(self, base: Path):
+        if self.cfg.excluded_dirs:
+            self.log.info("[GENERAL] 除外フォルダ:")
+            for p in self.cfg.excluded_dirs:
+                self.log.info(f"  - {p}")
+        if self.cfg.allowed_top_dirs:
+            self.log.info("[GENERAL] 許可ルート:")
+            for p in self.iter_scan_roots():
+                self.log.info(f"  - {p}")
+        for scan_root in self.iter_scan_roots():
+            for root, dirs, _files in os.walk(scan_root, topdown=True):
+                root_p = Path(root)
+                dirs[:] = [d for d in dirs if not self.is_excluded_dirname(d)]
+                if self._is_under_excluded_dir(root_p):
+                    dirs[:] = []
+                    continue
+                self._normalize_existing_names_in_folder(root_p, dirs, _files)
+                self.prog.set_folder(str(root_p))
+                self._process_one_folder(root_p)
+
+# =========================================================
+# main
+# =========================================================
+def json_main(
+    _Config=Config,
+    _Logger=Logger,
+    _Progress=Progress,
+    _GeneralOrganizer=GeneralOrganizer,
+    _register_heif_opener=register_heif_opener,
+):
+    # 設定ファイルを読み込み
+    config_path = Path(__file__).parent / "config.json"
+    cfg = _Config.from_json(config_path)
+    log_dir = PROJECT_ROOT
+    log_path = log_dir / f"photo_video_general_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    attention_path = log_dir / f"attention_general_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    log = _Logger(log_path)
+    prog = _Progress(interval_sec=cfg.progress_interval_sec, show_bar=cfg.show_progress_bar)
+    org = _GeneralOrganizer(cfg, prog, log)
+    log.info("==============================================")
+    log.info("通常処理（91フォルダは除外）")
+    log.info(f"対象: {cfg.base_dir}")
+    log.info(f"DRY_RUN: {cfg.dry_run}")
+    log.info(f"LOG_PATH: {log_path}")
+    log.info(f"restore_english_spaces: {cfg.restore_english_spaces}")
+    log.info(f"allowed_top_dirs: {list(cfg.allowed_top_dirs)}")
+    log.info("==============================================")
+    if _register_heif_opener is None:
+        log.warn("HEIC/HEIF: pillow-heif の登録に失敗しています。")
+    try:
+        prog.set_phase("GENERAL")
+        total = org.count_media_files_excluding_special(cfg.base_dir)
+        prog.start_all(total)
+        org.run(cfg.base_dir)
+        prog.finish()
+        log.info("===== 完了 =====")
+    except KeyboardInterrupt:
+        log.warn("中断されました（Ctrl+C）")
+    finally:
+        log.info("===== サマリ =====")
+        for k, v in sorted(org.stats.items()):
+            log.info(f"{k}: {v}")
+        log.write_attention_report(attention_path, org.stats)
+        log.info(f"ATTENTION_PATH: {attention_path}")
+        log.info("===== 終了 =====")
+        print(f"\n[LOG] {log.log_path}", flush=True)
+        log.close()
+
+
+def main():
+    return json_main()
+
+if __name__ == "__main__":
+    main()
+
+
+def english_word_token(s: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z]+", s))
+
+
+def restore_english_spaces_in_stem(name_stem: str) -> str:
+    """
+    英単語どうしの "_" だけを半角スペースへ戻す。
+    例:
+      before_after        -> before after
+      front_left_side     -> front left side
+      001_240101          -> 001_240101
+      IMG_1234            -> IMG_1234
+      001_240101_before_after -> 001_240101_before after
+    """
+    parts = name_stem.split("_")
+    if len(parts) <= 1:
+        return name_stem
+
+    out: List[str] = []
+    i = 0
+    while i < len(parts):
+        if english_word_token(parts[i]):
+            phrase = [parts[i]]
+            j = i + 1
+            while j < len(parts) and english_word_token(parts[j]):
+                phrase.append(parts[j])
+                j += 1
+            out.append(" ".join(phrase))
+            i = j
+        else:
+            out.append(parts[i])
+            i += 1
+
+    return "_".join(out)
+
+
+# =========================================================
+# Logger (file: WARN/ERROR only)
+# =========================================================
+class Logger:
+    def __init__(self, log_path: Path):
+        self.log_path = log_path
+        self._fp = None
+        self._file_enabled = False
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            self._fp = open(log_path, "a", encoding="utf-8", errors="replace", newline="\n")
+            self._file_enabled = True
+        except Exception:
+            self._fp = None
+            self._file_enabled = False
+
+    @staticmethod
+    def _ts() -> str:
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    def _write_file(self, line: str):
+        if not self._file_enabled or not self._fp:
+            return
+        try:
+            self._fp.write(line + "\n")
+            self._fp.flush()
+        except Exception:
+            self._file_enabled = False
+
+    def info(self, msg: str):
+        print(f"[{self._ts()}][INFO] {msg}", flush=True)
+
+    def warn(self, msg: str):
+        line = f"[{self._ts()}][WARN] {msg}"
+        print(line, flush=True)
+        self._write_file(line)
+
+    def error(self, msg: str):
+        line = f"[{self._ts()}][ERROR] {msg}"
+        print(line, flush=True)
+        self._write_file(line)
+
+    def close(self):
+        try:
+            if self._fp:
+                self._fp.close()
+        except Exception:
+            pass
+
+
+# =========================================================
+# Progress (ETA)
+# =========================================================
+import shutil as _shutil_mod
+
+
+class Progress:
+    def __init__(self, interval_sec: float = 0.4, show_bar: bool = True):
+        self.total = 0
+        self.done = 0
+        self.start = 0.0
+        self._last_print = 0.0
+        self._phase = ""
+        self._folder = ""
+        self._last_current = ""
+        self.interval_sec = max(float(interval_sec), 0.1)
+        self.show_bar = bool(show_bar)
+
+    def set_phase(self, phase: str):
+        self._phase = phase
+
+    def set_folder(self, folder: str):
+        self._folder = folder
+
+    def start_all(self, total: int):
+        self.total = max(int(total), 0)
+        self.done = 0
+        self.start = time.time()
+        self._last_print = 0.0
+
+    def _fmt_line(self) -> str:
+        now = time.time()
+        elapsed = max(now - self.start, 1e-9)
+        rate = self.done / self.total if self.total else 1.0
+        remain = (elapsed / rate - elapsed) if rate > 1e-12 else 0
+        eta = datetime.fromtimestamp(now + max(remain, 0)).strftime("%H:%M:%S")
+        speed = self.done / elapsed if elapsed > 0 else 0.0
+
+        fol = f" | {self._folder}" if self._folder else ""
+        cur = f" | {self._last_current}" if self._last_current else ""
+
+        if not self.show_bar:
+            return f"\r[{self._phase}] {self.done}/{self.total} {rate*100:6.2f}%  {speed:6.1f} it/s  残 {int(remain):5d}s ETA {eta}{fol}{cur}"
+
+        width = _shutil_mod.get_terminal_size((120, 20)).columns
+        bar_w = max(10, min(30, width - 80))
+        filled = int(bar_w * max(0.0, min(1.0, rate)))
+        bar = "█" * filled + " " * (bar_w - filled)
+        return f"\r[{self._phase}] {self.done}/{self.total} {rate*100:6.2f}% |{bar}| {speed:6.1f} it/s  残 {int(remain):5d}s ETA {eta}{fol}{cur}"
+
+    def tick(self, current: str = ""):
+        self.done += 1
+        if current:
+            self._last_current = current
+        now = time.time()
+        if now - self._last_print < self.interval_sec and self.done < self.total:
+            return
+        self._last_print = now
+        print(self._fmt_line(), end="", flush=True)
+
+    def finish(self):
+        print(self._fmt_line(), flush=True)
+        print()
+
+
+# =========================================================
+# Date extraction
+# =========================================================
+def _parse_exif_dt(s: str) -> Optional[datetime]:
+    try:
+        s = s.strip().replace("-", ":")
+        if len(s) >= 19:
+            s = s[:19]
+        return datetime.strptime(s, "%Y:%m:%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def _ffprobe_creation_time(path: Path) -> Optional[datetime]:
+    try:
+        cmd = [
+            "ffprobe", "-v", "error",
+            "-show_entries", "format_tags=creation_time",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(path),
+        ]
+        p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if p.returncode != 0:
+            return None
+        s = (p.stdout or "").strip()
+        if not s:
+            return None
+        s = s.replace("Z", "")
+        if "." in s:
+            s = s.split(".", 1)[0]
+        if "T" in s:
+            return datetime.strptime(s, "%Y-%m-%dT%H:%M:%S")
+        return datetime.strptime(s[:19], "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+
+
+def get_media_capture_datetime(path: Path, cfg: Config) -> datetime:
+    ext = path.suffix.lower()
+
+    # photo EXIF
+    if ext in {".jpg", ".jpeg", ".png", ".heic", ".heif"}:
+        try:
+            with Image.open(path) as img:
+                exif = None
+                try:
+                    exif = img.getexif()
+                except Exception:
+                    exif = None
+                if exif:
+                    for tag in (36867, 36868, 306):
+                        v = exif.get(tag)
+                        if v:
+                            dt = _parse_exif_dt(str(v))
+                            if dt:
+                                return dt
+        except Exception:
+            pass
+
+    # video creation_time
+    if ext in cfg.video_ext:
+        dt = _ffprobe_creation_time(path)
+        if dt:
+            return dt
+
+    # fallback mtime
+    try:
+        return datetime.fromtimestamp(path.stat().st_mtime)
+    except Exception:
+        return datetime.now()
+
+
+# =========================================================
+# FileOps
+# =========================================================
+class FileOps:
+    def __init__(self, cfg: Config, log: Logger, stats: Dict[str, int]):
+        self.cfg = cfg
+        self.log = log
+        self.stats = stats
+
+    def is_media(self, path: Path) -> bool:
+        ext = path.suffix.lower()
+        return ext in self.cfg.photo_ext or ext in self.cfg.video_ext
+
+    def clear_readonly_if_media(self, path: Path):
+        try:
+            if path.is_file() and self.is_media(path):
+                clear_attrib_recursive(path)
+                os.chmod(str(path), stat.S_IWRITE)
+        except Exception:
+            pass
+
+    def _exists(self, p: Path) -> bool:
+        try:
+            if self.cfg.use_long_path_ops and is_windows():
+                return os.path.exists(to_long_path(p))
+            return p.exists()
+        except Exception:
+            self.stats["EXISTS_check_error"] = self.stats.get("EXISTS_check_error", 0) + 1
+            return True
+
+    def _unlink(self, p: Path):
+        if self.cfg.use_long_path_ops and is_windows():
+            os.unlink(to_long_path(p))
+        else:
+            p.unlink()
+
+    def _utime(self, p: Path, atime: float, mtime: float):
+        if self.cfg.use_long_path_ops and is_windows():
+            os.utime(to_long_path(p), (atime, mtime))
+        else:
+            os.utime(str(p), (atime, mtime))
+
+    def ensure_unique_path(self, dst: Path) -> Path:
+        if not self._exists(dst):
+            return dst
+        folder = dst.parent
+        stem = dst.stem
+        ext = dst.suffix
+        for n in range(2, 10000):
+            cand = folder / f"{stem}_{n}{ext}"
+            if not self._exists(cand):
+                return cand
+        raise OSError(f"unique name not found: {dst}")
+
+    def _rename_impl(self, src: Path, dst: Path) -> Path:
+        if self.cfg.dry_run:
+            return dst
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            src.rename(dst)
+            return dst
+        except Exception:
+            pass
+
+        if self.cfg.use_long_path_ops and is_windows():
+            try:
+                os.replace(to_long_path(src), to_long_path(dst))
+                return dst
+            except Exception:
+                pass
+
+        if self.cfg.enable_copy_fallback and src.is_file():
+            dst_safe = self.ensure_unique_path(dst)
+            shutil.copy2(str(src), str(dst_safe))
+            try:
+                self._unlink(src)
+            except Exception:
+                self.log.warn(f"rename(copy)後の元削除失敗: {src}")
+            return dst_safe
+
+        raise OSError(f"rename failed: {src} -> {dst}")
+
+    def safe_rename_unique(self, src: Path, dst: Path) -> Optional[Path]:
+        try:
+            if norm_abs(src) == norm_abs(dst):
+                return src
+        except Exception:
+            pass
+
+        try:
+            self.clear_readonly_if_media(src)
+            dst2 = self.ensure_unique_path(dst)
+            return self._rename_impl(src, dst2)
+        except PermissionError:
+            self.stats["SKIP_permission"] = self.stats.get("SKIP_permission", 0) + 1
+            self.log.warn(f"[SKIP] 使用中/権限不足: {src}")
+            return None
+        except Exception as e:
+            self.stats["SKIP_rename_failed"] = self.stats.get("SKIP_rename_failed", 0) + 1
+            self.log.warn(f"[SKIP] rename失敗: {src} ({e})")
+            return None
+
+
+# =========================================================
+# Image compression / HEIC->JPG conversion
+# =========================================================
+class ImageCompressor:
+    def __init__(self, cfg: Config, ops: FileOps, log: Logger, stats: Dict[str, int]):
+        self.cfg = cfg
+        self.ops = ops
+        self.log = log
+        self.stats = stats
+
+    def _replace(self, src: Path, dst: Path):
+        if self.cfg.use_long_path_ops and is_windows():
+            os.replace(to_long_path(src), to_long_path(dst))
+        else:
+            os.replace(str(src), str(dst))
+
+    def compress_or_convert(self, path: Path) -> Path:
+        if self.cfg.dry_run:
+            return path
+
+        tmp: Optional[Path] = None
+        final_path = path
+        try:
+            ext = path.suffix.lower()
+            if ext not in self.cfg.photo_ext:
+                return path
+
+            if ext in {".heic", ".heif"} and register_heif_opener is None:
+                self.stats["SKIP_heif_not_supported"] = self.stats.get("SKIP_heif_not_supported", 0) + 1
+                self.log.warn(f"[SKIP] HEIC/HEIF未対応（pillow-heif登録失敗）: {path}")
+                return path
+
+            self.ops.clear_readonly_if_media(path)
+            stat0 = path.stat()
+
+            # PNG/HEIC/HEIF -> JPGへ
+            if ext in {".png", ".heic", ".heif"}:
+                dst_path = self.ops.ensure_unique_path(path.with_suffix(".jpg"))
+            else:
+                dst_path = path
+
+            # JPG/JPEGはサイズOKならスキップ
+            if ext in {".jpg", ".jpeg"} and path.stat().st_size / 1024 <= self.cfg.max_kb:
+                return path
+
+            tmp = dst_path.parent / f"~cmp_{uuid.uuid4().hex}.jpg"
+
+            with Image.open(path) as img:
+                img = ImageOps.exif_transpose(img)
+                exif_bytes = img.info.get("exif")
+
+                if img.mode in ("RGBA", "LA"):
+                    bg = Image.new("RGB", img.size, (255, 255, 255))
+                    bg.paste(img, mask=img.split()[-1])
+                    img = bg
+                else:
+                    img = img.convert("RGB")
+
+                saved_ok = False
+                work_img = img
+                for _resize_try in range(10):
+                    quality = 95
+                    while quality >= 30:
+                        save_kwargs = {"quality": quality, "optimize": True}
+                        if exif_bytes:
+                            save_kwargs["exif"] = exif_bytes
+                        work_img.save(tmp, "JPEG", **save_kwargs)
+                        if tmp.stat().st_size / 1024 <= self.cfg.max_kb:
+                            saved_ok = True
+                            break
+                        quality -= 5
+
+                    if saved_ok:
+                        break
+
+                    w, h = work_img.size
+                    if w <= 1 or h <= 1:
+                        break
+                    work_img = work_img.resize((max(1, int(w * 0.9)), max(1, int(h * 0.9))))
+
+            self.ops.clear_readonly_if_media(dst_path)
+            self._replace(tmp, dst_path)
+            self.ops._utime(dst_path, stat0.st_atime, stat0.st_mtime)
+            final_path = dst_path
+
+            # 変換元削除
+            if ext in {".png", ".heic", ".heif"}:
+                try:
+                    self.ops.clear_readonly_if_media(path)
+                    self.ops._unlink(path)
+                except PermissionError:
+                    self.log.warn(f"[SKIP] 変換元削除不可: {path}")
+
+            return final_path
+
+        except Exception as e:
+            self.stats["SKIP_compress_failed"] = self.stats.get("SKIP_compress_failed", 0) + 1
+            self.log.warn(f"[SKIP] 圧縮/変換失敗: {path} ({e})")
+            return final_path
+        finally:
+            if tmp:
+                try:
+                    if self.ops._exists(tmp):
+                        self.ops._unlink(tmp)
+                except Exception:
+                    pass
+
+
+# =========================================================
+# General Organizer
+# =========================================================
+class GeneralOrganizer:
+    def __init__(self, cfg: Config, prog: Progress, log: Logger):
+        self.cfg = cfg
+        self.prog = prog
+        self.log = log
+        self.stats: Dict[str, int] = {}
+        self.ops = FileOps(cfg, log, self.stats)
+        self.compressor = ImageCompressor(cfg, self.ops, log, self.stats)
+        self._excluded_abs: List[str] = [norm_abs(p) for p in cfg.excluded_dirs]
+
+    def is_excluded_dirname(self, name: str) -> bool:
+        return name in self.cfg.exclude_names
+
+    def _is_under_excluded_dir(self, p: Path) -> bool:
+        ap = norm_abs(p)
+        for ex in self._excluded_abs:
+            if _is_under(ap, ex):
+                return True
+        return False
+
+    def _normalize_output_name(self, p: Path) -> Path:
+        if not self.cfg.restore_english_spaces:
+            return p
+        fixed_stem = restore_english_spaces_in_stem(p.stem)
+        if fixed_stem == p.stem:
+            return p
+        return p.with_name(fixed_stem + p.suffix)
+
+    def count_media_files_excluding_special(self, base: Path) -> int:
+        total = 0
+        media_ext = self.cfg.photo_ext | self.cfg.video_ext
+
+        for root, dirs, files in os.walk(base):
+            root_p = Path(root)
+            dirs[:] = [d for d in dirs if not self.is_excluded_dirname(d)]
+
+            if self._is_under_excluded_dir(root_p):
+                dirs[:] = []
+                continue
+
+            total += sum(1 for f in files if Path(f).suffix.lower() in media_ext)
+        return total
+
+    def _process_one_folder(self, folder: Path):
+        # フォルダ内のメディアを「撮影日古い順で 001_YYMMDD」に収束
+        try:
+            files = [
+                p for p in folder.iterdir()
+                if p.is_file() and self.ops.is_media(p) and p.name not in self.cfg.junk_files
+            ]
+        except Exception as e:
+            self.log.warn(f"[GENERAL] iterdir失敗: {folder} ({e})")
+            return
+
+        if not files:
+            return
+
+        tmp_prefix = f"__TMP__{int(time.time()*1000)}__"
+        tmp_paths: List[Path] = []
+
+        # stage1: tmpへ
+        for i, p in enumerate(sorted(files, key=lambda x: x.name.lower()), 1):
+            tmp_name = f"{tmp_prefix}{i:06d}__{p.name}"
+            moved = self.ops.safe_rename_unique(p, folder / tmp_name)
+            if moved:
+                tmp_paths.append(moved)
+            else:
+                self.prog.tick(current=p.name)
+
+        # stage2: 撮影日順で 001_YYMMDD
+        parsed = []
+        for tp in tmp_paths:
+            dt = get_media_capture_datetime(tp, self.cfg)
+            yymmdd = dt.strftime("%y%m%d")
+            parsed.append((tp, tp.suffix.lower(), dt, yymmdd))
+        parsed.sort(key=lambda x: (x[2], x[0].name.lower()))
+
+        for idx, (tp, ext_l, _dt, yymmdd) in enumerate(parsed, 1):
+            dst = folder / f"{idx:03d}_{yymmdd}{ext_l}"
+            dst = self._normalize_output_name(dst)
+
+            moved = self.ops.safe_rename_unique(tp, dst)
+            final_path = moved
+
+            if moved and moved.suffix.lower() in self.cfg.photo_ext:
+                final_path = self.compressor.compress_or_convert(moved)
+
+            self.prog.tick(current=final_path.name if final_path else dst.name)
+
+    def run(self, base: Path):
+        if self.cfg.excluded_dirs:
+            self.log.info("[GENERAL] 除外フォルダ:")
+            for p in self.cfg.excluded_dirs:
+                self.log.info(f"  - {p}")
+
+        for root, dirs, _files in os.walk(base, topdown=True):
+            root_p = Path(root)
+            dirs[:] = [d for d in dirs if not self.is_excluded_dirname(d)]
+
+            if self._is_under_excluded_dir(root_p):
+                dirs[:] = []
+                continue
+
+            self.prog.set_folder(str(root_p))
+            self._process_one_folder(root_p)
+
+
+# =========================================================
+# main
+# =========================================================
+def main():
+    cfg = Config()
+
+    log_dir = PROJECT_ROOT
+    log_path = log_dir / f"photo_video_general_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    log = Logger(log_path)
+
+    prog = Progress(interval_sec=cfg.progress_interval_sec, show_bar=cfg.show_progress_bar)
+    org = GeneralOrganizer(cfg, prog, log)
+
+    log.info("==============================================")
+    log.info("通常処理（91フォルダは除外）")
+    log.info(f"対象: {cfg.base_dir}")
+    log.info(f"DRY_RUN: {cfg.dry_run}")
+    log.info(f"LOG_PATH: {log_path}")
+    log.info(f"restore_english_spaces: {cfg.restore_english_spaces}")
+    log.info("==============================================")
+
+    if register_heif_opener is None:
+        log.warn("HEIC/HEIF: pillow-heif の登録に失敗しています。HEICはJPG変換されません。")
+
+    try:
+        prog.set_phase("GENERAL")
+        total = org.count_media_files_excluding_special(cfg.base_dir)
+        prog.start_all(total)
+
+        org.run(cfg.base_dir)
+
+        prog.finish()
+        log.info("===== 完了 =====")
+
+    except KeyboardInterrupt:
+        log.warn("中断されました（Ctrl+C）")
+
+    finally:
+        log.info("===== サマリ =====")
+        for k, v in sorted(org.stats.items()):
+            log.info(f"{k}: {v}")
+        log.info("===== 終了 =====")
+        print(f"\n[LOG] {log.log_path}", flush=True)
+        log.close()
+
+
+if __name__ == "__main__":
+    main()

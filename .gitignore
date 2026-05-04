@@ -1,0 +1,53 @@
+# Credentials and tokens (Google Drive API, etc.)
+credentials.json
+token.json
+token.revoked.*.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Logs and outputs
+logs/
+daily_runs_*.txt
+re_register_tasks_admin_*.txt
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Archive
+archive/
+.archive/

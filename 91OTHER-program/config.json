@@ -1,0 +1,16 @@
+{
+    "base_dir": "Z:\\takachiho",
+    "excluded_dirs": ["Z:\\takachiho\\91"],
+    "exclude_names": ["91"],
+    "photo_ext": [".jpg", ".jpeg", ".png", ".heic", ".heif"],
+    "video_ext": [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v"],
+    "junk_files": [],
+    "max_kb": 2048,
+    "progress_interval_sec": 0.4,
+    "show_progress_bar": true,
+    "dry_run": false,
+    "restore_english_spaces": true,
+    "allowed_top_dirs": ["2to9_業務別フォルダ"],
+    "use_long_path_ops": true,
+    "enable_copy_fallback": true
+}
