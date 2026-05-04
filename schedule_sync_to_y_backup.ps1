@@ -35,7 +35,7 @@ try {
 } catch {
     Write-Host "Failed to register with ScheduledTasks cmdlets. Falling back to schtasks. Error: $_"
     $tr = 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "' + $script + '"'
-    schtasks /Create /SC WEEKLY /MO $WeeksInterval /D MON /TN 'SYNC_TO_Y_BACKUP' /TR $tr /ST $Time /RL HIGHEST /F
+    schtasks /Create /SC WEEKLY /MO $WeeksInterval /D SAT /TN 'SYNC_TO_Y_BACKUP' /TR $tr /ST $Time /RL HIGHEST /F
     if ($LASTEXITCODE -ne 0) {
         throw 'Failed to register SYNC_TO_Y_BACKUP.'
     }
