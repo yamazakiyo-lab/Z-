@@ -1,4 +1,6 @@
 $pw = $PSScriptRoot
+$utf8Init = Join-Path $pw 'ps_utf8_init.ps1'
+if (Test-Path -LiteralPath $utf8Init) { . $utf8Init }
 $logDir = Join-Path $pw 'logs'
 $archiveRoot = Join-Path $pw 'archive'
 $retentionDir = Join-Path $archiveRoot 'retention'

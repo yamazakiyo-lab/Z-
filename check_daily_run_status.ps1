@@ -2,6 +2,9 @@ Param(
     [switch]$NoPopup
 )
 
+$utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'
+if (Test-Path -LiteralPath $utf8Init) { . $utf8Init }
+
 $ErrorActionPreference = 'Stop'
 
 $workspace = $PSScriptRoot

@@ -1,4 +1,6 @@
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
+$utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'
+if (Test-Path -LiteralPath $utf8Init) { . $utf8Init }
 $hostName = $env:COMPUTERNAME
 $pw = $PSScriptRoot
 if (-not (Test-Path $pw)) { New-Item -ItemType Directory -Path $pw | Out-Null }

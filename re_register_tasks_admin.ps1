@@ -1,4 +1,6 @@
 $ErrorActionPreference = 'Stop'
+$utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'
+if (Test-Path -LiteralPath $utf8Init) { . $utf8Init }
 $root = $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($root)) {
     $root = Split-Path -Parent $MyInvocation.MyCommand.Path

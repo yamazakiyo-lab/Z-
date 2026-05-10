@@ -33,7 +33,9 @@ wheels/
 
 # Logs and outputs
 logs/
+.runtime/
 daily_runs_*.txt
+attention_general_*.txt
 re_register_tasks_admin_*.txt
 *.log
 
