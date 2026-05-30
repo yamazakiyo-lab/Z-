@@ -35,9 +35,21 @@ try {
 
     $launcher = 'py'
     $script = Join-Path $pw 'run_gdx.py'
+    $gdxProjectDir = Get-ChildItem -LiteralPath $pw -Directory |
+        Where-Object { $_.Name -like '91GDX*252WORKNO-program' } |
+        Select-Object -First 1
+    $venvPython = if ($gdxProjectDir) {
+        Join-Path $gdxProjectDir.FullName 'venv\Scripts\python.exe'
+    } else {
+        $null
+    }
     Push-Location $pw
     try {
-        & $launcher -3 $script
+        if (Test-Path -LiteralPath $venvPython) {
+            & $venvPython $script
+        } else {
+            & $launcher -3 $script
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "run_gdx.py exited with code $LASTEXITCODE"
         }

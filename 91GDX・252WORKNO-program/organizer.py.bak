@@ -149,19 +149,6 @@ class FileOps:
         ext = path.suffix.lower()
         return ext in self.cfg.photo_ext or ext in self.cfg.video_ext
 
-    def is_junk(self, path: Path) -> bool:
-        """
-        fix_b4_scan.py準拠: Thumbsを含む/拡張子.tmp/定義済みJUNK_FILES
-        """
-        name = path.name
-        if name in self.cfg.junk_files:
-            return True
-        if "Thumbs" in name:
-            return True
-        if name.lower().endswith(".tmp"):
-            return True
-        return False
-
     def _exists(self, pth: Path) -> bool:
         try:
             if self.cfg.use_long_path_ops and is_windows():
@@ -446,29 +433,28 @@ class Organizer91:
                 self.log.info(f"rename進捗: {folder.name} {idx}/{len(parsed)}")
 
     def _remove_dir_if_empty(self, d: Path):
-        """
-        fix_b4_scan.py準拠: ジャンクファイル（Thumbs部分一致/.tmp/定義済み）除去後、空なら削除
-        """
         try:
             items = list(d.iterdir())
         except Exception as e:
             self.log.warn(f"空判定失敗: {d} ({e})")
             return
 
-        # ジャンクファイルだけなら先に消す（Thumbs部分一致/.tmp/定義済み）
+        # ジャンクファイルだけなら先に消す
         for x in items:
             try:
-                if x.is_file() and self.ops.is_junk(x):
-                    self.log.info(f"[DEBUG] remove junk file: {x}")
-                    if not self.cfg.dry_run:
+                if x.is_file() and x.name in self.cfg.junk_files:
+                    if self.cfg.use_long_path_ops and is_windows():
+                        os.chmod(to_long_path(x), stat.S_IWRITE)
+                        os.remove(to_long_path(x))
+                    else:
                         try:
                             os.chmod(str(x), stat.S_IWRITE)
                         except Exception:
                             pass
                         x.unlink()
-                        self.log.info(f"[OK] removed: {x}")
+                    self.log.info(f"ジャンク削除: {x}")
             except Exception as e:
-                self.log.warn(f"[WARN] junk remove failed: {x} ({e})")
+                self.log.warn(f"ジャンク削除失敗: {x} ({e})")
 
         try:
             items = list(d.iterdir())
@@ -477,7 +463,7 @@ class Organizer91:
             return
 
         if items:
-            self.log.info(f"[DEBUG] 空ではないため残置: {d} / children={[x.name for x in items]}")
+            self.log.info(f"空ではないため残置: {d} / children={[x.name for x in items]}")
             return
 
         if self.cfg.dry_run:
@@ -500,70 +486,11 @@ class Organizer91:
 
         self.log.warn(f"空フォルダ削除失敗: {d} ({last_err})")
 
-
-    def _remove_B4_and_empty_subdirs(self, b4: Path):
-        """B4配下の空サブフォルダを削除し、B4自体も空なら削除する。"""
-        try:
-            for sub in list(b4.iterdir()):
-                if sub.is_dir():
-                    items = list(sub.iterdir())
-                    if not items:
-                        self._remove_dir_if_empty(sub)
-        except Exception as e:
-            self.log.warn(f"B4配下サブフォルダ空判定失敗: {b4} ({e})")
-        self._remove_dir_if_empty(b4)
-
-    def _extract_non_media_from_phase_to_b4(self, phase: Path, b4: Path):
-        """B1/B2/B3 内の非メディアを B4 ルートへ移動する。
-        - phase: B1/B2/B3 の Path
-        - b4: B4 の Path（存在する前提; ensure_B_folders で作成済み）
-        """
-        try:
-            for item in list(phase.iterdir()):
-                # ファイルが非メディアなら B4 へ
-                if item.is_file():
-                    if not self.ops.is_media(item):
-                        res = self.ops.safe_move(item, b4)
-                        if res:
-                            self.log.info(f"phase->B4 非メディア移動: {item.name} -> {b4.name}")
-                # サブフォルダ内のファイルもチェックして非メディアを B4 へ
-                elif item.is_dir():
-                    try:
-                        for sub in list(item.iterdir()):
-                            if sub.is_file() and not self.ops.is_media(sub):
-                                res = self.ops.safe_move(sub, b4)
-                                if res:
-                                    self.log.info(f"phase->B4 非メディア移動: {sub.name} -> {b4.name}")
-                    except Exception:
-                        # サブフォルダの読み取り失敗はログに残すが続行
-                        self.log.warn(f"サブフォルダ走査失敗（phase->B4）: {item}")
-                # サブフォルダが空なら削除
-                self._remove_dir_if_empty(item)
-        except Exception as e:
-            self.log.warn(f"_extract_non_media_from_phase_to_b4 エラー: {phase} ({e})")
-
-    def _flatten_non_media_in_b4(self, b4: Path):
-        """B4 内のサブフォルダにある非メディアを B4 ルートへ移す（ばらす）。
-        - サブフォルダが空になったら削除する。
-        - 必要なら再帰化も可能（現状はサブフォルダ直下のみ）。
-        """
-        try:
-            subs = [p for p in b4.iterdir() if p.is_dir()]
-        except Exception:
+    def _cleanup_empty_B_folders(self, b_folders: List[Path]):
+        if not self.cfg.delete_empty_phase_folders:
             return
-        for sd in sorted(subs, key=lambda pth: pth.name.lower()):
-            moved = 0
-            try:
-                for child in list(sd.iterdir()):
-                    if child.is_file() and not self.ops.is_media(child):
-                        res = self.ops.safe_move(child, b4)
-                        if res:
-                            moved += 1
-            except Exception:
-                self.log.warn(f"B4 サブフォルダ走査失敗: {sd}")
-            if moved:
-                self.log.info(f"B4 サブフォルダ内 非メディア展開: {sd.name} -> {b4.name} moved={moved}")
-            self._remove_dir_if_empty(sd)
+        for b in b_folders:
+            self._remove_dir_if_empty(b)
 
     def _rehome_misfiled_phase_subdirs(self, bmap: Dict[str, Path]):
         moved = 0
@@ -647,16 +574,8 @@ class Organizer91:
                 self._remove_dir_if_empty(d)
                 classified += 1
 
-
         self.log.info(f"[91:{workno}] 分類済みフォルダ数: {classified}")
         self._rehome_misfiled_phase_subdirs(bmap)
-
-        # B1/B2/B3 に混入している非メディアを B4 へ移動（B4 は ensure_B_folders によって作成済み）
-        for phase in (b1, b2, b3):
-            self._extract_non_media_from_phase_to_b4(phase, b4)
-
-        # B4 内サブフォルダにある非メディアを B4 ルートへ展開（ばらす）
-        self._flatten_non_media_in_b4(b4)
 
         # A直下のメディアはB4へ
         moved_root_media = 0
@@ -702,6 +621,19 @@ class Organizer91:
 
         # B4配下の空サブフォルダも削除し、B4自体も再度空判定して削除
         self._remove_B4_and_empty_subdirs(b4)
+            def _remove_B4_and_empty_subdirs(self, b4: Path):
+                """B4配下の空サブフォルダも削除し、B4自体も空なら削除"""
+                try:
+                    # まずB4配下のサブフォルダで空のものを削除
+                    for sub in list(b4.iterdir()):
+                        if sub.is_dir():
+                            items = list(sub.iterdir())
+                            if not items:
+                                self._remove_dir_if_empty(sub)
+                except Exception as e:
+                    self.log.warn(f"B4配下サブフォルダ空判定失敗: {b4} ({e})")
+                # その後B4自体も空なら削除
+                self._remove_dir_if_empty(b4)
         # 他Bも空なら削除
         self._cleanup_empty_B_folders([b1, b2, b3])
         self.log.info(f"[91:{idx}/{total}] A処理完了: {a_folder}")
