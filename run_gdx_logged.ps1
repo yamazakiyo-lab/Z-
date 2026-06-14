@@ -53,6 +53,29 @@ try {
         if ($LASTEXITCODE -ne 0) {
             throw "run_gdx.py exited with code $LASTEXITCODE"
         }
+
+        # ── RAG: インデックス更新 ──────────────────────────────────────
+        $ragDir = Join-Path $env:USERPROFILE 'tseg_vscode\Zフォルダ整理'
+        $ragPython = Join-Path $ragDir '91GDX・252WORKNO-program\venv\Scripts\python.exe'
+        if (-not (Test-Path -LiteralPath $ragPython)) { $ragPython = $venvPython }
+
+        Write-Host "[RAG] インデックス更新開始"
+        Push-Location $ragDir
+        try {
+            & $ragPython (Join-Path $ragDir 'run_rag_index.py')
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "[RAG] run_rag_index.py がエラーで終了しました (code $LASTEXITCODE)"
+            }
+
+            # ── RAG: 説明文生成（新規分のみ） ─────────────────────────
+            Write-Host "[RAG] 説明文生成開始（新規分のみ）"
+            & $ragPython (Join-Path $ragDir 'run_rag_describe.py')
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "[RAG] run_rag_describe.py がエラーで終了しました (code $LASTEXITCODE)"
+            }
+        } finally {
+            Pop-Location
+        }
     } finally {
         Pop-Location
     }

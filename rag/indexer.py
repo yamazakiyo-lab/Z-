@@ -1,0 +1,389 @@
+"""Azure AI Search インデクサー。
+
+処理フロー:
+    1. インデックスが無ければ作成（初回のみ）
+    2. 91フォルダを走査してメディアファイルのメタデータを収集
+    3. Azure AI Search へバッチ upsert
+    4. 前回マニフェストと比較して削除されたファイルを検知・除去
+    5. マニフェストを更新して保存
+
+差分更新の仕組み:
+    id = SHA256(file_path) を使用。
+    リネームは「旧 id 削除 + 新 id 追加」として扱われる（自動検知）。
+    manifest.json（ローカル保存）に {id: file_path} を記録し、
+    前回との差分で孤立した id を AI Search から delete する。
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import re
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Dict, Iterator, List, Optional, Tuple
+
+from azure.core.credentials import AzureKeyCredential
+from azure.search.documents import SearchClient
+from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes.models import (
+    SearchField,
+    SearchFieldDataType,
+    SearchIndex,
+    SearchableField,
+    SimpleField,
+)
+
+from .config import (
+    MANIFEST_PATH,
+    SEARCH_INDEX_NAME,
+    TARGET_91_ROOT,
+    UPLOAD_BATCH_SIZE,
+    ensure_search_credentials,
+)
+from .describer import load_descriptions
+
+# ── メディア定義 ───────────────────────────────────────────────────────────────
+PHOTO_EXT: frozenset = frozenset({".jpg", ".jpeg", ".png", ".heic", ".heif"})
+VIDEO_EXT: frozenset = frozenset({".mp4", ".mov", ".avi", ".mts", ".m2ts"})
+MEDIA_EXT: frozenset = PHOTO_EXT | VIDEO_EXT
+JUNK_NAMES: frozenset = frozenset({"Thumbs.db", "desktop.ini", ".DS_Store"})
+
+# ── 工番パターン（master.py と同じロジック） ──────────────────────────────────
+_WORKNO_RE = re.compile(r"^([A-Za-z]*\d+[-_]\d{2})")
+_WORKNO_NORMALIZE_RE = re.compile(r"^([A-Za-z]*)(\d+)[-_](\d{2})")
+
+
+def _normalize_workno(code: str) -> Optional[str]:
+    s = str(code).strip().lstrip("#")
+    m = _WORKNO_NORMALIZE_RE.match(s)
+    if not m:
+        return None
+    prefix = m.group(1).upper()
+    digits = m.group(2)
+    right = m.group(3)
+    if prefix:
+        return f"{prefix}{digits}-{right}"
+    left = digits.lstrip("0") or "0"
+    return f"{left}-{right}"
+
+
+def _get_workno_from_name(name: str) -> Optional[str]:
+    n = str(name).strip().lstrip("#")
+    m = _WORKNO_RE.match(n)
+    if not m:
+        return None
+    return _normalize_workno(m.group(1))
+
+
+# ── A フォルダ名から工番・工事名を取り出す ─────────────────────────────────────
+def _parse_a_folder(folder_name: str) -> Tuple[Optional[str], Optional[str]]:
+    """(workno, workno_name) を返す。取得できなければ (None, None)。"""
+    workno = _get_workno_from_name(folder_name)
+    if not workno:
+        return None, None
+    # 工番部分を除いた残りが工事名
+    m = re.match(r"^[A-Za-z]*\d+[-_]\d{2}[_\s]*(.*)", folder_name.strip().lstrip("#"))
+    name = m.group(1).strip().lstrip("_- ") if m else ""
+    return workno, name or None
+
+
+# ── B フォルダ（フェーズ）検出 ─────────────────────────────────────────────────
+_PHASE_PATTERNS = [("B1", "_B1"), ("B2", "_B2"), ("B3", "_B3"), ("B4", "_B4")]
+
+
+def _detect_phase(path: Path) -> Optional[str]:
+    """パス内のフォルダ名から B1〜B4 を検出する。"""
+    for part in path.parts:
+        for phase, marker in _PHASE_PATTERNS:
+            if marker in part:
+                return phase
+    return None
+
+
+# ── ファイル名から撮影日 (YYMMDD) を抽出 ──────────────────────────────────────
+_DATE_RE = re.compile(r"_(\d{6})(?:\.\w+)?$")
+
+
+def _parse_capture_date(filename: str) -> Tuple[Optional[datetime], Optional[str]]:
+    """
+    ファイル名末尾の _YYMMDD を解析する。
+
+    Returns:
+        (datetime（UTC）, 'YYMMDD' 文字列) のタプル。
+        解析不能なら (None, None)。
+    """
+    m = _DATE_RE.search(filename)
+    if not m:
+        return None, None
+    raw = m.group(1)
+    yy = int(raw[:2])
+    mm = int(raw[2:4])
+    dd = int(raw[4:6])
+    year = 2000 + yy if yy < 70 else 1900 + yy
+    try:
+        dt = datetime(year, mm, dd, 0, 0, 0, tzinfo=timezone.utc)
+        return dt, raw
+    except ValueError:
+        return None, None
+
+
+# ── ドキュメント ID ────────────────────────────────────────────────────────────
+def _make_id(file_path: str) -> str:
+    """ファイルパスの SHA256 ハッシュ（16進）を ID として返す。"""
+    return hashlib.sha256(file_path.encode("utf-8")).hexdigest()
+
+
+# ── ファイルスキャン ───────────────────────────────────────────────────────────
+def scan_media_files(root: Path) -> Iterator[Dict]:
+    """
+    root 配下のメディアファイルを走査し、ドキュメント辞書を yield する。
+
+    想定構造:
+        root/
+          {workno}_{工事名}/          <- A フォルダ
+            {workno}_B2着手中写真・動画/
+              {workno}_001_250611.jpg
+    """
+    if not root.is_dir():
+        print(f"[WARN] スキャン対象が存在しません: {root}", file=sys.stderr)
+        return
+
+    indexed_at = datetime.now(tz=timezone.utc).isoformat()
+
+    for a_folder in sorted(root.iterdir()):
+        if not a_folder.is_dir():
+            continue
+        workno, workno_name = _parse_a_folder(a_folder.name)
+        if not workno:
+            continue  # 工番フォルダ以外はスキップ
+
+        for cur, _dirs, files in os.walk(a_folder):
+            cur_path = Path(cur)
+            for fn in files:
+                if fn in JUNK_NAMES or fn.startswith("~$"):
+                    continue
+                file_path = cur_path / fn
+                ext = file_path.suffix.lower()
+                if ext not in MEDIA_EXT:
+                    continue
+
+                fp_str = str(file_path)
+                capture_dt, capture_raw = _parse_capture_date(fn)
+
+                yield {
+                    "id": _make_id(fp_str),
+                    "file_path": fp_str,
+                    "file_name": fn,
+                    "workno": workno,
+                    "workno_name": workno_name or "",
+                    "phase": _detect_phase(file_path) or "",
+                    "media_type": "photo" if ext in PHOTO_EXT else "video",
+                    "capture_date": capture_dt.isoformat() if capture_dt else None,
+                    "capture_date_raw": capture_raw or "",
+                    "extension": ext,
+                    "folder_path": str(cur_path),
+                    "indexed_at": indexed_at,
+                }
+
+
+# ── マニフェスト（削除検知用） ─────────────────────────────────────────────────
+def load_manifest() -> Dict[str, str]:
+    """manifest.json から {id: file_path} を読み込む。"""
+    if not MANIFEST_PATH.exists():
+        return {}
+    try:
+        with open(MANIFEST_PATH, encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[WARN] マニフェスト読み込み失敗: {e}", file=sys.stderr)
+        return {}
+
+
+def save_manifest(manifest: Dict[str, str]) -> None:
+    """マニフェストを manifest.json に保存する。"""
+    MANIFEST_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, ensure_ascii=False, indent=2)
+
+
+# ── インデックス定義 ───────────────────────────────────────────────────────────
+def _build_index_definition() -> SearchIndex:
+    fields = [
+        SimpleField(
+            name="id",
+            type=SearchFieldDataType.String,
+            key=True,
+        ),
+        SearchableField(
+            name="file_path",
+            type=SearchFieldDataType.String,
+        ),
+        SearchableField(
+            name="file_name",
+            type=SearchFieldDataType.String,
+        ),
+        SimpleField(
+            name="workno",
+            type=SearchFieldDataType.String,
+            filterable=True,
+            facetable=True,
+        ),
+        SearchableField(
+            name="workno_name",
+            type=SearchFieldDataType.String,
+        ),
+        SimpleField(
+            name="phase",
+            type=SearchFieldDataType.String,
+            filterable=True,
+            facetable=True,
+        ),
+        SimpleField(
+            name="media_type",
+            type=SearchFieldDataType.String,
+            filterable=True,
+            facetable=True,
+        ),
+        SimpleField(
+            name="capture_date",
+            type=SearchFieldDataType.DateTimeOffset,
+            filterable=True,
+            sortable=True,
+        ),
+        SimpleField(
+            name="capture_date_raw",
+            type=SearchFieldDataType.String,
+            filterable=True,
+        ),
+        SimpleField(
+            name="extension",
+            type=SearchFieldDataType.String,
+            filterable=True,
+            facetable=True,
+        ),
+        SearchableField(
+            name="folder_path",
+            type=SearchFieldDataType.String,
+        ),
+        SimpleField(
+            name="indexed_at",
+            type=SearchFieldDataType.DateTimeOffset,
+            filterable=True,
+            sortable=True,
+        ),
+        SearchableField(
+            name="content_text",
+            type=SearchFieldDataType.String,
+        ),
+    ]
+    return SearchIndex(name=SEARCH_INDEX_NAME, fields=fields)
+
+
+# ── メイン処理クラス ───────────────────────────────────────────────────────────
+class PhotoIndexer:
+    def __init__(self):
+        endpoint, api_key = ensure_search_credentials()
+        cred = AzureKeyCredential(api_key)
+        self.index_client = SearchIndexClient(endpoint, cred)
+        self.search_client = SearchClient(endpoint, SEARCH_INDEX_NAME, cred)
+
+    # ── インデックス初期化 ─────────────────────────────────────────────────────
+    def ensure_index(self) -> None:
+        """インデックスが無ければ作成する（既存なら何もしない）。"""
+        existing = [idx.name for idx in self.index_client.list_indexes()]
+        if SEARCH_INDEX_NAME in existing:
+            print(f"[INDEX] 既存インデックスを使用: {SEARCH_INDEX_NAME}")
+            return
+        print(f"[INDEX] インデックスを新規作成: {SEARCH_INDEX_NAME}")
+        self.index_client.create_index(_build_index_definition())
+        print("[INDEX] 作成完了")
+
+    # ── バッチ upsert ──────────────────────────────────────────────────────────
+    def _upload_batch(self, docs: List[Dict]) -> int:
+        """docs をまとめて upsert し、成功件数を返す。"""
+        if not docs:
+            return 0
+        results = self.search_client.merge_or_upload_documents(docs)
+        ok = sum(1 for r in results if r.succeeded)
+        ng = len(docs) - ok
+        if ng:
+            print(f"[WARN] upsert 失敗: {ng} 件", file=sys.stderr)
+        return ok
+
+    # ── バッチ delete ──────────────────────────────────────────────────────────
+    def _delete_by_ids(self, ids: List[str]) -> int:
+        """id リストのドキュメントを AI Search から削除し、削除件数を返す。"""
+        if not ids:
+            return 0
+        docs = [{"id": doc_id} for doc_id in ids]
+        results = self.search_client.delete_documents(docs)
+        ok = sum(1 for r in results if r.succeeded)
+        return ok
+
+    # ── フルラン ───────────────────────────────────────────────────────────────
+    def run(self, root: Optional[Path] = None) -> None:
+        """
+        root 配下を全走査してインデックスを更新する。
+
+        Args:
+            root: スキャン対象。None の場合は config の TARGET_91_ROOT を使用。
+        """
+        if root is None:
+            root = TARGET_91_ROOT
+
+        print(f"[START] スキャン開始: {root}")
+        self.ensure_index()
+
+        # ── 前回マニフェスト読み込み ────────────────────────────────────────
+        prev_manifest = load_manifest()
+        print(f"[MANIFEST] 前回登録件数: {len(prev_manifest)}")
+
+        # ── 説明文キャッシュ読み込み ────────────────────────────────────────
+        descriptions = load_descriptions()
+        described_count = sum(1 for v in descriptions.values() if v)
+        print(f"[DESCRIPTIONS] 説明文あり: {described_count} 件")
+
+        # ── ファイルスキャン & バッチ upsert ───────────────────────────────
+        new_manifest: Dict[str, str] = {}
+        batch: List[Dict] = []
+        total_scanned = 0
+        total_uploaded = 0
+
+        for doc in scan_media_files(root):
+            # 説明文があれば content_text フィールドに追加
+            doc["content_text"] = descriptions.get(doc["id"], "")
+            new_manifest[doc["id"]] = doc["file_path"]
+            batch.append(doc)
+            total_scanned += 1
+
+            if len(batch) >= UPLOAD_BATCH_SIZE:
+                total_uploaded += self._upload_batch(batch)
+                print(f"[UPLOAD] {total_uploaded}/{total_scanned} 件 upsert 完了")
+                batch = []
+
+        # 残りをフラッシュ
+        if batch:
+            total_uploaded += self._upload_batch(batch)
+
+        print(f"[UPLOAD] 完了: スキャン={total_scanned}, upsert={total_uploaded}")
+
+        # ── 削除検知（前回にあって今回ない = ファイルが消えた or リネームされた） ──
+        stale_ids = [
+            doc_id
+            for doc_id in prev_manifest
+            if doc_id not in new_manifest
+        ]
+        if stale_ids:
+            deleted = self._delete_by_ids(stale_ids)
+            print(f"[DELETE] 孤立ドキュメント削除: {deleted} 件")
+            for doc_id in stale_ids:
+                print(f"         削除: {prev_manifest[doc_id]}")
+        else:
+            print("[DELETE] 削除対象なし")
+
+        # ── マニフェスト更新 ────────────────────────────────────────────────
+        save_manifest(new_manifest)
+        print(f"[MANIFEST] 更新完了: {len(new_manifest)} 件")
+        print("[DONE] インデックス更新完了")
