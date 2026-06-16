@@ -56,7 +56,10 @@ try {
 
         # ── RAG: インデックス更新 ──────────────────────────────────────
         $ragDir = Join-Path $env:USERPROFILE 'tseg_vscode\Zフォルダ整理'
-        $ragPython = Join-Path $ragDir '91GDX・252WORKNO-program\venv\Scripts\python.exe'
+        $ragPython = Join-Path $ragDir 'rag_venv\Scripts\python.exe'
+        if (-not (Test-Path -LiteralPath $ragPython)) {
+            $ragPython = Join-Path $ragDir '91GDX・252WORKNO-program\venv\Scripts\python.exe'
+        }
         if (-not (Test-Path -LiteralPath $ragPython)) { $ragPython = $venvPython }
 
         Write-Host "[RAG] インデックス更新開始"
