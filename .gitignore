@@ -53,3 +53,10 @@ desktop.ini
 # Archive
 archive/
 .archive/
+
+# RAG / Azure
+.env
+rag/manifest.json
+rag/descriptions.json
+
+sync_log.txt

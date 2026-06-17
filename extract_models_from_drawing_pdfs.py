@@ -1,8 +1,48 @@
-
-
-#
-#
+# --- 図面枠（タイトルブロック）自動検出＆回転補正 ---
 from __future__ import annotations
+
+def detect_title_block_and_correct_angle(image: Image.Image, debug_out: str = None) -> Image.Image:
+    """
+    OpenCVで最大の長方形輪郭（図面枠）を検出し、
+    その角度で画像を回転補正して返す。
+    debug_out: 補正後画像の保存パス（任意）
+    """
+    import cv2
+    import numpy as np
+    arr = np.array(image.convert("L"))
+    # 2値化
+    _, th = cv2.threshold(arr, 180, 255, cv2.THRESH_BINARY_INV)
+    # 輪郭抽出
+    contours, _ = cv2.findContours(th, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    max_area = 0
+    best_rect = None
+    for cnt in contours:
+        rect = cv2.minAreaRect(cnt)
+        (cx, cy), (w, h), angle = rect
+        area = w * h
+        if area > max_area and w > 100 and h > 100:
+            max_area = area
+            best_rect = rect
+    if best_rect is None:
+        # 検出失敗時はそのまま返す
+        return image
+    (cx, cy), (w, h), angle = best_rect
+    # OpenCVのminAreaRectのangleは-90〜0度
+    if w < h:
+        angle = angle + 90
+    # 回転補正
+    rot_mat = cv2.getRotationMatrix2D((cx, cy), angle, 1.0)
+    arr_color = np.array(image.convert("RGB"))
+    rotated = cv2.warpAffine(arr_color, rot_mat, (arr_color.shape[1], arr_color.shape[0]), flags=cv2.INTER_CUBIC, borderValue=(255,255,255))
+    # 補正後画像をPILに戻す
+    pil_rot = Image.fromarray(rotated)
+    if debug_out:
+        pil_rot.save(debug_out)
+    return pil_rot
+
+
+#
+#
 import os
 import re
 import argparse
@@ -66,7 +106,13 @@ TESSERACT_PATH = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
 if TESSERACT_PATH.exists():
     pytesseract.pytesseract.tesseract_cmd = str(TESSERACT_PATH)
 
-DEFAULT_ROOT = Path(r"Z:\takachiho\2to9_業務別フォルダ\30_メーカー資料\あ行(あいうえお)\アイダエンジニアリング\新品仕込機")
+DEFAULT_ROOT = Path(r"Z:\takachiho\2to9_業務別フォルダ\30_メーカー資料\あ行(あいうえお)\アイダエンジニアリング\調達")
+print(f"[DEBUG] DEFAULT_ROOT={DEFAULT_ROOT}")
+print(f"[DEBUG] DEFAULT_ROOT exists={DEFAULT_ROOT.exists()}")
+print(f"[DEBUG] DEFAULT_ROOT is_dir={DEFAULT_ROOT.is_dir()}")
+print(f"[DEBUG] DEFAULT_ROOT={DEFAULT_ROOT}")
+print(f"[DEBUG] DEFAULT_ROOT exists={DEFAULT_ROOT.exists()}")
+print(f"[DEBUG] DEFAULT_ROOT is_dir={DEFAULT_ROOT.is_dir()}")
 DWG_RE = re.compile(r"^(\d{3}-\d{4,5}(?:-[a-z])?)", re.IGNORECASE)
 
 
@@ -119,6 +165,9 @@ def prepare_for_ocr(image: Image.Image) -> Image.Image:
 
 
 MODEL_FUZZY_RE = re.compile(r"^M[O0][D][E3][L1I]$", re.IGNORECASE)
+_MODEL_SHORT_ALLOWLIST = {"TMX"}
+_MODEL_SHORT_NOISE_RE = re.compile(r"^[A-Z]{2,5}$")
+_MODEL_SINGLE_PREFIX_CODE_RE = re.compile(r"^[A-Z]-\d{2,6}(?:/\d{2,6})?$")
 
 
 def normalize_drawing_number(value: str) -> str:
@@ -132,12 +181,18 @@ def title_block_strips(image: Image.Image) -> list[tuple[tuple[int, int, int, in
     most magnified title-block slice, then wider fallbacks, then the full image.
     """
     width, height = image.size
-    return [
+    # 右下横長、右端縦長、下端横長、全体
+    strips = [
         ((int(width * 0.80), int(height * 0.75), width, height), image.crop((int(width * 0.80), int(height * 0.75), width, height))),
         ((int(width * 0.85), 0, width, height), image.crop((int(width * 0.85), 0, width, height))),
         ((0, int(height * 0.80), width, height), image.crop((0, int(height * 0.80), width, height))),
         ((0, 0, width, height), image),
     ]
+    # 右上コーナーの縦長領域（MODELラベルが縦書きで入るパターン対応）
+    strips.append(((int(width * 0.80), 0, width, int(height * 0.25)), image.crop((int(width * 0.80), 0, width, int(height * 0.25)))))
+    # 右上コーナーのさらに狭い縦長領域（よりピンポイント）
+    strips.append(((int(width * 0.90), 0, width, int(height * 0.20)), image.crop((int(width * 0.90), 0, width, int(height * 0.20)))))
+    return strips
 
 
 def _data_to_lines(data: dict) -> list[dict]:
@@ -273,8 +328,18 @@ def extract_model_from_page_with_score(
     Full-page OCR is intentionally NOT used as a candidate source to avoid
     picking up unrelated model-like strings from notes and parts lists.
     """
+
     full_pix = page.get_pixmap(matrix=fitz.Matrix(3, 3), alpha=False)
     full_image = Image.frombytes("RGB", [full_pix.width, full_pix.height], full_pix.samples)
+    # --- タイトルブロック検出＆回転補正 ---
+    try:
+        corrected_image = detect_title_block_and_correct_angle(full_image)
+        print("[DEBUG] detect_title_block_and_correct_angle 適用済み")
+    except Exception as exc:
+        print(f"[WARN] detect_title_block_and_correct_angle 失敗: {exc}")
+        corrected_image = full_image
+
+    # 以降は corrected_image を使う
 
     def normalize_candidate(candidate: str) -> str:
         candidate = candidate.strip().strip("-_/ ")
@@ -295,6 +360,12 @@ def extract_model_from_page_with_score(
             return False
         if any(token in upper_candidate for token in ("PART", "DWG", "DATE", "SCALE", "MAT", "QTY", "REVISION", "SIGN", "NO", "NAME", "MODEL")):
             return False
+        if upper_candidate in _MODEL_SHORT_ALLOWLIST:
+            return True
+        if _MODEL_SHORT_NOISE_RE.fullmatch(upper_candidate):
+            return False
+        if _MODEL_SINGLE_PREFIX_CODE_RE.fullmatch(upper_candidate):
+            return False
         if upper_candidate.count("(") != upper_candidate.count(")"):
             return False
         if " " in candidate:
@@ -309,8 +380,6 @@ def extract_model_from_page_with_score(
             return False
         if re.fullmatch(r"[A-Z0-9.\-_/]+\([A-Z0-9]+\)", upper_candidate):
             return False
-        if re.fullmatch(r"[A-Z]{2,5}", upper_candidate):
-            return True
         if re.fullmatch(r"[A-Z]{1,5}\([^)]+\)", candidate):
             return True
         if re.fullmatch(r"[A-Z]{1,4}\d{2,5}", upper_candidate):
@@ -404,13 +473,25 @@ def extract_model_from_page_with_score(
     tier1_score = -10_000
 
     for angle in (0, 90, 180, 270):
-        rotated_image = full_image.rotate(angle, expand=True)
-
+        print(f"[DEBUG]  angle={angle} 回転開始")
+        rotated_image = corrected_image.rotate(angle, expand=True)
+        print(f"[DEBUG]  angle={angle} title_block_strips 開始")
         for _box, strip in title_block_strips(rotated_image):
+            print(f"[DEBUG]   strip取得OK")
             # --- Tier 0: MODEL anchor ---
+            print(f"[DEBUG]    find_model_boxes 開始")
             for box in find_model_boxes(strip):
+                print(f"[DEBUG]     model_box取得OK")
                 for crop in crop_model_region(strip, box):
-                    candidate, score = extract_from_text(ocr_text(crop, psm=6), require_model_anchor=True)
+                    print(f"[DEBUG]      crop_model_region OK, OCR前")
+                    try:
+                        ocr_result = ocr_text(crop, psm=6)
+                        print(f"[DEBUG]      OCR OK, extract_from_text前")
+                        candidate, score = extract_from_text(ocr_result, require_model_anchor=True)
+                        print(f"[DEBUG]      extract_from_text OK: candidate={candidate}, score={score}")
+                    except Exception as ocr_exc:
+                        print(f"[ERROR]      OCR/抽出失敗: {ocr_exc}")
+                        candidate, score = None, -99999
                     if candidate:
                         score += 15
                         if score > tier0_score:
@@ -418,14 +499,24 @@ def extract_model_from_page_with_score(
 
             # --- Tier 1: Drawing-number anchor ---
             if drawing_number:
+                print(f"[DEBUG]    find_drawing_number_boxes 開始")
                 for box in find_drawing_number_boxes(strip, drawing_number):
+                    print(f"[DEBUG]     drawing_number_box取得OK")
                     for crop in crop_model_region(strip, box):
-                        candidate, score = extract_from_text(ocr_text(crop, psm=6), require_model_anchor=False)
+                        print(f"[DEBUG]      crop_model_region OK, OCR前 (dwg)")
+                        try:
+                            ocr_result = ocr_text(crop, psm=6)
+                            print(f"[DEBUG]      OCR OK, extract_from_text前 (dwg)")
+                            candidate, score = extract_from_text(ocr_result, require_model_anchor=False)
+                            print(f"[DEBUG]      extract_from_text OK (dwg): candidate={candidate}, score={score}")
+                        except Exception as ocr_exc:
+                            print(f"[ERROR]      OCR/抽出失敗 (dwg): {ocr_exc}")
+                            candidate, score = None, -99999
                         if candidate:
                             score += 25
                             if score > tier1_score:
                                 tier1_best, tier1_score = candidate, score
-
+        print(f"[DEBUG]  angle={angle} 終了")
         # Full-page OCR is intentionally omitted to reduce false positives.
 
     if tier0_best is not None:
@@ -463,14 +554,17 @@ def extract_model_from_document(doc, drawing_number: str | None = None) -> str |
 
 
 def iter_pdf_files(root: Path):
+    print(f"[DEBUG] os.walk root={root}")
     for dirpath, _dirnames, filenames in os.walk(root):
+        print(f"[DEBUG] dirpath={dirpath}, files={filenames}")
         for filename in filenames:
             if not filename.lower().endswith(".pdf"):
                 continue
             path = Path(dirpath) / filename
+            print(f"[DEBUG] found PDF: {path}")
             dwg = find_drawing_number(path)
-            if dwg:
-                yield path, dwg
+            print(f"[DEBUG] find_drawing_number({path.name}) -> {dwg}")
+            yield path, dwg
 
 
 def extract_models(root: Path):
@@ -488,37 +582,78 @@ def extract_models(root: Path):
 
 
 def extract_models_to_csv(root: Path, out_csv: Path, limit: int = 0):
-    results = []
-    count = 0
-    for pdf_path, dwg in iter_pdf_files(root):
-        if limit and count >= limit:
-            break
-        count += 1
+    """Stream processing: write CSV incrementally and print debug info.
+
+    This avoids losing all results if processing aborts mid-run.
+    """
+    out_dir = os.path.abspath(str(out_csv))
+    out_parent = os.path.dirname(out_dir)
+    if out_parent and not os.path.exists(out_parent):
         try:
-            with fitz.open(pdf_path) as doc:
-                page_results = []
-                for page_idx, page in enumerate(doc, start=1):
-                    candidate, score, tier = extract_model_from_page_with_score(page, drawing_number=dwg)
-                    page_results.append((page_idx, candidate, score, tier))
-                tier0 = [(p,c,s,t) for (p,c,s,t) in page_results if c and t == TIER_MODEL_ANCHOR]
-                tier1 = [(p,c,s,t) for (p,c,s,t) in page_results if c and t == TIER_DWG_ANCHOR]
-                if tier0:
-                    best = max(tier0, key=lambda x: x[2])
-                elif tier1:
-                    best = max(tier1, key=lambda x: x[2])
-                else:
-                    best = (None, None, -10000, TIER_NONE)
-                page_idx_sel, model_sel, score_sel, tier_sel = best
-                model_out = model_sel or "共通"
-                results.append((dwg, model_out, tier_sel, score_sel, page_idx_sel, pdf_path))
+            os.makedirs(out_parent, exist_ok=True)
+            print(f"[DEBUG] 出力先ディレクトリを作成しました: {out_parent}")
         except Exception as exc:
-            results.append((dwg, f"[ERROR] {exc}", TIER_NONE, -100000, None, pdf_path))
-    with open(out_csv, "w", newline="", encoding="utf-8") as fh:
+            print(f"[ERROR] 出力先ディレクトリの作成に失敗しました: {out_parent}: {exc}")
+            raise
+
+    results: list[tuple] = []
+    count = 0
+
+    # Open the CSV and write rows as we process each PDF
+    try:
+        fh = open(out_csv, "w", newline="", encoding="utf-8")
+    except Exception as exc:
+        print(f"[ERROR] CSVファイルを開けません: {out_csv}: {exc}")
+        raise
+
+    with fh:
         writer = csv.writer(fh)
         writer.writerow(["drawing", "model", "tier", "score", "page_idx", "pdf_path"])
-        for row in results:
-            writer.writerow([row[0], row[1], row[2], row[3], row[4] or "", str(row[5])])
+        fh.flush()
+
+        print(f"[DEBUG] iter_pdf_files({root}) START")
+        for pdf_path, dwg in iter_pdf_files(root):
+            if limit and count >= limit:
+                break
+            count += 1
+            print(f"[DEBUG] ({count}) processing: {pdf_path} ({dwg})")
+            try:
+                with fitz.open(pdf_path) as doc:
+                    page_results = []
+                    for page_idx, page in enumerate(doc, start=1):
+                        try:
+                            candidate, score, tier = extract_model_from_page_with_score(page, drawing_number=dwg)
+                        except Exception as ocr_exc:
+                            print(f"[ERROR] page OCR failed for {pdf_path} page {page_idx}: {ocr_exc}")
+                            candidate, score, tier = None, -99999, TIER_NONE
+                        page_results.append((page_idx, candidate, score, tier))
+
+                    tier0 = [(p,c,s,t) for (p,c,s,t) in page_results if c and t == TIER_MODEL_ANCHOR]
+                    tier1 = [(p,c,s,t) for (p,c,s,t) in page_results if c and t == TIER_DWG_ANCHOR]
+                    if tier0:
+                        best = max(tier0, key=lambda x: x[2])
+                    elif tier1:
+                        best = max(tier1, key=lambda x: x[2])
+                    else:
+                        best = (None, None, -10000, TIER_NONE)
+
+                    page_idx_sel, model_sel, score_sel, tier_sel = best
+                    model_out = model_sel or "共通"
+
+                    writer.writerow([dwg, model_out, tier_sel, score_sel, page_idx_sel or "", str(pdf_path)])
+                    fh.flush()
+                    results.append((dwg, model_out, tier_sel, score_sel, page_idx_sel, pdf_path))
+            except Exception as exc:
+                print(f"[ERROR] processing failed for {pdf_path}: {exc}")
+                writer.writerow([dwg, f"[ERROR] {exc}", TIER_NONE, -100000, "", str(pdf_path)])
+                fh.flush()
+                results.append((dwg, f"[ERROR] {exc}", TIER_NONE, -100000, None, pdf_path))
+
+    print(f"[DEBUG] CSV write finished: {out_csv} (written_rows={len(results)})")
     return results
+
+
+
 
 
 def parse_args():
@@ -531,9 +666,13 @@ def parse_args():
 
 def main() -> int:
     args = parse_args()
+    print(f"[DEBUG] START: root={args.root}, out_csv={args.out_csv}, limit={args.limit}")
     if args.out_csv:
+        print("[DEBUG] extract_models_to_csv() called")
         extract_models_to_csv(args.root, args.out_csv, limit=args.limit)
+        print("[DEBUG] extract_models_to_csv() finished")
         return 0
+    print("[DEBUG] extract_models() called")
     results = extract_models(args.root)
     results.sort(key=lambda item: item[0])
 
