@@ -686,7 +686,8 @@ class Organizer91:
         # B4配下の空サブフォルダも削除し、B4自体も再度空判定して削除
         self._remove_B4_and_empty_subdirs(b4)
         # 他Bも空なら削除
-        self._cleanup_empty_B_folders([b1, b2, b3])
+        for bx in (b1, b2, b3):
+            self._remove_dir_if_empty(bx)
         self.log.info(f"[91:{idx}/{total}] A処理完了: {a_folder}")
 
     def run(self):
