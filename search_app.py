@@ -9,11 +9,45 @@
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime
+from pathlib import PureWindowsPath
 from typing import List, Optional
 
 import streamlit as st
+
+# ── Azure Blob Storage 設定 ───────────────────────────────────────────────────
+# App Service の環境変数に設定する。未設定時はローカルパスを直接使う（開発用）。
+_BLOB_BASE_URL: str = os.getenv("AZURE_BLOB_BASE_URL", "").rstrip("/")
+# 例: https://tsegphotos.blob.core.windows.net/photos
+_BLOB_SAS_TOKEN: str = os.getenv("AZURE_BLOB_SAS_TOKEN", "")
+# 例: sv=2026-02-06&ss=b&srt=co&sp=r...（先頭の ? は不要）
+_TARGET_91_ROOT_WIN: str = os.getenv(
+    "TARGET_91_ROOT",
+    r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画",
+)
+
+
+def _to_blob_url(file_path: str) -> str | None:
+    """Z:ドライブのWindowsパスをAzure Blob Storage URLに変換する。
+
+    AZURE_BLOB_BASE_URL が未設定の場合は None を返す（ローカルパスにフォールバック）。
+    """
+    if not _BLOB_BASE_URL or not file_path:
+        return None
+    try:
+        win_path = PureWindowsPath(file_path)
+        root_path = PureWindowsPath(_TARGET_91_ROOT_WIN)
+        rel = win_path.relative_to(root_path)
+        blob_path = "/".join(rel.parts)
+        url = f"{_BLOB_BASE_URL}/{blob_path}"
+        if _BLOB_SAS_TOKEN:
+            url += f"?{_BLOB_SAS_TOKEN}"
+        return url
+    except (ValueError, Exception):
+        return None
+
 
 # ページ設定（必ず最初に呼ぶ）
 st.set_page_config(
@@ -194,15 +228,18 @@ def _render_result(doc: dict) -> None:
 
     content_text = doc.get("content_text", "")
 
+    # Blob URL（Azureデプロイ時）またはローカルパス（開発時）
+    image_src = _to_blob_url(file_path) or file_path
+
     with st.container():
         col_thumb, col_info, col_path = st.columns([2, 3, 4])
 
         with col_thumb:
             if media_type == "photo" and file_path:
                 try:
-                    st.image(file_path, width=160)
+                    st.image(image_src, width=160)
                     if st.button("🔍 拡大", key=f"zoom_{doc.get('id','')}"):
-                        st.session_state["preview_path"] = file_path
+                        st.session_state["preview_path"] = image_src
                         st.session_state["preview_name"] = file_name
                 except Exception:
                     st.markdown(f"## {icon}")
