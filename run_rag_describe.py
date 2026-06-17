@@ -124,7 +124,21 @@ def main() -> None:
     for i, (doc_id, fp) in enumerate(targets, 1):
         image_path = Path(fp)
 
-        if not image_path.exists():
+        # ネットワーク切断リトライ
+        file_ok = False
+        for _attempt in range(5):
+            try:
+                file_ok = image_path.exists()
+                break
+            except OSError as e:
+                print(f"\n[NETWORK] Z:ドライブ切断検知 ({e}). 30秒後リトライ...", file=sys.stderr)
+                time.sleep(30)
+        else:
+            print(f"\n[ERROR] ネットワーク復旧せず。進捗を保存して終了します。")
+            save_descriptions(descriptions)
+            sys.exit(1)
+
+        if not file_ok:
             print(f"[SKIP] ファイルが存在しません: {fp}")
             descriptions[doc_id] = ""
             continue

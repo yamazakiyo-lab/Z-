@@ -617,25 +617,18 @@ class Organizer91:
                 classified += 1
                 continue
 
-            # B4配下のサブフォルダ（例：整備中）を特別扱い
+            # B4配下のサブフォルダ: フォルダ名でB1/B2/B3に振り分け、条件なしはB4直下に展開
             if d.parent == b4:
-                # メディアと非メディアを分離
-                media_files = []
-                non_media_files = []
-                for item in d.iterdir():
-                    if item.is_file():
-                        if self.ops.is_media(item):
-                            media_files.append(item)
-                        else:
-                            non_media_files.append(item)
-                # メディアはB2へ、非メディアはB4直下へ
-                for mf in media_files:
-                    self.ops.safe_move(mf, b2)
-                for nmf in non_media_files:
-                    self.ops.safe_move(nmf, b4)
-                # サブフォルダ内のサブディレクトリもB2へ移動
-                for subsub in [x for x in d.iterdir() if x.is_dir()]:
-                    self.ops.safe_move(subsub, b2)
+                target_key = self._classify_folder_name_to_B(d.name)
+                if target_key in ("B1", "B2", "B3"):
+                    target_dir = bmap[target_key]
+                    for item in list(d.iterdir()):
+                        self.ops.safe_move(item, target_dir)
+                    self.log.info(f"B4サブフォルダ->{target_key}: {d.name}")
+                else:
+                    # 条件なし（入庫など）はB4直下に展開
+                    for item in list(d.iterdir()):
+                        self.ops.safe_move(item, b4)
                 self._remove_dir_if_empty(d)
                 classified += 1
                 continue
@@ -679,16 +672,6 @@ class Organizer91:
             except Exception as e:
                 self.log.warn(f"B内非メディア退避失敗: {bx} -> {b4} ({e})")
 
-        # B4内の非メディアファイル以外（メディアやサブフォルダ）はB2へ移動
-        try:
-            for item in list(b4.iterdir()):
-                if item.is_file() and self.ops.is_media(item):
-                    self.ops.safe_move(item, b2)
-                elif item.is_dir():
-                    # サブフォルダはB2へ
-                    self.ops.safe_move(item, b2)
-        except Exception as e:
-            self.log.warn(f"B4内メディア/サブフォルダ移動失敗: {b4} -> {b2} ({e})")
 
         # メディアリネーム・圧縮
         for b in (b1, b2, b3, b4):
