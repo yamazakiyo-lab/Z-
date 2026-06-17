@@ -18,15 +18,28 @@ from .config import (
 VISION_SUPPORTED_EXT: frozenset = frozenset({".jpg", ".jpeg", ".png"})
 MAX_IMAGE_BYTES: int = 4 * 1024 * 1024
 
-DESCRIBE_PROMPT = (
+# プロンプトバージョン。プロンプト変更時に上げる（例: v2→v3）。
+# run_rag_describe.py --re-describe を実行すると旧バージョン分が全件再生成される。
+PROMPT_VERSION: str = "v2"
+
+_DESCRIBE_PROMPT_BASE = (
     "この写真は機械・設備の工事または整備に関するものです。"
-    "次の4点を含む説明を日本語・80文字以内で答えてください。"
-    "(1)対象物（機械の種類・型番・メーカー名があれば記載）"
+    "次の5点を含む説明を日本語・150文字以内で答えてください。"
+    "(1)対象物（機械の種類・型番・メーカー名・銘板の文字があれば正確に記載）"
     "(2)駆動方式（油圧・空圧・電動・機械式など、判別できる場合のみ記載）"
     "(3)作業状態（着手前・施工中・完了・搬入・解体など）"
-    "(4)場所・状況（屋外・屋内・ピット・制御盤など）"
+    "(4)損傷・劣化状況（錆・亀裂・摩耗・変形・油漏れなど、確認できる場合のみ記載）"
+    "(5)場所・状況（屋外・屋内・ピット・制御盤など）"
     "説明文のみ出力し、番号や見出しは付けないこと。"
 )
+
+
+def _build_prompt(job_number: str = "") -> str:
+    if job_number:
+        prefix = f"工番: {job_number}。"
+    else:
+        prefix = ""
+    return prefix + _DESCRIBE_PROMPT_BASE
 
 
 def load_descriptions() -> Dict[str, str]:
@@ -59,7 +72,7 @@ def _image_to_base64(path: Path) -> Optional[str]:
         return None
 
 
-def describe_image(image_path: Path, *, retries: int = 2) -> str:
+def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "") -> str:
     ext = image_path.suffix.lower()
     if ext not in VISION_SUPPORTED_EXT:
         return ""
@@ -100,14 +113,14 @@ def describe_image(image_path: Path, *, retries: int = 2) -> str:
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/{mime};base64,{b64}",
-                                    "detail": "low",
+                                    "detail": "high",
                                 },
                             },
-                            {"type": "text", "text": DESCRIBE_PROMPT},
+                            {"type": "text", "text": _build_prompt(job_number)},
                         ],
                     }
                 ],
-                max_tokens=120,
+                max_tokens=300,
                 temperature=0,
             )
             return response.choices[0].message.content.strip()
