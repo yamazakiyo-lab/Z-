@@ -190,13 +190,9 @@ def main() -> None:
 
         st.markdown(f"**{len(results)} 件** 見つかりました。")
 
-        # フルサイズプレビュー
-        if "preview_path" in st.session_state and st.session_state["preview_path"]:
-            with st.expander(f"📷 {st.session_state.get('preview_name', '')} — フルサイズ", expanded=True):
-                st.image(st.session_state["preview_path"], use_container_width=True)
-                if st.button("✕ 閉じる"):
-                    st.session_state["preview_path"] = None
-                    st.rerun()
+        # フルサイズプレビュー（モーダル）
+        if st.session_state.get("preview_path"):
+            _preview_dialog()
 
         st.divider()
 
@@ -204,6 +200,12 @@ def main() -> None:
             _render_result(doc)
     else:
         st.info("キーワードを入力するか、フィルタを選択して「検索」を押してください。")
+
+
+@st.dialog("📷 フルサイズ表示", width="large")
+def _preview_dialog() -> None:
+    st.caption(st.session_state.get("preview_name", ""))
+    st.image(st.session_state["preview_path"], use_container_width=True)
 
 
 def _render_result(doc: dict) -> None:
@@ -241,7 +243,14 @@ def _render_result(doc: dict) -> None:
                     if st.button("🔍 拡大", key=f"zoom_{doc.get('id','')}"):
                         st.session_state["preview_path"] = image_src
                         st.session_state["preview_name"] = file_name
+                        st.rerun()
                 except Exception:
+                    st.markdown(f"## {icon}")
+            elif media_type == "video" and file_path:
+                video_url = _to_blob_url(file_path)
+                if video_url:
+                    st.video(video_url)
+                else:
                     st.markdown(f"## {icon}")
             else:
                 st.markdown(f"## {icon}")
@@ -254,13 +263,4 @@ def _render_result(doc: dict) -> None:
             if display_date:
                 st.caption(f"撮影日: {display_date}")
             if content_text:
-                st.caption(f"📝 {content_text}")
-
-        with col_path:
-            st.code(file_path, language=None)
-
-        st.divider()
-
-
-if __name__ == "__main__":
-    main()
+            
