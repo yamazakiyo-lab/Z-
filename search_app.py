@@ -263,4 +263,13 @@ def _render_result(doc: dict) -> None:
             if display_date:
                 st.caption(f"撮影日: {display_date}")
             if content_text:
-            
+                st.caption(f"[memo] {content_text}")
+
+        with col_path:
+            st.code(file_path, language=None)
+
+        st.divider()
+
+
+if __name__ == "__main__":
+    main()
