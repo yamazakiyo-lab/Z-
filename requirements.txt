@@ -2,3 +2,10 @@ streamlit>=1.35.0
 azure-search-documents>=11.4.0
 azure-core>=1.30.0
 python-dotenv>=1.0.0
+# LINE WORKS Bot Receiver
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+requests>=2.31.0
+PyJWT>=2.8.0
+cryptography>=42.0.0
+azure-storage-blob>=12.19.0
