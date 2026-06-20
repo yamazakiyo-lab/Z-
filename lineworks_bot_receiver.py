@@ -384,7 +384,7 @@ async def lineworks_callback(request: Request) -> Response:
         elif state == STATE_WAITING_BUHIN:
             state_data["buhin"] = text
             state_data["state"] = STATE_WAITING_COMMENT
-            _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）")
+            _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）\nコメントはAI検索精度を上げるため、作業内容・状態・気になった点など、なるべく詳細に入力してもらえると助かります。")
 
         elif state == STATE_WAITING_COMMENT:
             _save_meta(user_id, text)

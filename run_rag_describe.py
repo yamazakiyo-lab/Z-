@@ -200,13 +200,30 @@ def main() -> None:
             continue
 
         job_number = _extract_job_number(fp)
+        # LDExtraction の meta.json があればコメントを取得
+        lw_comment = ""
+        meta_path = image_path.with_suffix(".json")
+        if meta_path.exists():
+            try:
+                import json as _json
+                meta = _json.loads(meta_path.read_text(encoding="utf-8"))
+                buhin = meta.get("buhin", "")
+                comment = meta.get("comment", "")
+                if comment in ("なし", ""):
+                    comment = ""
+                lw_comment = " ".join(filter(None, [buhin, comment]))
+            except Exception:
+                pass
+
         label = f"[{i}/{len(targets)}] {image_path.name}"
         if job_number:
             label += f" (工番:{job_number})"
+        if lw_comment:
+            label += f" [コメント:{lw_comment[:20]}]"
         print(f"{label} ...", end=" ", flush=True)
         start = time.time()
 
-        content = describe_image(image_path, job_number=job_number)
+        content = describe_image(image_path, job_number=job_number, lw_comment=lw_comment)
         elapsed = time.time() - start
 
         if content:

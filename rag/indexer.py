@@ -135,16 +135,34 @@ def _make_id(file_path: str) -> str:
     return hashlib.sha256(file_path.encode("utf-8")).hexdigest()
 
 
+# ── LDExtraction ファイル名からコメント抽出 ──────────────────────────────────
+# lw_blob_sync.py が生成するファイル名: YYYYMMDD_HHMMSS[_部品][_コメント]
+_LD_FNAME_RE = re.compile(r"^\d{8}_\d{6}(?:_(.+))?$")
+
+
+def _parse_ld_comment(stem: str) -> str:
+    """LDExtraction ファイル名のステムから 部品_コメント 部分を返す。"""
+    m = _LD_FNAME_RE.match(stem)
+    if not m or not m.group(1):
+        return ""
+    return m.group(1).replace("_", " ")
+
+
 # ── ファイルスキャン ───────────────────────────────────────────────────────────
 def scan_media_files(root: Path) -> Iterator[Dict]:
     """
     root 配下のメディアファイルを走査し、ドキュメント辞書を yield する。
 
-    想定構造:
+    想定構造（通常）:
         root/
           {workno}_{工事名}/          <- A フォルダ
             {workno}_B2着手中写真・動画/
               {workno}_001_250611.jpg
+
+    LDExtraction（LINE WORKS Bot 受信ファイル）:
+        root/LDExtraction/
+          {workno}/
+            YYYYMMDD_HHMMSS_{部品}_{コメント}.mp4
     """
     if not root.is_dir():
         print(f"[WARN] スキャン対象が存在しません: {root}", file=sys.stderr)
@@ -155,6 +173,57 @@ def scan_media_files(root: Path) -> Iterator[Dict]:
     for a_folder in sorted(root.iterdir()):
         if not a_folder.is_dir():
             continue
+
+        # ── LDExtraction サブフォルダの処理 ──────────────────────────────
+        if a_folder.name == "LDExtraction":
+            for ld_koban_dir in sorted(a_folder.iterdir()):
+                if not ld_koban_dir.is_dir():
+                    continue
+                workno = _normalize_workno(ld_koban_dir.name)
+                if not workno:
+                    continue
+                for fn in sorted(os.listdir(ld_koban_dir)):
+                    file_path = ld_koban_dir / fn
+                    if not file_path.is_file():
+                        continue
+                    if fn in JUNK_NAMES or fn.startswith("~$"):
+                        continue
+                    ext = file_path.suffix.lower()
+                    if ext not in MEDIA_EXT:
+                        continue
+                    fp_str = str(file_path)
+                    capture_dt, capture_raw = _parse_capture_date(fn)
+                    # meta.json が隣にあれば読み込む（lw_blob_sync が保存）
+                    meta_path = file_path.with_suffix(".json")
+                    if meta_path.exists():
+                        try:
+                            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                            ld_comment = " ".join(filter(None, [
+                                meta.get("buhin", ""),
+                                meta.get("comment", "") if meta.get("comment", "") not in ("なし", "") else "",
+                            ]))
+                        except Exception:
+                            ld_comment = _parse_ld_comment(file_path.stem)
+                    else:
+                        ld_comment = _parse_ld_comment(file_path.stem)
+                    yield {
+                        "id": _make_id(fp_str),
+                        "file_path": fp_str,
+                        "file_name": fn,
+                        "workno": workno,
+                        "workno_name": "",
+                        "phase": "",
+                        "media_type": "photo" if ext in PHOTO_EXT else "video",
+                        "capture_date": capture_dt.isoformat() if capture_dt else None,
+                        "capture_date_raw": capture_raw or "",
+                        "extension": ext,
+                        "folder_path": str(ld_koban_dir),
+                        "indexed_at": indexed_at,
+                        "content_text": ld_comment,  # 部品・コメントを検索可能に
+                    }
+            continue
+
+        # ── 通常の工番フォルダ処理 ───────────────────────────────────────
         workno, workno_name = _parse_a_folder(a_folder.name)
         if not workno:
             continue  # 工番フォルダ以外はスキップ
@@ -352,8 +421,11 @@ class PhotoIndexer:
         total_uploaded = 0
 
         for doc in scan_media_files(root):
-            # 説明文があれば content_text フィールドに追加
-            doc["content_text"] = descriptions.get(doc["id"], "")
+            # 説明文（AI生成）と LDExtraction コメントを結合して content_text に設定
+            ai_desc = descriptions.get(doc["id"], "")
+            ld_comment = doc.get("content_text", "")  # scan_media_files が設定済みの場合
+            parts = [p for p in [ld_comment, ai_desc] if p]
+            doc["content_text"] = " ".join(parts)
             new_manifest[doc["id"]] = doc["file_path"]
             batch.append(doc)
             total_scanned += 1

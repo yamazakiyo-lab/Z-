@@ -34,12 +34,13 @@ _DESCRIBE_PROMPT_BASE = (
 )
 
 
-def _build_prompt(job_number: str = "") -> str:
+def _build_prompt(job_number: str = "", lw_comment: str = "") -> str:
+    parts = []
     if job_number:
-        prefix = f"工番: {job_number}。"
-    else:
-        prefix = ""
-    return prefix + _DESCRIBE_PROMPT_BASE
+        parts.append(f"工番: {job_number}。")
+    if lw_comment:
+        parts.append(f"作業者コメント（参考）: 「{lw_comment}」。")
+    return "".join(parts) + _DESCRIBE_PROMPT_BASE
 
 
 def load_descriptions() -> Dict[str, str]:
@@ -72,7 +73,7 @@ def _image_to_base64(path: Path) -> Optional[str]:
         return None
 
 
-def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "") -> str:
+def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "", lw_comment: str = "") -> str:
     ext = image_path.suffix.lower()
     if ext not in VISION_SUPPORTED_EXT:
         return ""
@@ -116,7 +117,7 @@ def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "") 
                                     "detail": "high",
                                 },
                             },
-                            {"type": "text", "text": _build_prompt(job_number)},
+                            {"type": "text", "text": _build_prompt(job_number, lw_comment)},
                         ],
                     }
                 ],
