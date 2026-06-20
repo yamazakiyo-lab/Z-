@@ -355,4 +355,52 @@ async def lineworks_callback(request: Request) -> Response:
                         "video/x-msvideo": ".avi", "video/x-matroska": ".mkv",
                         "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
                         "application/pdf": ".pdf",
-                    
+                    }
+                    ext = ext_map.get(ct, "")
+                    if ext:
+                        file_name = file_name + ext
+                        logger.info(f"拡張子補完: {ct} → {ext}")
+                file_blob = f"{date_folder}/{uid}_{file_name}"
+                _upload_to_blob(file_blob, file_bytes, ct)
+                logger.info(f"ファイル保存完了: {file_blob} ({len(file_bytes):,} bytes)")
+            except Exception as e:
+                logger.error(f"ファイルダウンロード失敗: {e}")
+
+        if user_id:
+            _start_inquiry(user_id, channel_id, file_blob)
+
+    # ── テキスト受信（会話ステート処理） ─────────────────────────────────
+    elif msg_type == "text" and user_id in _conv:
+        text = content.get("text", "").strip()
+        state_data = _conv[user_id]
+        state = state_data["state"]
+        ch = state_data.get("channel_id", channel_id)
+
+        if state == STATE_WAITING_KOBAN:
+            state_data["koban"] = text
+            state_data["state"] = STATE_WAITING_BUHIN
+            _send_text(ch, user_id, "どの部分ですか？")
+
+        elif state == STATE_WAITING_BUHIN:
+            state_data["buhin"] = text
+            state_data["state"] = STATE_WAITING_COMMENT
+            _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）")
+
+        elif state == STATE_WAITING_COMMENT:
+            _save_meta(user_id, text)
+
+    return Response(content="OK", status_code=200)
+
+
+@app.get("/health")
+async def health() -> dict:
+    return {
+        "status": "ok",
+        "blob_container": BLOB_CONTAINER,
+        "bot_id": BOT_ID,
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("lineworks_bot_receiver:app", host="0.0.0.0", port=8000, reload=False)
