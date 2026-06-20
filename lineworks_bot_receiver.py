@@ -108,10 +108,6 @@ def _upload_to_blob(blob_name: str, data: bytes, content_type: str = "applicatio
         return False
     try:
         container = client.get_container_client(BLOB_CONTAINER)
-        try:
-            container.create_container()
-        except Exception:
-            pass  # すでに存在する場合は無視
         container.upload_blob(
             name=blob_name,
             data=data,
