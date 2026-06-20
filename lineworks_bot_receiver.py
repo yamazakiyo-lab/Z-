@@ -70,7 +70,8 @@ BLOB_CONTAINER: str = os.environ.get("LW_BLOB_CONTAINER", "lw-raw")
 
 LW_TOKEN_URL = "https://auth.worksmobile.com/oauth2/v2.0/token"
 LW_FILE_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/attachments/{file_id}"
-LW_SEND_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/channels/{channel_id}/messages"
+LW_SEND_CHANNEL_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/channels/{channel_id}/messages"
+LW_SEND_USER_URL    = "https://www.worksapis.com/v1.0/bots/{bot_id}/users/{user_id}/messages"
 
 # ファイルダウンロード対象の content type
 DOWNLOADABLE_TYPES = {"image", "video", "file"}
@@ -180,17 +181,20 @@ def _get_access_token() -> str:
     token_data = resp.json()
 
     _access_token = token_data["access_token"]
-    _token_expires_at = now + token_data.get("expires_in", 3600)
+    _token_expires_at = now + int(token_data.get("expires_in", 3600))
     logger.info("LINE WORKS アクセストークンを更新しました。")
     return _access_token
 
 
 # ── LINE WORKS メッセージ送信 ─────────────────────────────────────────────────
-def _send_text(channel_id: str, text: str) -> None:
-    """Bot からチャンネルにテキストメッセージを送信する。"""
+def _send_text(channel_id: str, user_id: str, text: str) -> None:
+    """Bot からテキストメッセージを送信する。channel_id があればチャンネル宛、なければ user_id 宛。"""
     try:
         token = _get_access_token()
-        url = LW_SEND_URL.format(bot_id=BOT_ID, channel_id=channel_id)
+        if channel_id:
+            url = LW_SEND_CHANNEL_URL.format(bot_id=BOT_ID, channel_id=channel_id)
+        else:
+            url = LW_SEND_USER_URL.format(bot_id=BOT_ID, user_id=user_id)
         resp = requests.post(
             url,
             headers={
@@ -201,7 +205,7 @@ def _send_text(channel_id: str, text: str) -> None:
             timeout=10,
         )
         resp.raise_for_status()
-        logger.info(f"メッセージ送信完了: channel={channel_id}")
+        logger.info(f"メッセージ送信完了: channel={channel_id}, user={user_id}")
     except Exception as e:
         logger.error(f"メッセージ送信失敗: {e}")
 
@@ -242,24 +246,26 @@ def _make_blob_prefix() -> tuple[str, str]:
 
 
 # ── 会話状態管理（in-memory、channel_id をキーとする） ───────────────────────
-# 構造: { channel_id: { "state": str, "file_blob": str, "koban": str, "buhin": str } }
+# 構造: { user_id: { "state": str, "channel_id": str, "file_blob": str, "koban": str, "buhin": str } }
 _conv: dict[str, dict] = {}
 
 
-def _start_inquiry(channel_id: str, file_blob: str) -> None:
+def _start_inquiry(user_id: str, channel_id: str, file_blob: str) -> None:
     """ファイル受信後、工番質問を開始する。"""
-    _conv[channel_id] = {
+    _conv[user_id] = {
         "state": STATE_WAITING_KOBAN,
+        "channel_id": channel_id,
         "file_blob": file_blob,
         "koban": "",
         "buhin": "",
     }
-    _send_text(channel_id, "どの工番ですか？")
+    _send_text(channel_id, user_id, "どの工番ですか？")
 
 
-def _save_meta(channel_id: str, comment: str) -> None:
+def _save_meta(user_id: str, comment: str) -> None:
     """メタ情報を Blob に保存し、会話状態をクリアする。"""
-    state = _conv.pop(channel_id, {})
+    state = _conv.pop(user_id, {})
+    channel_id = state.get("channel_id", "")
     file_blob = state.get("file_blob", "")
     meta = {
         "file_blob": file_blob,
@@ -281,7 +287,7 @@ def _save_meta(channel_id: str, comment: str) -> None:
         "application/json",
     )
     logger.info(f"メタ保存完了: {meta}")
-    _send_text(channel_id, "ありがとうございます！保存しました。")
+    _send_text(channel_id, user_id, "ありがとうございます！保存しました。")
 
 
 # ── FastAPI アプリ ────────────────────────────────────────────────────────────
@@ -337,27 +343,28 @@ async def lineworks_callback(request: Request) -> Response:
             except Exception as e:
                 logger.error(f"ファイルダウンロード失敗: {e}")
 
-        if channel_id:
-            _start_inquiry(channel_id, file_blob)
+        if user_id:
+            _start_inquiry(user_id, channel_id, file_blob)
 
     # ── テキスト受信（会話ステート処理） ─────────────────────────────────
-    elif msg_type == "text" and channel_id in _conv:
+    elif msg_type == "text" and user_id in _conv:
         text = content.get("text", "").strip()
-        state_data = _conv[channel_id]
+        state_data = _conv[user_id]
         state = state_data["state"]
+        ch = state_data.get("channel_id", channel_id)
 
         if state == STATE_WAITING_KOBAN:
             state_data["koban"] = text
             state_data["state"] = STATE_WAITING_BUHIN
-            _send_text(channel_id, "どの部分ですか？")
+            _send_text(ch, user_id, "どの部分ですか？")
 
         elif state == STATE_WAITING_BUHIN:
             state_data["buhin"] = text
             state_data["state"] = STATE_WAITING_COMMENT
-            _send_text(channel_id, "コメントはありますか？（なければ「なし」と入力）")
+            _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）")
 
         elif state == STATE_WAITING_COMMENT:
-            _save_meta(channel_id, text)
+            _save_meta(user_id, text)
 
     return Response(content="OK", status_code=200)
 
