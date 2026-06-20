@@ -211,8 +211,8 @@ def _send_text(channel_id: str, user_id: str, text: str) -> None:
 
 
 # ── LINE WORKS ファイルダウンロード ───────────────────────────────────────────
-def _download_lw_file(file_id: str) -> bytes:
-    """LINE WORKS API からファイルをダウンロードして bytes を返す。
+def _download_lw_file(file_id: str) -> tuple[bytes, str]:
+    """LINE WORKS API からファイルをダウンロードして (bytes, content_type) を返す。
     リダイレクト先にも Authorization ヘッダーを引き継ぐ。
     """
     token = _get_access_token()
@@ -231,7 +231,8 @@ def _download_lw_file(file_id: str) -> bytes:
         resp = requests.get(redirect_url, headers=headers, timeout=60, allow_redirects=False)
 
     resp.raise_for_status()
-    return resp.content
+    content_type = resp.headers.get("Content-Type", "application/octet-stream").split(";")[0].strip()
+    return resp.content, content_type
 
 
 # ── 署名検証 ─────────────────────────────────────────────────────────────────
@@ -346,48 +347,12 @@ async def lineworks_callback(request: Request) -> Response:
 
         if file_id:
             try:
-                file_bytes = _download_lw_file(file_id)
-                file_blob = f"{date_folder}/{uid}_{file_name}"
-                _upload_to_blob(file_blob, file_bytes)
-                logger.info(f"ファイル保存完了: {file_blob} ({len(file_bytes):,} bytes)")
-            except Exception as e:
-                logger.error(f"ファイルダウンロード失敗: {e}")
-
-        if user_id:
-            _start_inquiry(user_id, channel_id, file_blob)
-
-    # ── テキスト受信（会話ステート処理） ─────────────────────────────────
-    elif msg_type == "text" and user_id in _conv:
-        text = content.get("text", "").strip()
-        state_data = _conv[user_id]
-        state = state_data["state"]
-        ch = state_data.get("channel_id", channel_id)
-
-        if state == STATE_WAITING_KOBAN:
-            state_data["koban"] = text
-            state_data["state"] = STATE_WAITING_BUHIN
-            _send_text(ch, user_id, "どの部分ですか？")
-
-        elif state == STATE_WAITING_BUHIN:
-            state_data["buhin"] = text
-            state_data["state"] = STATE_WAITING_COMMENT
-            _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）")
-
-        elif state == STATE_WAITING_COMMENT:
-            _save_meta(user_id, text)
-
-    return Response(content="OK", status_code=200)
-
-
-@app.get("/health")
-async def health() -> dict:
-    return {
-        "status": "ok",
-        "blob_container": BLOB_CONTAINER,
-        "bot_id": BOT_ID,
-    }
-
-
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("lineworks_bot_receiver:app", host="0.0.0.0", port=8000, reload=False)
+                file_bytes, ct = _download_lw_file(file_id)
+                # 拡張子がなければ Content-Type から補完
+                if not os.path.splitext(file_name)[1]:
+                    ext_map = {
+                        "video/mp4": ".mp4", "video/quicktime": ".mov",
+                        "video/x-msvideo": ".avi", "video/x-matroska": ".mkv",
+                        "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
+                        "application/pdf": ".pdf",
+                    
