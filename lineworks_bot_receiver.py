@@ -47,7 +47,7 @@ from typing import Optional
 
 import requests
 import jwt as pyjwt
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, ContentSettings
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
 
@@ -116,7 +116,7 @@ def _upload_to_blob(blob_name: str, data: bytes, content_type: str = "applicatio
             name=blob_name,
             data=data,
             overwrite=True,
-            content_settings={"content_type": content_type},
+            content_settings=ContentSettings(content_type=content_type),
         )
         logger.info(f"Blob アップロード完了: {BLOB_CONTAINER}/{blob_name}")
         return True
