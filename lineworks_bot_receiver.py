@@ -212,14 +212,24 @@ def _send_text(channel_id: str, user_id: str, text: str) -> None:
 
 # ── LINE WORKS ファイルダウンロード ───────────────────────────────────────────
 def _download_lw_file(file_id: str) -> bytes:
-    """LINE WORKS API からファイルをダウンロードして bytes を返す。"""
+    """LINE WORKS API からファイルをダウンロードして bytes を返す。
+    リダイレクト先にも Authorization ヘッダーを引き継ぐ。
+    """
     token = _get_access_token()
+    headers = {"Authorization": f"Bearer {token}"}
     url = LW_FILE_URL.format(bot_id=BOT_ID, file_id=file_id)
-    resp = requests.get(
-        url,
-        headers={"Authorization": f"Bearer {token}"},
-        timeout=60,
-    )
+
+    # まずリダイレクトを追わずに取得
+    resp = requests.get(url, headers=headers, timeout=60, allow_redirects=False)
+
+    # リダイレクトの場合はヘッダーを引き継いで再リクエスト
+    while resp.status_code in (301, 302, 303, 307, 308):
+        redirect_url = resp.headers.get("Location")
+        if not redirect_url:
+            break
+        logger.info(f"ファイルダウンロード リダイレクト: {redirect_url}")
+        resp = requests.get(redirect_url, headers=headers, timeout=60, allow_redirects=False)
+
     resp.raise_for_status()
     return resp.content
 
