@@ -9,14 +9,17 @@ LINE WORKS Bot Callback 受信サーバー
        a. Service Account JWT で LINE WORKS アクセストークン取得（1時間キャッシュ）
        b. LINE WORKS API からファイルをダウンロード
        c. Azure Blob Storage (lw-raw コンテナ) に保存
-  5. 200 OK を返す
+       d. ユーザーに工番・部分・コメントを順番に質問
+  5. テキスト受信時は会話状態に応じて次の質問または保存
+  6. 200 OK を返す
 
 Blob 保存パス:
   lw-raw/YYYYMMDD/callback_HHMMSS_<uuid>.json   ← 全 Callback の JSON
   lw-raw/YYYYMMDD/HHMMSS_<uuid>_<元ファイル名>  ← 画像・動画・ファイル
+  lw-raw/YYYYMMDD/HHMMSS_<uuid>_meta.json       ← 工番・部分・コメント
 
 起動:
-  pip install -r requirements_lw.txt
+  pip install -r requirements.txt
   uvicorn lineworks_bot_receiver:app --host 0.0.0.0 --port 8000
 
 環境変数 (.env または OS 環境変数):
@@ -25,6 +28,7 @@ Blob 保存パス:
   LINEWORKS_CLIENT_SECRET         Client Secret
   LINEWORKS_SERVICE_ACCOUNT       Service Account ID（メールアドレス形式）
   LINEWORKS_PRIVATE_KEY_PATH      Private Key .pem ファイルのパス
+  LINEWORKS_PRIVATE_KEY           PEM 内容を直接指定（ファイル不要）
   LINEWORKS_BOT_ID                Bot ID（数字）
   AZURE_BLOB_CONNECTION_STRING    Blob Storage 接続文字列
   LW_BLOB_CONTAINER               Blob コンテナ名（省略時: lw-raw）
@@ -59,16 +63,22 @@ CLIENT_ID: str = os.environ.get("LINEWORKS_CLIENT_ID", "")
 CLIENT_SECRET: str = os.environ.get("LINEWORKS_CLIENT_SECRET", "")
 SERVICE_ACCOUNT: str = os.environ.get("LINEWORKS_SERVICE_ACCOUNT", "")
 PRIVATE_KEY_PATH: str = os.environ.get("LINEWORKS_PRIVATE_KEY_PATH", "")
-PRIVATE_KEY_CONTENT: str = os.environ.get("LINEWORKS_PRIVATE_KEY", "")  # PEM内容を直接指定する場合（ファイル不要）
+PRIVATE_KEY_CONTENT: str = os.environ.get("LINEWORKS_PRIVATE_KEY", "")
 BOT_ID: str = os.environ.get("LINEWORKS_BOT_ID", "")
 BLOB_CONN_STR: str = os.environ.get("AZURE_BLOB_CONNECTION_STRING", "")
 BLOB_CONTAINER: str = os.environ.get("LW_BLOB_CONTAINER", "lw-raw")
 
 LW_TOKEN_URL = "https://auth.worksmobile.com/oauth2/v2.0/token"
 LW_FILE_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/attachments/{file_id}"
+LW_SEND_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/channels/{channel_id}/messages"
 
 # ファイルダウンロード対象の content type
 DOWNLOADABLE_TYPES = {"image", "video", "file"}
+
+# 会話ステート定数
+STATE_WAITING_KOBAN   = "waiting_koban"
+STATE_WAITING_BUHIN   = "waiting_buhin"
+STATE_WAITING_COMMENT = "waiting_comment"
 
 # ── ロガー設定 ────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -128,11 +138,8 @@ _token_expires_at: float = 0.0
 
 def _load_private_key() -> str:
     """Private Key を環境変数または .pem ファイルから読み込む。"""
-    # 1) 環境変数 LINEWORKS_PRIVATE_KEY に直接 PEM 内容が設定されている場合
     if PRIVATE_KEY_CONTENT:
-        # 環境変数では改行が \n リテラルになることがあるため展開する
         return PRIVATE_KEY_CONTENT.replace("\\n", "\n")
-    # 2) ファイルパスから読み込む
     if not PRIVATE_KEY_PATH:
         raise EnvironmentError("LINEWORKS_PRIVATE_KEY または LINEWORKS_PRIVATE_KEY_PATH が未設定です。")
     path = Path(PRIVATE_KEY_PATH)
@@ -142,10 +149,7 @@ def _load_private_key() -> str:
 
 
 def _get_access_token() -> str:
-    """
-    Service Account JWT フローでアクセストークンを取得する。
-    有効期限内のトークンはキャッシュを返す。
-    """
+    """Service Account JWT フローでアクセストークンを取得する。"""
     global _access_token, _token_expires_at
 
     now = time.time()
@@ -181,6 +185,27 @@ def _get_access_token() -> str:
     return _access_token
 
 
+# ── LINE WORKS メッセージ送信 ─────────────────────────────────────────────────
+def _send_text(channel_id: str, text: str) -> None:
+    """Bot からチャンネルにテキストメッセージを送信する。"""
+    try:
+        token = _get_access_token()
+        url = LW_SEND_URL.format(bot_id=BOT_ID, channel_id=channel_id)
+        resp = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            json={"content": {"type": "text", "text": text}},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        logger.info(f"メッセージ送信完了: channel={channel_id}")
+    except Exception as e:
+        logger.error(f"メッセージ送信失敗: {e}")
+
+
 # ── LINE WORKS ファイルダウンロード ───────────────────────────────────────────
 def _download_lw_file(file_id: str) -> bytes:
     """LINE WORKS API からファイルをダウンロードして bytes を返す。"""
@@ -208,7 +233,7 @@ def _verify_signature(body: bytes, signature_header: str) -> bool:
 
 # ── Blob パス生成 ─────────────────────────────────────────────────────────────
 def _make_blob_prefix() -> tuple[str, str]:
-    """(date_folder, short_uuid) を返す。"""
+    """(date_folder, time_uuid) を返す。"""
     now = datetime.now(timezone.utc).astimezone()
     date_folder = now.strftime("%Y%m%d")
     time_str = now.strftime("%H%M%S")
@@ -216,8 +241,51 @@ def _make_blob_prefix() -> tuple[str, str]:
     return date_folder, f"{time_str}_{short_id}"
 
 
+# ── 会話状態管理（in-memory、channel_id をキーとする） ───────────────────────
+# 構造: { channel_id: { "state": str, "file_blob": str, "koban": str, "buhin": str } }
+_conv: dict[str, dict] = {}
+
+
+def _start_inquiry(channel_id: str, file_blob: str) -> None:
+    """ファイル受信後、工番質問を開始する。"""
+    _conv[channel_id] = {
+        "state": STATE_WAITING_KOBAN,
+        "file_blob": file_blob,
+        "koban": "",
+        "buhin": "",
+    }
+    _send_text(channel_id, "どの工番ですか？")
+
+
+def _save_meta(channel_id: str, comment: str) -> None:
+    """メタ情報を Blob に保存し、会話状態をクリアする。"""
+    state = _conv.pop(channel_id, {})
+    file_blob = state.get("file_blob", "")
+    meta = {
+        "file_blob": file_blob,
+        "koban": state.get("koban", ""),
+        "buhin": state.get("buhin", ""),
+        "comment": comment,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    # meta ファイルのパスはファイルと同じプレフィックス（_meta.json を付ける）
+    if file_blob:
+        meta_blob = file_blob.rsplit(".", 1)[0] + "_meta.json"
+    else:
+        date_folder, uid = _make_blob_prefix()
+        meta_blob = f"{date_folder}/{uid}_meta.json"
+
+    _upload_to_blob(
+        meta_blob,
+        json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8"),
+        "application/json",
+    )
+    logger.info(f"メタ保存完了: {meta}")
+    _send_text(channel_id, "ありがとうございます！保存しました。")
+
+
 # ── FastAPI アプリ ────────────────────────────────────────────────────────────
-app = FastAPI(title="LINE WORKS Bot Receiver", version="0.2.0")
+app = FastAPI(title="LINE WORKS Bot Receiver", version="0.3.0")
 
 
 @app.post("/lineworks/callback")
@@ -237,33 +305,59 @@ async def lineworks_callback(request: Request) -> Response:
         logger.error(f"JSON パース失敗: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
-    date_folder, uid = _make_blob_prefix()
-
-    # ── Callback JSON を Blob に保存 ──────────────────────────────────────
-    callback_blob = f"{date_folder}/callback_{uid}.json"
-    _upload_to_blob(callback_blob, json.dumps(payload, ensure_ascii=False).encode("utf-8"), "application/json")
-
-    # ── ファイルダウンロード（画像・動画・ファイル） ──────────────────────
+    source = payload.get("source", {})
+    channel_id = source.get("channelId", "")
+    user_id = source.get("userId", "")
     content = payload.get("content", {})
     msg_type = content.get("type", "unknown")
-    file_id = content.get("fileId", "")
-    file_name = content.get("fileName", f"file_{uid}")
 
-    logger.info(
-        f"Callback受信: type={msg_type}, "
-        f"channel={payload.get('source', {}).get('channelId', '')}, "
-        f"user={payload.get('source', {}).get('userId', '')}"
+    logger.info(f"Callback受信: type={msg_type}, channel={channel_id}, user={user_id}")
+
+    # ── Callback JSON を Blob に保存 ──────────────────────────────────────
+    date_folder, uid = _make_blob_prefix()
+    callback_blob = f"{date_folder}/callback_{uid}.json"
+    _upload_to_blob(
+        callback_blob,
+        json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        "application/json",
     )
 
-    if msg_type in DOWNLOADABLE_TYPES and file_id:
-        try:
-            file_bytes = _download_lw_file(file_id)
-            file_blob = f"{date_folder}/{uid}_{file_name}"
-            _upload_to_blob(file_blob, file_bytes)
-            logger.info(f"ファイル保存完了: {file_blob} ({len(file_bytes):,} bytes)")
-        except Exception as e:
-            # ファイルダウンロード失敗でも 200 を返す（LINE WORKSへのリトライ防止）
-            logger.error(f"ファイルダウンロード失敗: {e}")
+    # ── 画像・動画・ファイル受信 ──────────────────────────────────────────
+    if msg_type in DOWNLOADABLE_TYPES:
+        file_id = content.get("fileId", "")
+        file_name = content.get("fileName", f"file_{uid}")
+        file_blob = ""
+
+        if file_id:
+            try:
+                file_bytes = _download_lw_file(file_id)
+                file_blob = f"{date_folder}/{uid}_{file_name}"
+                _upload_to_blob(file_blob, file_bytes)
+                logger.info(f"ファイル保存完了: {file_blob} ({len(file_bytes):,} bytes)")
+            except Exception as e:
+                logger.error(f"ファイルダウンロード失敗: {e}")
+
+        if channel_id:
+            _start_inquiry(channel_id, file_blob)
+
+    # ── テキスト受信（会話ステート処理） ─────────────────────────────────
+    elif msg_type == "text" and channel_id in _conv:
+        text = content.get("text", "").strip()
+        state_data = _conv[channel_id]
+        state = state_data["state"]
+
+        if state == STATE_WAITING_KOBAN:
+            state_data["koban"] = text
+            state_data["state"] = STATE_WAITING_BUHIN
+            _send_text(channel_id, "どの部分ですか？")
+
+        elif state == STATE_WAITING_BUHIN:
+            state_data["buhin"] = text
+            state_data["state"] = STATE_WAITING_COMMENT
+            _send_text(channel_id, "コメントはありますか？（なければ「なし」と入力）")
+
+        elif state == STATE_WAITING_COMMENT:
+            _save_meta(channel_id, text)
 
     return Response(content="OK", status_code=200)
 
