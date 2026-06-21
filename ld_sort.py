@@ -94,9 +94,26 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                 logger.error(f"エラー ({koban}/{media_file.name}): {e}")
                 errors += 1
 
+    # ── 空になった工番フォルダを削除 ──────────────────────────────────────────
+    removed_dirs = 0
+    for koban_dir in sorted(LD_EXTRACTION.iterdir()):
+        if not koban_dir.is_dir():
+            continue
+        remaining = list(koban_dir.iterdir())
+        if not remaining:
+            if dry_run:
+                logger.info(f"[dry-run] 空フォルダ削除予定: {koban_dir.name}/")
+            else:
+                try:
+                    koban_dir.rmdir()
+                    logger.info(f"空フォルダ削除: {koban_dir.name}/")
+                    removed_dirs += 1
+                except Exception as e:
+                    logger.error(f"フォルダ削除エラー ({koban_dir.name}): {e}")
+
     label = "（dry-run）" if dry_run else ""
     logger.info(
-        f"完了{label}: 移動 {moved} 件 / スキップ {skipped} 件 / エラー {errors} 件"
+        f"完了{label}: 移動 {moved} 件 / スキップ {skipped} 件 / エラー {errors} 件 / 空フォルダ削除 {removed_dirs} 件"
     )
 
 
