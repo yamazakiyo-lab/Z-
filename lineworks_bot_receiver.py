@@ -487,18 +487,30 @@ async def lineworks_callback(request: Request) -> Response:
             elif state == STATE_WAITING_ANNOTATION:
                 doc_id = state_data.get("doc_id", "")
                 file_path = state_data.get("file_path", "")
-                # Blob に GDX アノテーション保存
-                _save_gdx_annotation(doc_id, file_path, text, user_id)
-                # annotation_state の pending から除去・want_next はデスクトップ側で処理
-                ann_state = _load_annotation_state()
-                ann_state.get("pending", {}).pop(user_id, None)
-                _save_annotation_state(ann_state)
-                # Y/N を聞く
-                state_data["state"] = STATE_WAITING_NEXT
-                _send_text(ch, user_id,
-                    "ありがとうございます！コメントを保存しました 🎉\n"
-                    "次の写真も協力しますか？\nY → 続ける　N → 今日はここまで（明日また届きます）"
-                )
+
+                if text == "？":
+                    # スキップ：skipped リストに移動し pending から除去
+                    ann_state = _load_annotation_state()
+                    ann_state.get("pending", {}).pop(user_id, None)
+                    ann_state.setdefault("skipped", [])
+                    if doc_id and doc_id not in ann_state["skipped"]:
+                        ann_state["skipped"].append(doc_id)
+                    _save_annotation_state(ann_state)
+                    _conv.pop(user_id, None)
+                    _send_text(ch, user_id, "スキップしました。別の方に回します！\nまた写真が届いたらよろしくお願いします 🙏")
+                else:
+                    # Blob に GDX アノテーション保存
+                    _save_gdx_annotation(doc_id, file_path, text, user_id)
+                    # annotation_state の pending から除去・want_next はデスクトップ側で処理
+                    ann_state = _load_annotation_state()
+                    ann_state.get("pending", {}).pop(user_id, None)
+                    _save_annotation_state(ann_state)
+                    # Y/N を聞く
+                    state_data["state"] = STATE_WAITING_NEXT
+                    _send_text(ch, user_id,
+                        "ありがとうございます！コメントを保存しました 🎉\n"
+                        "次の写真も協力しますか？\nY → 続ける　N → 今日はここまで（明日また届きます）"
+                    )
 
             elif state == STATE_WAITING_NEXT:
                 ch = state_data.get("channel_id", channel_id)

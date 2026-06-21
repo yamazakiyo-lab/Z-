@@ -38,7 +38,7 @@ import os
 import random
 import sys
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 
 import requests
@@ -80,6 +80,12 @@ ANNOTATION_STATE_BLOB  = "annotation_state.json"
 GDX_ANNOTATION_PREFIX  = "gdx_annotations/"
 
 VISION_SUPPORTED_EXT = {".jpg", ".jpeg", ".png"}
+
+# 休暇設定ファイル
+HOLIDAY_JSON_PATH = _ROOT / "lw_holiday.json"
+
+# 月次リマインダー送信先（管理者 user_id）
+ADMIN_USER_ID = os.environ.get("LW_ADMIN_USER_ID", "")
 
 # ── 称号定義 ─────────────────────────────────────────────────────────────────
 BADGES = [
@@ -216,6 +222,28 @@ def _save_annotation_state(state: dict) -> None:
         )
     except Exception as e:
         logger.error(f"annotation_state.json 保存失敗: {e}")
+
+
+# ── 休暇・土日チェック ────────────────────────────────────────────────────────
+def _is_holiday(target: date | None = None) -> bool:
+    """土日または lw_holiday.json に定義された休暇期間なら True を返す。"""
+    today = target or date.today()
+    # 土日
+    if today.weekday() >= 5:
+        return True
+    # 会社独自休暇
+    if HOLIDAY_JSON_PATH.exists():
+        try:
+            data = json.loads(HOLIDAY_JSON_PATH.read_text(encoding="utf-8"))
+            for h in data.get("holidays", []):
+                start = date.fromisoformat(h["start"])
+                end   = date.fromisoformat(h["end"])
+                if start <= today <= end:
+                    logger.info(f"休暇期間のためスキップ: {h.get('label', '')} ({start}〜{end})")
+                    return True
+        except Exception as e:
+            logger.warning(f"lw_holiday.json 読み込みエラー: {e}")
+    return False
 
 
 # ── ローカルデータ ────────────────────────────────────────────────────────────
@@ -472,7 +500,8 @@ def _send_annotation_request(
     msg = "この写真にコメントをお願いします！\n"
     if job_number:
         msg += f"工番: {job_number}\n"
-    msg += "（作業内容・状態・部品名・気になった点など）"
+    msg += "（作業内容・状態・部品名・気になった点など）\n"
+    msg += "わからない場合は「？」を入力してください。"
     _send_text(user_id, msg)
 
     # pending 更新
@@ -544,6 +573,9 @@ def cmd_sync_annotations() -> None:
 
 # ── コマンド: 写真送信 ────────────────────────────────────────────────────────
 def cmd_send() -> None:
+    if _is_holiday():
+        logger.info(f"本日（{date.today()}）は休日のため送信をスキップします。")
+        return
     state = _load_annotation_state()
     users     = state.get("users", [])
     want_next = state.get("want_next", [])
@@ -619,14 +651,56 @@ def cmd_add_user(user_id: str) -> None:
     )
 
 
+# ── コマンド: 月次チャット削除リマインダー ────────────────────────────────────
+def cmd_cleanup_reminder() -> None:
+    """全ユーザーに「不要なチャットを削除してください」を送信する（月1回）。"""
+    state = _load_annotation_state()
+    users = state.get("users", [])
+    if not users:
+        logger.info("登録ユーザーがいません。")
+        return
+    msg = (
+        "🗑️ Botチャットのお掃除のお願い\n"
+        "このBotとのトーク履歴が溜まってきました。\n"
+        "不要になったメッセージはトークを長押し → 削除で消せます。\n"
+        "ご協力よろしくお願いします！"
+    )
+    for user_id in users:
+        _send_text(user_id, msg)
+        time.sleep(0.3)
+    logger.info(f"削除リマインダー送信完了: {len(users)} 名")
+
+
+# ── コマンド: 休暇設定更新リマインダー（GW明け年次） ─────────────────────────
+def cmd_holiday_reminder() -> None:
+    """管理者に lw_holiday.json の更新を促すメッセージを送信する。"""
+    admin = ADMIN_USER_ID
+    if not admin:
+        logger.warning("LW_ADMIN_USER_ID が未設定です。.env に追加してください。")
+        return
+    msg = (
+        "📅 年次休暇設定の更新をお願いします\n"
+        "GWが終わりました。来年分の休暇期間を lw_holiday.json に追記してください。\n"
+        "・夏季休暇（8月）\n"
+        "・年末年始（12月〜1月）\n"
+        "・GW（翌年4月〜5月）"
+    )
+    _send_text(admin, msg)
+    logger.info(f"休暇設定更新リマインダー送信: {admin}")
+
+
 # ── メイン ────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser(description="LINE WORKS 学習協力 Bot")
-    parser.add_argument("--send", action="store_true", help="未アノテーション写真を送信")
+    parser.add_argument("--send", action="store_true", help="未アノテーション写真を送信（土日・休暇日はスキップ）")
     parser.add_argument("--ranking", choices=["week", "month", "year"], help="ランキング配信")
     parser.add_argument("--sync-annotations", action="store_true",
                         help="Blob の GDX アノテーションをローカル .json サイドカーに変換")
     parser.add_argument("--add-user", metavar="USER_ID", help="ユーザーを手動登録")
+    parser.add_argument("--cleanup-reminder", action="store_true",
+                        help="全ユーザーに Botチャット削除リマインダーを送信（月1回）")
+    parser.add_argument("--holiday-reminder", action="store_true",
+                        help="管理者に lw_holiday.json 更新リマインダーを送信（GW明け年次）")
     args = parser.parse_args()
 
     if args.send:
@@ -637,6 +711,10 @@ def main() -> None:
         cmd_sync_annotations()
     elif args.add_user:
         cmd_add_user(args.add_user)
+    elif args.cleanup_reminder:
+        cmd_cleanup_reminder()
+    elif args.holiday_reminder:
+        cmd_holiday_reminder()
     else:
         parser.print_help()
 

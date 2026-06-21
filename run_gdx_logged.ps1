@@ -149,18 +149,7 @@ try {
                     Write-Host "[BOT] アノテーション同期完了"
                 }
 
-                # ── 学習協力Bot: 写真送信（want_next / 未送信ユーザーへ） ──────
-                Write-Host "[BOT] 学習協力写真送信開始"
-                if ($lwPython -eq 'py') {
-                    & $lwPython -3 $annBotScript --send
-                } else {
-                    & $lwPython $annBotScript --send
-                }
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "[BOT] lw_annotation_bot.py --send がエラー (code $LASTEXITCODE)"
-                } else {
-                    Write-Host "[BOT] 学習協力写真送信完了"
-                }
+                # --send は専用タスク（LW_Send_Morning / LW_Send_Afternoon）で実行するためここでは行わない
             } finally {
                 Pop-Location
             }
