@@ -351,11 +351,7 @@ def _start_inquiry(user_id: str, channel_id: str, file_blob: str) -> None:
         "buhin": "",
         "queued_files": [],
     }
-    _send_text(channel_id, user_id,
-        "ファイルを受け取りました！\n"
-        "どの工番ですか？\n\n"
-        "💡 工番・部品・コメントが同じ写真は\nまとめて選択して送ると入力が1回で済みます。"
-    )
+    _send_text(channel_id, user_id, "ファイルを受け取りました！\nどの工番ですか？")
 
 
 def _upload_meta(file_blob: str, koban: str, buhin: str, comment: str, phase: str) -> None:
