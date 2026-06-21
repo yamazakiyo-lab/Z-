@@ -449,6 +449,8 @@ class Organizer91:
         """
         fix_b4_scan.py準拠: ジャンクファイル（Thumbs部分一致/.tmp/定義済み）除去後、空なら削除
         """
+        if not d.is_dir():
+            return  # ファイルパスが渡された場合は何もしない
         try:
             items = list(d.iterdir())
         except Exception as e:
@@ -517,12 +519,13 @@ class Organizer91:
         """B1/B2/B3 内の非メディアを B4 ルートへ移動する。
         - phase: B1/B2/B3 の Path
         - b4: B4 の Path（存在する前提; ensure_B_folders で作成済み）
+        注意: .json ファイル（RAGサイドカー）はメディアファイルに隣接させるため移動しない。
         """
         try:
             for item in list(phase.iterdir()):
-                # ファイルが非メディアなら B4 へ
+                # ファイルが非メディアなら B4 へ（.json はサイドカーなので除外）
                 if item.is_file():
-                    if not self.ops.is_media(item):
+                    if not self.ops.is_media(item) and item.suffix.lower() != ".json":
                         res = self.ops.safe_move(item, b4)
                         if res:
                             self.log.info(f"phase->B4 非メディア移動: {item.name} -> {b4.name}")
@@ -530,7 +533,7 @@ class Organizer91:
                 elif item.is_dir():
                     try:
                         for sub in list(item.iterdir()):
-                            if sub.is_file() and not self.ops.is_media(sub):
+                            if sub.is_file() and not self.ops.is_media(sub) and sub.suffix.lower() != ".json":
                                 res = self.ops.safe_move(sub, b4)
                                 if res:
                                     self.log.info(f"phase->B4 非メディア移動: {sub.name} -> {b4.name}")
@@ -667,7 +670,7 @@ class Organizer91:
         for bx in (b1, b2, b3):
             try:
                 for item in list(bx.iterdir()):
-                    if item.is_file() and not self.ops.is_media(item) and item.name not in self.cfg.junk_files:
+                    if item.is_file() and not self.ops.is_media(item) and item.name not in self.cfg.junk_files and item.suffix.lower() != ".json":
                         self.ops.safe_move(item, b4)
             except Exception as e:
                 self.log.warn(f"B内非メディア退避失敗: {bx} -> {b4} ({e})")

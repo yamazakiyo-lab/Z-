@@ -1,4 +1,4 @@
-$ts = Get-Date -Format "yyyyMMdd_HHmmss"
+﻿$ts = Get-Date -Format "yyyyMMdd_HHmmss"
 $utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'
 if (Test-Path -LiteralPath $utf8Init) { . $utf8Init }
 $hostName = $env:COMPUTERNAME
@@ -45,17 +45,17 @@ try {
     }
     Push-Location $pw
     try {
-        if (Test-Path -LiteralPath $venvPython) {
+        if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
             & $venvPython $script
         } else {
             & $launcher -3 $script
         }
         if ($LASTEXITCODE -ne 0) {
-            throw "run_gdx.py exited with code $LASTEXITCODE"
+            Write-Warning "[GDX] run_gdx.py がエラーで終了しました (code $LASTEXITCODE)。RAG/AzCopy は続行します。"
         }
 
         # ── RAG: インデックス更新 ──────────────────────────────────────
-        $ragDir = Join-Path $env:USERPROFILE 'tseg_vscode\Zフォルダ整理'
+        $ragDir = $pw  # $PSScriptRoot（UNCパス）を使用。$env:USERPROFILEはデスクトップPCのローカルパスになるため不可
         $ragPython = Join-Path $ragDir 'rag_venv\Scripts\python.exe'
         if (-not (Test-Path -LiteralPath $ragPython)) {
             $ragPython = Join-Path $ragDir '91GDX・252WORKNO-program\venv\Scripts\python.exe'
@@ -78,6 +78,94 @@ try {
             }
         } finally {
             Pop-Location
+        }
+
+        # ── AzCopy: Blob Storage 同期（差分のみ） ─────────────────────
+        $azCopy = 'C:\azcopy\azcopy_windows_amd64_10.32.4\azcopy.exe'
+        $blobSasToken = $env:AZURE_BLOB_SAS_TOKEN
+        if (-not $blobSasToken) {
+            # .env から読み込み
+            $envFile = Join-Path $ragDir '.env'
+            if (Test-Path $envFile) {
+                Get-Content $envFile | ForEach-Object {
+                    if ($_ -match '^AZURE_BLOB_SAS_TOKEN=(.+)$') {
+                        $blobSasToken = $Matches[1].Trim('"').Trim("'")
+                    }
+                }
+            }
+        }
+        if ((Test-Path -LiteralPath $azCopy) -and $blobSasToken) {
+            Write-Host "[AZCOPY] Blob Storage 同期開始"
+            $src = 'Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画'
+            $dst = "https://tsegphotos.blob.core.windows.net/photos?$blobSasToken"
+            & $azCopy sync $src $dst --recursive
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "[AZCOPY] 同期がエラーで終了しました (code $LASTEXITCODE)"
+            } else {
+                Write-Host "[AZCOPY] Blob Storage 同期完了"
+            }
+        } else {
+            Write-Warning "[AZCOPY] azcopy.exe または SAS トークンが見つかりません。スキップします。"
+        }
+
+        # ── LW: LINE WORKS Blob 同期 ──────────────────────────────────
+        $lwScript = Join-Path $pw 'lw_blob_sync.py'
+        $lwPython = if ($venvPython -and (Test-Path -LiteralPath $venvPython)) { $venvPython } else { 'py' }
+        if (Test-Path -LiteralPath $lwScript) {
+            Write-Host "[LW] LINE WORKS Blob 同期開始"
+            Push-Location $pw
+            try {
+                if ($lwPython -eq 'py') {
+                    & $lwPython -3 $lwScript
+                } else {
+                    & $lwPython $lwScript
+                }
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "[LW] lw_blob_sync.py がエラーで終了しました (code $LASTEXITCODE)"
+                } else {
+                    Write-Host "[LW] LINE WORKS Blob 同期完了"
+                }
+            } finally {
+                Pop-Location
+            }
+        } else {
+            Write-Warning "[LW] lw_blob_sync.py が見つかりません。スキップします。"
+        }
+
+        # ── 学習協力Bot: Blob アノテーション同期 → .json サイドカー作成 ───────
+        $annBotScript = Join-Path $pw 'lw_annotation_bot.py'
+        if (Test-Path -LiteralPath $annBotScript) {
+            Write-Host "[BOT] アノテーション同期開始"
+            Push-Location $pw
+            try {
+                if ($lwPython -eq 'py') {
+                    & $lwPython -3 $annBotScript --sync-annotations
+                } else {
+                    & $lwPython $annBotScript --sync-annotations
+                }
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "[BOT] lw_annotation_bot.py --sync-annotations がエラー (code $LASTEXITCODE)"
+                } else {
+                    Write-Host "[BOT] アノテーション同期完了"
+                }
+
+                # ── 学習協力Bot: 写真送信（want_next / 未送信ユーザーへ） ──────
+                Write-Host "[BOT] 学習協力写真送信開始"
+                if ($lwPython -eq 'py') {
+                    & $lwPython -3 $annBotScript --send
+                } else {
+                    & $lwPython $annBotScript --send
+                }
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "[BOT] lw_annotation_bot.py --send がエラー (code $LASTEXITCODE)"
+                } else {
+                    Write-Host "[BOT] 学習協力写真送信完了"
+                }
+            } finally {
+                Pop-Location
+            }
+        } else {
+            Write-Warning "[BOT] lw_annotation_bot.py が見つかりません。スキップします。"
         }
     } finally {
         Pop-Location

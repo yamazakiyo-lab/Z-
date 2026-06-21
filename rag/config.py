@@ -65,6 +65,10 @@ OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-01")
 # 説明文キャッシュ（descriptions.json）
 DESCRIPTIONS_PATH: Path = _ROOT / "rag" / "descriptions.json"
 
+# 人間コメントキャッシュ（comments.json）
+# {doc_id: {comment, user_id, annotated_at, borrowed_from}}
+COMMENTS_PATH: Path = _ROOT / "rag" / "comments.json"
+
 
 def ensure_search_credentials() -> tuple[str, str]:
     """Azure AI Search 接続に必要な資格情報を返す。未設定時は例外。"""

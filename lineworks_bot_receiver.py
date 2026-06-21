@@ -77,9 +77,16 @@ LW_SEND_USER_URL    = "https://www.worksapis.com/v1.0/bots/{bot_id}/users/{user_
 DOWNLOADABLE_TYPES = {"image", "video", "file"}
 
 # 会話ステート定数
-STATE_WAITING_KOBAN   = "waiting_koban"
-STATE_WAITING_BUHIN   = "waiting_buhin"
-STATE_WAITING_COMMENT = "waiting_comment"
+STATE_WAITING_KOBAN        = "waiting_koban"
+STATE_WAITING_BUHIN        = "waiting_buhin"
+STATE_WAITING_COMMENT      = "waiting_comment"
+# 学習協力 Bot 用ステート
+STATE_WAITING_ANNOTATION   = "waiting_annotation"   # 写真コメント待ち
+STATE_WAITING_NEXT         = "waiting_next"          # 次の写真送るか Y/N 待ち
+
+# Blob 上の annotation_state.json パス
+ANNOTATION_STATE_BLOB = "annotation_state.json"
+GDX_ANNOTATION_PREFIX = "gdx_annotations/"
 
 # ── ロガー設定 ────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -256,6 +263,55 @@ def _make_blob_prefix() -> tuple[str, str]:
     return date_folder, f"{time_str}_{short_id}"
 
 
+# ── annotation_state.json（Blob 共有） ───────────────────────────────────────
+def _load_annotation_state() -> dict:
+    client = _get_blob_client()
+    if client is None:
+        return {"pending": {}, "want_next": [], "users": []}
+    try:
+        container = client.get_container_client(BLOB_CONTAINER)
+        data = container.download_blob(ANNOTATION_STATE_BLOB).readall()
+        return json.loads(data.decode("utf-8"))
+    except Exception:
+        return {"pending": {}, "want_next": [], "users": []}
+
+
+def _save_annotation_state(state: dict) -> None:
+    client = _get_blob_client()
+    if client is None:
+        return
+    try:
+        container = client.get_container_client(BLOB_CONTAINER)
+        container.upload_blob(
+            ANNOTATION_STATE_BLOB,
+            json.dumps(state, ensure_ascii=False, indent=2).encode("utf-8"),
+            overwrite=True,
+        )
+    except Exception as e:
+        logger.error(f"annotation_state.json 保存失敗: {e}")
+
+
+def _save_gdx_annotation(doc_id: str, file_path: str, comment: str, user_id: str) -> None:
+    """GDX 写真のアノテーションを Blob に保存する（デスクトップが .json サイドカーに変換）。"""
+    client = _get_blob_client()
+    if client is None:
+        return
+    try:
+        blob_name = f"{GDX_ANNOTATION_PREFIX}{doc_id}.json"
+        data = json.dumps({
+            "doc_id": doc_id,
+            "file_path": file_path,
+            "comment": comment,
+            "user_id": user_id,
+            "annotated_at": datetime.now(timezone.utc).isoformat(),
+        }, ensure_ascii=False, indent=2).encode("utf-8")
+        container = client.get_container_client(BLOB_CONTAINER)
+        container.upload_blob(blob_name, data, overwrite=True)
+        logger.info(f"GDX アノテーション保存: {blob_name}")
+    except Exception as e:
+        logger.error(f"GDX アノテーション保存失敗: {e}")
+
+
 # ── 会話状態管理（in-memory、channel_id をキーとする） ───────────────────────
 # 構造: { user_id: { "state": str, "channel_id": str, "file_blob": str, "koban": str, "buhin": str } }
 _conv: dict[str, dict] = {}
@@ -370,24 +426,76 @@ async def lineworks_callback(request: Request) -> Response:
             _start_inquiry(user_id, channel_id, file_blob)
 
     # ── テキスト受信（会話ステート処理） ─────────────────────────────────
-    elif msg_type == "text" and user_id in _conv:
+    elif msg_type == "text":
         text = content.get("text", "").strip()
-        state_data = _conv[user_id]
-        state = state_data["state"]
-        ch = state_data.get("channel_id", channel_id)
 
-        if state == STATE_WAITING_KOBAN:
-            state_data["koban"] = text
-            state_data["state"] = STATE_WAITING_BUHIN
-            _send_text(ch, user_id, "どの部分ですか？")
+        # _conv にない場合: annotation_state.json から pending を復元
+        if user_id not in _conv:
+            ann_state = _load_annotation_state()
+            # 新規ユーザー自動登録
+            if user_id and user_id not in ann_state.get("users", []):
+                ann_state.setdefault("users", []).append(user_id)
+                _save_annotation_state(ann_state)
+                logger.info(f"学習協力ユーザー登録: {user_id}")
+            # pending があれば会話状態を復元
+            pending = ann_state.get("pending", {})
+            if user_id in pending:
+                _conv[user_id] = {
+                    "state": STATE_WAITING_ANNOTATION,
+                    "channel_id": channel_id,
+                    "doc_id": pending[user_id]["doc_id"],
+                    "file_path": pending[user_id]["file_path"],
+                    "job_number": pending[user_id].get("job_number", ""),
+                }
 
-        elif state == STATE_WAITING_BUHIN:
-            state_data["buhin"] = text
-            state_data["state"] = STATE_WAITING_COMMENT
-            _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）\nコメントはAI検索精度を上げるため、作業内容・状態・気になった点など、なるべく詳細に入力してもらえると助かります。")
+        if user_id in _conv:
+            state_data = _conv[user_id]
+            state = state_data["state"]
+            ch = state_data.get("channel_id", channel_id)
 
-        elif state == STATE_WAITING_COMMENT:
-            _save_meta(user_id, text)
+            if state == STATE_WAITING_KOBAN:
+                state_data["koban"] = text
+                state_data["state"] = STATE_WAITING_BUHIN
+                _send_text(ch, user_id, "どの部分ですか？")
+
+            elif state == STATE_WAITING_BUHIN:
+                state_data["buhin"] = text
+                state_data["state"] = STATE_WAITING_COMMENT
+                _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）\nコメントはAI検索精度を上げるため、作業内容・状態・気になった点など、なるべく詳細に入力してもらえると助かります。")
+
+            elif state == STATE_WAITING_COMMENT:
+                _save_meta(user_id, text)
+
+            # ── 学習協力 Bot ステート ─────────────────────────────────
+            elif state == STATE_WAITING_ANNOTATION:
+                doc_id = state_data.get("doc_id", "")
+                file_path = state_data.get("file_path", "")
+                # Blob に GDX アノテーション保存
+                _save_gdx_annotation(doc_id, file_path, text, user_id)
+                # annotation_state の pending から除去・want_next はデスクトップ側で処理
+                ann_state = _load_annotation_state()
+                ann_state.get("pending", {}).pop(user_id, None)
+                _save_annotation_state(ann_state)
+                # Y/N を聞く
+                state_data["state"] = STATE_WAITING_NEXT
+                _send_text(ch, user_id,
+                    "ありがとうございます！コメントを保存しました 🎉\n"
+                    "次の写真も協力してもらえますか？\nY（はい）/ N（いいえ）"
+                )
+
+            elif state == STATE_WAITING_NEXT:
+                ch = state_data.get("channel_id", channel_id)
+                _conv.pop(user_id, None)
+                if text.upper() == "Y":
+                    # want_next に追加して annotation_state 保存（デスクトップが次回送信）
+                    ann_state = _load_annotation_state()
+                    want_next = ann_state.setdefault("want_next", [])
+                    if user_id not in want_next:
+                        want_next.append(user_id)
+                    _save_annotation_state(ann_state)
+                    _send_text(ch, user_id, "ありがとうございます！次の写真を準備して送ります 📸")
+                else:
+                    _send_text(ch, user_id, "ありがとうございました！またいつでも協力よろしくお願いします 🙏")
 
     return Response(content="OK", status_code=200)
 

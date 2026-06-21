@@ -40,6 +40,44 @@ from pathlib import Path
 from typing import Dict
 
 
+def _load_comments() -> dict:
+    """comments.json を読み込む。"""
+    try:
+        from rag.config import COMMENTS_PATH
+        import json as _json
+        if COMMENTS_PATH.exists():
+            return _json.loads(COMMENTS_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        pass
+    return {}
+
+
+def _save_comments(comments: dict) -> None:
+    """comments.json を保存する。"""
+    try:
+        from rag.config import COMMENTS_PATH
+        import json as _json
+        COMMENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        COMMENTS_PATH.write_text(
+            _json.dumps(comments, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as e:
+        print(f"[WARN] comments.json 保存失敗: {e}", file=sys.stderr)
+
+
+def _find_borrowed_comment(image_path: Path, manifest: dict, comments: dict) -> str:
+    """同じフォルダ内に comments.json 記録済みファイルがあればコメントを借用する。"""
+    folder = image_path.parent
+    for doc_id, fp in manifest.items():
+        if Path(fp).parent == folder and doc_id in comments:
+            entry = comments[doc_id]
+            comment = entry.get("comment", "")
+            if comment and comment not in ("なし", ""):
+                return comment
+    return ""
+
+
 def _extract_job_number(fp: str) -> str:
     """ファイルパスから工番（TARGET_91_ROOT 直下のフォルダ名）を抽出する。"""
     try:
@@ -92,7 +130,7 @@ def main() -> None:
             load_descriptions, save_descriptions, describe_image,
             VISION_SUPPORTED_EXT, PROMPT_VERSION,
         )
-        from rag.config import ensure_search_credentials, SEARCH_INDEX_NAME
+        from rag.config import ensure_search_credentials, SEARCH_INDEX_NAME, COMMENTS_PATH
         from azure.core.credentials import AzureKeyCredential
         from azure.search.documents import SearchClient
     except ImportError as e:
@@ -106,6 +144,7 @@ def main() -> None:
     # ── 状態確認 ──────────────────────────────────────────────────────────────
     manifest = load_manifest()
     descriptions = load_descriptions()
+    comments = _load_comments()
 
     total = len(manifest)
     current_ver  = sum(1 for v in descriptions.values() if _is_current_version(v, PROMPT_VERSION))
@@ -176,6 +215,8 @@ def main() -> None:
     processed = 0
     failed_count = 0
     merge_batch: list = []
+    # merge 成功後に削除するサイドカー .json のパスを記録
+    sidecar_pending: list = []
 
     for i, (doc_id, fp) in enumerate(targets, 1):
         image_path = Path(fp)
@@ -200,10 +241,12 @@ def main() -> None:
             continue
 
         job_number = _extract_job_number(fp)
-        # LDExtraction の meta.json があればコメントを取得
+        # サイドカー .json があればコメントを取得
         lw_comment = ""
+        comment_source = ""  # "sidecar" or "borrowed"
         meta_path = image_path.with_suffix(".json")
-        if meta_path.exists():
+        has_sidecar = meta_path.exists()
+        if has_sidecar:
             try:
                 import json as _json
                 meta = _json.loads(meta_path.read_text(encoding="utf-8"))
@@ -212,14 +255,22 @@ def main() -> None:
                 if comment in ("なし", ""):
                     comment = ""
                 lw_comment = " ".join(filter(None, [buhin, comment]))
+                if lw_comment:
+                    comment_source = "sidecar"
             except Exception:
                 pass
+        # サイドカーなし or コメントなし → 同フォルダから借用
+        if not lw_comment:
+            borrowed = _find_borrowed_comment(image_path, manifest, comments)
+            if borrowed:
+                lw_comment = borrowed
+                comment_source = "borrowed"
 
         label = f"[{i}/{len(targets)}] {image_path.name}"
         if job_number:
             label += f" (工番:{job_number})"
         if lw_comment:
-            label += f" [コメント:{lw_comment[:20]}]"
+            label += f" [コメント({comment_source}):{lw_comment[:20]}]"
         print(f"{label} ...", end=" ", flush=True)
         start = time.time()
 
@@ -232,6 +283,31 @@ def main() -> None:
             descriptions[doc_id] = f"{PROMPT_VERSION}|{content}"
             # AI Search には接頭辞なしで送信
             merge_batch.append({"id": doc_id, "content_text": content})
+            # merge 成功後に削除するサイドカーを記録
+            if has_sidecar:
+                import json as _json_dt, datetime as _dt
+                try:
+                    _raw = _json_dt.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:
+                    _raw = {}
+                sidecar_entry = {
+                    "doc_id": doc_id,
+                    "comment": lw_comment,
+                    "user_id": _raw.get("user_id", ""),
+                    "annotated_at": _raw.get("recorded_at", _dt.datetime.now().isoformat()),
+                    "borrowed_from": "",
+                }
+                sidecar_pending.append((meta_path, sidecar_entry))
+            elif comment_source == "borrowed":
+                # 借用の場合もコメント記録（サイドカーなし）
+                import datetime as _dt
+                sidecar_pending.append((None, {
+                    "doc_id": doc_id,
+                    "comment": lw_comment,
+                    "user_id": "",
+                    "annotated_at": _dt.datetime.now().isoformat(),
+                    "borrowed_from": "same_folder",
+                }))
             processed += 1
         else:
             print(f"SKIP")
@@ -245,9 +321,29 @@ def main() -> None:
                     results = search_client.merge_documents(merge_batch)
                     ok = sum(1 for r in results if r.succeeded)
                     print(f"[MERGE] AI Search 更新: {ok}/{len(merge_batch)} 件")
+                    # merge 成功 → サイドカー .json を削除（情報は AI Search に定着済み）
+                    for jp, entry in sidecar_pending:
+                        if jp is not None:
+                            try:
+                                jp.unlink()
+                                print(f"[DEL] サイドカー削除: {jp.name}")
+                            except Exception as del_e:
+                                print(f"[WARN] サイドカー削除失敗: {jp} ({del_e})", file=sys.stderr)
+                        # comments.json に保存
+                        if entry:
+                            comments[entry["doc_id"]] = {
+                                "comment": entry["comment"],
+                                "user_id": entry.get("user_id", ""),
+                                "annotated_at": entry.get("annotated_at", ""),
+                                "borrowed_from": entry.get("borrowed_from", ""),
+                            }
+                    if any(e for _, e in sidecar_pending if e):
+                        _save_comments(comments)
+                        print(f"[SAVE] comments.json 保存 ({len(comments)} 件)")
                 except Exception as e:
-                    print(f"[WARN] AI Search merge 失敗: {e}", file=sys.stderr)
+                    print(f"[WARN] AI Search merge 失敗: {e} (サイドカーは保持)", file=sys.stderr)
                 merge_batch = []
+                sidecar_pending = []
             save_descriptions(descriptions)
             print(f"[SAVE] descriptions.json 保存 ({len(descriptions)} 件)")
 
