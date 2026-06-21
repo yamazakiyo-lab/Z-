@@ -4,6 +4,7 @@
 # Tasks:
 #   LW_Send_Morning       Daily 10:00  --send
 #   LW_Send_Afternoon     Daily 15:00  --send
+#   LW_Ranking_Weekly     Daily 10:15  --ranking-weekly (fires only on first workday of week)
 #   LW_Cleanup_Reminder   Monthly 1st  10:05  --cleanup-reminder
 #   LW_Holiday_Reminder   Yearly May 6 10:10  --holiday-reminder
 
@@ -32,6 +33,7 @@ function Resolve-TaskPath {
 $batSend    = Resolve-TaskPath (Join-Path $pw 'run_lw_send_wrapper.bat')
 $batCleanup = Resolve-TaskPath (Join-Path $pw 'run_lw_cleanup_wrapper.bat')
 $batHoliday = Resolve-TaskPath (Join-Path $pw 'run_lw_holiday_wrapper.bat')
+$batRanking = Resolve-TaskPath (Join-Path $pw 'run_lw_ranking_wrapper.bat')
 
 Write-Host "bat: $batSend"
 
@@ -48,6 +50,12 @@ $a2 = New-ScheduledTaskAction -Execute $batSend
 $t2 = New-ScheduledTaskTrigger -Daily -At "15:00"
 Register-ScheduledTask -TaskName "LW_Send_Afternoon" -Action $a2 -Trigger $t2 -Settings $settings -RunLevel Highest -Force | Out-Null
 Write-Host "OK: LW_Send_Afternoon 15:00"
+
+# LW_Ranking_Weekly: daily 10:15 (runs only on first workday of week)
+$a3 = New-ScheduledTaskAction -Execute $batRanking
+$t3 = New-ScheduledTaskTrigger -Daily -At "10:15"
+Register-ScheduledTask -TaskName "LW_Ranking_Weekly" -Action $a3 -Trigger $t3 -Settings $settings -RunLevel Highest -Force | Out-Null
+Write-Host "OK: LW_Ranking_Weekly daily 10:15 (first workday only)"
 
 # LW_Cleanup_Reminder: monthly day 1 at 10:05
 $trCleanup = '"' + $batCleanup + '"'

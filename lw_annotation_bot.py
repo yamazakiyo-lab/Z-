@@ -376,7 +376,8 @@ def _calculate_ranking(period: str, comments: dict) -> tuple[list[dict], str]:
 
 
 def _format_ranking_message(
-    ranking: list[dict], label: str, comments: dict, unannotated_count: int
+    ranking: list[dict], label: str, comments: dict, unannotated_count: int,
+    abandoned: dict | None = None,
 ) -> str:
     lines = [f"【学習協力ランキング {label}】"]
     if not ranking:
@@ -408,6 +409,16 @@ def _format_ranking_message(
     lines.append("")
     lines.append(f"【残り未アノテーション】{unannotated_count:,}件")
     lines.append(f"【全体達成率】{pct}%（{total_annotated:,}/{total_files:,}件）")
+
+    # 放置ランキング（週次のみ・放置者がいる場合）
+    if abandoned:
+        sorted_abandoned = sorted(abandoned.items(), key=lambda x: x[1], reverse=True)
+        if sorted_abandoned:
+            lines.append("")
+            lines.append("【放置ランキング（累計）】")
+            for uid, cnt in sorted_abandoned[:5]:
+                lines.append(f"  {_display_name(uid)}  {cnt}回")
+
     lines.append("")
     lines.append("ご協力ありがとうございます！")
     return "\n".join(lines)
@@ -579,6 +590,33 @@ def cmd_sync_annotations() -> None:
 
 
 # ── コマンド: 写真送信 ────────────────────────────────────────────────────────
+PENDING_TIMEOUT_HOURS = 24
+
+
+def _expire_pending(state: dict) -> list[str]:
+    """24時間以上応答なしの pending ユーザーを自動スキップし、放置カウントを記録する。
+    戻り値: タイムアウトしたユーザーIDリスト
+    """
+    pending = state.get("pending", {})
+    abandoned = state.setdefault("abandoned", {})
+    now = datetime.now(timezone.utc)
+    expired = []
+
+    for user_id, info in list(pending.items()):
+        sent_at_str = info.get("sent_at", "")
+        try:
+            sent_at = datetime.fromisoformat(sent_at_str)
+            if (now - sent_at).total_seconds() >= PENDING_TIMEOUT_HOURS * 3600:
+                expired.append(user_id)
+                abandoned[user_id] = abandoned.get(user_id, 0) + 1
+                del pending[user_id]
+                logger.info(f"タイムアウト自動スキップ: {user_id} (放置累計: {abandoned[user_id]}回)")
+        except Exception:
+            pass
+
+    return expired
+
+
 def cmd_send() -> None:
     if _is_holiday():
         logger.info(f"本日（{date.today()}）は休日のため送信をスキップします。")
@@ -591,6 +629,11 @@ def cmd_send() -> None:
     if not users:
         logger.info("登録ユーザーがいません。lw_annotation_bot.py --add-user <user_id> で追加してください。")
         return
+
+    # 24時間タイムアウトチェック
+    expired = _expire_pending(state)
+    if expired:
+        logger.info(f"タイムアウト処理: {len(expired)} 名")
 
     unannotated = _find_unannotated_docs(state)
     if not unannotated:
@@ -624,9 +667,11 @@ def cmd_ranking(period: str) -> None:
     users     = state.get("users", [])
     comments  = _load_comments()
     unannotated = _find_unannotated_docs(state)
+    # 週次のみ放置ランキングを表示
+    abandoned = state.get("abandoned", {}) if period == "week" else None
 
     ranking, label = _calculate_ranking(period, comments)
-    team_msg  = _format_ranking_message(ranking, label, comments, len(unannotated))
+    team_msg  = _format_ranking_message(ranking, label, comments, len(unannotated), abandoned)
 
     for user_id in users:
         # チーム全体メッセージ
@@ -694,6 +739,25 @@ def cmd_cleanup_reminder() -> None:
     logger.info(f"削除リマインダー送信完了: {len(users)} 名")
 
 
+# ── コマンド: 週次ランキング（週初め営業日のみ） ─────────────────────────────
+def _is_first_workday_of_week(target: date | None = None) -> bool:
+    """今日が週の最初の営業日（月曜 or 休み明け初日）かどうかを返す。"""
+    today = target or date.today()
+    if _is_holiday(today):
+        return False
+    yesterday = today - timedelta(days=1)
+    return _is_holiday(yesterday)
+
+
+def cmd_ranking_weekly() -> None:
+    """週の最初の営業日にのみ週間ランキングを配信する。"""
+    if not _is_first_workday_of_week():
+        logger.info(f"今日（{date.today()}）は週初め営業日ではないためスキップ。")
+        return
+    logger.info("週初め営業日のため週間ランキングを配信します。")
+    cmd_ranking("week")
+
+
 # ── コマンド: 休暇設定更新リマインダー（GW明け年次） ─────────────────────────
 def cmd_holiday_reminder() -> None:
     """管理者に lw_holiday.json の更新を促すメッセージを送信する。"""
@@ -725,12 +789,16 @@ def main() -> None:
                         help="全ユーザーに Botチャット削除リマインダーを送信（月1回）")
     parser.add_argument("--holiday-reminder", action="store_true",
                         help="管理者に lw_holiday.json 更新リマインダーを送信（GW明け年次）")
+    parser.add_argument("--ranking-weekly", action="store_true",
+                        help="週初め営業日にのみ週間ランキングを配信（毎日スケジュール実行）")
     args = parser.parse_args()
 
     if args.send:
         cmd_send()
     elif args.ranking:
         cmd_ranking(args.ranking)
+    elif args.ranking_weekly:
+        cmd_ranking_weekly()
     elif args.sync_annotations:
         cmd_sync_annotations()
     elif args.add_user:
