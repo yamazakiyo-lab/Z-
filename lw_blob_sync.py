@@ -104,6 +104,26 @@ def resolve_ext(blob_name: str, content_type: str) -> str:
     return CONTENT_TYPE_EXT.get(content_type.split(";")[0].strip(), "")
 
 
+def detect_ext_from_bytes(data: bytes) -> str:
+    """マジックバイトからファイルの拡張子を推定する。"""
+    if data[:3] == b"\xff\xd8\xff":
+        return ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return ".png"
+    if data[:4] == b"RIFF" and data[8:12] == b"AVI ":
+        return ".avi"
+    # MP4 / MOV: ftyp ボックス（オフセット4〜8）
+    if len(data) >= 12 and data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand in (b"qt  ", b"moov"):
+            return ".mov"
+        return ".mp4"
+    # 3GP
+    if len(data) >= 12 and data[4:8] == b"ftyp" and data[8:11] == b"3gp":
+        return ".3gp"
+    return ""
+
+
 # ── メイン同期処理 ─────────────────────────────────────────────────────────────
 
 def main(dry_run: bool = False) -> None:
@@ -208,6 +228,16 @@ def main(dry_run: bool = False) -> None:
                         break
 
             file_bytes = blob_client.download_blob().readall()
+
+            # 拡張子が不明な場合はマジックバイトで補完
+            if not ext:
+                detected = detect_ext_from_bytes(file_bytes)
+                if detected:
+                    dest_path = dest_path.with_name(dest_path.name + detected)
+                    logger.info(f"  拡張子を自動検出: {detected}")
+                else:
+                    logger.warning(f"  拡張子を判定できませんでした: {dest_path.name}")
+
             dest_path.write_bytes(file_bytes)
             logger.info(f"  保存完了: {len(file_bytes):,} bytes")
 

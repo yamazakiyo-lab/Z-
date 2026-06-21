@@ -21,6 +21,27 @@ import shutil
 import logging
 from pathlib import Path
 
+MAGIC_MAP = [
+    (b"\xff\xd8\xff",          ".jpg"),
+    (b"\x89PNG\r\n\x1a\n",     ".png"),
+]
+
+def detect_ext(path: Path) -> str:
+    """マジックバイトからファイルの拡張子を推定する。"""
+    try:
+        header = path.read_bytes()[:12]
+    except Exception:
+        return ""
+    for magic, ext in MAGIC_MAP:
+        if header[:len(magic)] == magic:
+            return ext
+    if len(header) >= 12 and header[4:8] == b"ftyp":
+        brand = header[8:12]
+        return ".mov" if brand in (b"qt  ", b"moov") else ".mp4"
+    if header[:4] == b"RIFF" and header[8:12] == b"AVI ":
+        return ".avi"
+    return ""
+
 # ── パス定数 ───────────────────────────────────────────────────────────────────
 LD_EXTRACTION = Path(
     r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_LDExtraction"
@@ -56,7 +77,26 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
         koban = koban_dir.name
 
         for media_file in sorted(koban_dir.iterdir()):
-            if media_file.suffix.lower() not in MEDIA_EXTENSIONS:
+            ext = media_file.suffix.lower()
+
+            # 拡張子なし → マジックバイトで判定してリネーム
+            if not ext:
+                if not media_file.with_suffix(".json").exists():
+                    continue  # JSON もなければスキップ
+                detected = detect_ext(media_file)
+                if not detected:
+                    logger.warning(f"拡張子判定不能、スキップ: {koban}/{media_file.name}")
+                    continue
+                new_path = media_file.with_name(media_file.name + detected)
+                if dry_run:
+                    logger.info(f"[dry-run] リネーム予定: {media_file.name} → {new_path.name}")
+                else:
+                    media_file.rename(new_path)
+                    logger.info(f"リネーム: {media_file.name} → {new_path.name}")
+                media_file = new_path
+                ext = detected
+
+            if ext not in MEDIA_EXTENSIONS:
                 continue
 
             json_file  = media_file.with_suffix(".json")
