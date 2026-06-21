@@ -80,9 +80,16 @@ DOWNLOADABLE_TYPES = {"image", "video", "file"}
 STATE_WAITING_KOBAN        = "waiting_koban"
 STATE_WAITING_BUHIN        = "waiting_buhin"
 STATE_WAITING_COMMENT      = "waiting_comment"
+STATE_WAITING_PHASE        = "waiting_phase"         # フェーズ（B1/B2/B3）待ち
 # 学習協力 Bot 用ステート
 STATE_WAITING_ANNOTATION   = "waiting_annotation"   # 写真コメント待ち
 STATE_WAITING_NEXT         = "waiting_next"          # 次の写真送るか Y/N 待ち
+
+PHASE_MAP = {
+    "1": "B1", "着手前": "B1", "b1": "B1",
+    "2": "B2", "着手中": "B2", "b2": "B2",
+    "3": "B3", "出荷以降": "B3", "b3": "B3",
+}
 
 # Blob 上の annotation_state.json パス
 ANNOTATION_STATE_BLOB = "annotation_state.json"
@@ -338,7 +345,7 @@ def _start_inquiry(user_id: str, channel_id: str, file_blob: str) -> None:
     _send_text(channel_id, user_id, "どの工番ですか？")
 
 
-def _save_meta(user_id: str, comment: str) -> None:
+def _save_meta(user_id: str, phase: str) -> None:
     """メタ情報を Blob に保存し、会話状態をクリアする。"""
     state = _conv.pop(user_id, {})
     channel_id = state.get("channel_id", "")
@@ -347,7 +354,8 @@ def _save_meta(user_id: str, comment: str) -> None:
         "file_blob": file_blob,
         "koban": state.get("koban", ""),
         "buhin": state.get("buhin", ""),
-        "comment": comment,
+        "comment": state.get("comment", ""),
+        "phase": phase,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
     # meta ファイルのパスはファイルと同じプレフィックス（_meta.json を付ける）
@@ -481,7 +489,21 @@ async def lineworks_callback(request: Request) -> Response:
                 _send_text(ch, user_id, "コメントはありますか？（なければ「なし」と入力）\nコメントはAI検索精度を上げるため、作業内容・状態・気になった点など、なるべく詳細に入力してもらえると助かります。")
 
             elif state == STATE_WAITING_COMMENT:
-                _save_meta(user_id, text)
+                state_data["comment"] = text
+                state_data["state"] = STATE_WAITING_PHASE
+                _send_text(ch, user_id,
+                    "どのフェーズですか？\n"
+                    "1 → 着手前（入庫・受入時）\n"
+                    "2 → 着手中（整備・加工中）\n"
+                    "3 → 出荷以降（納入・引渡後）"
+                )
+
+            elif state == STATE_WAITING_PHASE:
+                phase = PHASE_MAP.get(text.strip().lower())
+                if not phase:
+                    _send_text(ch, user_id, "1・2・3 のいずれかを入力してください。\n1 → 着手前　2 → 着手中　3 → 出荷以降")
+                else:
+                    _save_meta(user_id, phase)
 
             # ── 学習協力 Bot ステート ─────────────────────────────────
             elif state == STATE_WAITING_ANNOTATION:

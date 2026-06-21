@@ -155,10 +155,11 @@ def main(dry_run: bool = False) -> None:
             raw = container.download_blob(meta_blob_item.name).readall()
             meta = json.loads(raw.decode("utf-8"))
 
-            file_blob: str = meta.get("file_blob", "").strip()
-            koban: str     = meta.get("koban", "").strip()
-            buhin: str     = meta.get("buhin", "").strip()
-            comment: str   = meta.get("comment", "").strip()
+            file_blob: str   = meta.get("file_blob", "").strip()
+            koban: str       = meta.get("koban", "").strip()
+            buhin: str       = meta.get("buhin", "").strip()
+            comment: str     = meta.get("comment", "").strip()
+            phase: str       = meta.get("phase", "").strip()
             recorded_at: str = meta.get("recorded_at", "")
 
             # 必須フィールドチェック
@@ -247,6 +248,7 @@ def main(dry_run: bool = False) -> None:
                 "koban": koban,
                 "buhin": buhin,
                 "comment": comment,
+                "phase": phase,
                 "recorded_at": recorded_at,
                 "file_blob": file_blob,
                 "source_meta_blob": meta_blob_item.name,

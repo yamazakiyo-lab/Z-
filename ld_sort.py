@@ -17,6 +17,7 @@ LDExtraction/<工番>/ の写真・動画を <工番>/B4/ に、
 """
 
 import sys
+import json
 import shutil
 import logging
 from pathlib import Path
@@ -100,7 +101,17 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                 continue
 
             json_file  = media_file.with_suffix(".json")
-            dest_dir   = BASE_DEST / koban / "B4"
+
+            # phase を JSON から読んで B1/B2/B3 に直接振り分け（なければ B4）
+            phase = ""
+            if json_file.exists():
+                try:
+                    phase = json.loads(json_file.read_text(encoding="utf-8")).get("phase", "")
+                except Exception:
+                    pass
+            b_folder = phase if phase in ("B1", "B2", "B3") else "B4"
+
+            dest_dir   = BASE_DEST / koban / b_folder
             dest_media = dest_dir / media_file.name
             ann_dir    = ANNOTATIONS_ROOT / koban
             dest_json  = ann_dir / json_file.name
@@ -112,7 +123,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                 continue
 
             if dry_run:
-                logger.info(f"[dry-run] 写真移動予定: {koban}/{media_file.name} → B4/")
+                logger.info(f"[dry-run] 写真移動予定: {koban}/{media_file.name} → {b_folder}/")
                 if json_file.exists():
                     logger.info(f"[dry-run] JSON移動予定:  {koban}/{json_file.name} → _annotations/{koban}/")
                 moved += 1
@@ -121,7 +132,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
             try:
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(media_file), str(dest_media))
-                logger.info(f"写真移動: {koban}/{media_file.name} → B4/")
+                logger.info(f"写真移動: {koban}/{media_file.name} → {b_folder}/")
 
                 if json_file.exists():
                     ann_dir.mkdir(parents=True, exist_ok=True)
