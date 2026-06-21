@@ -651,6 +651,22 @@ def cmd_add_user(user_id: str) -> None:
     )
 
 
+# ── コマンド: 一斉送信 ───────────────────────────────────────────────────────
+def cmd_broadcast(message: str) -> None:
+    """登録済み全ユーザーにメッセージを一斉送信する。"""
+    state = _load_annotation_state()
+    users = state.get("users", [])
+    if not users:
+        logger.info("登録ユーザーがいません。")
+        return
+    success = 0
+    for user_id in users:
+        if _send_text(user_id, message):
+            success += 1
+        time.sleep(0.3)
+    logger.info(f"一斉送信完了: {success}/{len(users)} 名")
+
+
 # ── コマンド: 月次チャット削除リマインダー ────────────────────────────────────
 def cmd_cleanup_reminder() -> None:
     """全ユーザーに「不要なチャットを削除してください」を送信する（月1回）。"""
@@ -697,6 +713,7 @@ def main() -> None:
     parser.add_argument("--sync-annotations", action="store_true",
                         help="Blob の GDX アノテーションをローカル .json サイドカーに変換")
     parser.add_argument("--add-user", metavar="USER_ID", help="ユーザーを手動登録")
+    parser.add_argument("--broadcast", metavar="MESSAGE", help="登録済み全ユーザーにメッセージを一斉送信")
     parser.add_argument("--cleanup-reminder", action="store_true",
                         help="全ユーザーに Botチャット削除リマインダーを送信（月1回）")
     parser.add_argument("--holiday-reminder", action="store_true",
@@ -711,6 +728,8 @@ def main() -> None:
         cmd_sync_annotations()
     elif args.add_user:
         cmd_add_user(args.add_user)
+    elif args.broadcast:
+        cmd_broadcast(args.broadcast)
     elif args.cleanup_reminder:
         cmd_cleanup_reminder()
     elif args.holiday_reminder:
