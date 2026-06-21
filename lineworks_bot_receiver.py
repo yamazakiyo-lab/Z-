@@ -147,13 +147,19 @@ _token_expires_at: float = 0.0
 def _load_private_key() -> str:
     """Private Key を環境変数または .pem ファイルから読み込む。"""
     if PRIVATE_KEY_CONTENT:
-        return PRIVATE_KEY_CONTENT.replace("\\n", "\n")
+        key = PRIVATE_KEY_CONTENT.replace("\\n", "\n")
+        lines = key.splitlines()
+        logger.info(f"[KEY-DIAG] source=env lines={len(lines)} first={lines[0][:30] if lines else '(empty)'} last={lines[-1][:30] if lines else '(empty)'}")
+        return key
     if not PRIVATE_KEY_PATH:
         raise EnvironmentError("LINEWORKS_PRIVATE_KEY または LINEWORKS_PRIVATE_KEY_PATH が未設定です。")
     path = Path(PRIVATE_KEY_PATH)
     if not path.exists():
         raise FileNotFoundError(f"Private Key ファイルが見つかりません: {path}")
-    return path.read_text(encoding="utf-8")
+    key = path.read_text(encoding="utf-8")
+    lines = key.splitlines()
+    logger.info(f"[KEY-DIAG] source=file path={path} lines={len(lines)} first={lines[0][:30] if lines else '(empty)'} last={lines[-1][:30] if lines else '(empty)'}")
+    return key
 
 
 def _get_access_token() -> str:
@@ -171,6 +177,7 @@ def _get_access_token() -> str:
         "iat": int(now),
         "exp": int(now) + 3600,
     }
+    logger.info(f"[JWT-DIAG] iss={CLIENT_ID} sub={SERVICE_ACCOUNT}")
     assertion = pyjwt.encode(jwt_payload, private_key, algorithm="RS256")
 
     resp = requests.post(
@@ -184,6 +191,8 @@ def _get_access_token() -> str:
         },
         timeout=10,
     )
+    if not resp.ok:
+        logger.error(f"[TOKEN-ERROR] status={resp.status_code} body={resp.text[:500]}")
     resp.raise_for_status()
     token_data = resp.json()
 
