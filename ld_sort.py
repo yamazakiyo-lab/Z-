@@ -1,15 +1,15 @@
 """
 ld_sort.py
-LDExtraction/<工番>/ の写真・動画とメタ JSON を
-91_工番別実績写真・動画/<工番>/B4/ に振り分けるスクリプト
+LDExtraction/<工番>/ の写真・動画を <工番>/B4/ に、
+メタ JSON を _annotations/<工番>/ に振り分けるスクリプト
 
 使用方法:
   python ld_sort.py [--dry-run]
 
 動作:
   1. LDExtraction/<工番>/ の画像・動画ファイルを探す
-  2. 同名の .json があれば一緒に扱う
-  3. <工番>/B4/ に move（LDExtraction からは消える）
+  2. <工番>/B4/ に move（LDExtraction からは消える）
+  3. 同名の .json があれば _annotations/<工番>/ に move（B4 には入れない）
   4. annotation_state.json には追加しない（LW学習ボット対象外）
 
 注意:
@@ -17,7 +17,6 @@ LDExtraction/<工番>/ の写真・動画とメタ JSON を
 """
 
 import sys
-import json
 import shutil
 import logging
 from pathlib import Path
@@ -29,6 +28,7 @@ LD_EXTRACTION = Path(
 BASE_DEST = Path(
     r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画"
 )
+ANNOTATIONS_ROOT = BASE_DEST / "_annotations"
 
 MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".avi"}
 
@@ -59,10 +59,11 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
             if media_file.suffix.lower() not in MEDIA_EXTENSIONS:
                 continue
 
-            json_file = media_file.with_suffix(".json")
-            dest_dir  = BASE_DEST / koban / "B4"
+            json_file  = media_file.with_suffix(".json")
+            dest_dir   = BASE_DEST / koban / "B4"
             dest_media = dest_dir / media_file.name
-            dest_json  = dest_dir / json_file.name
+            ann_dir    = ANNOTATIONS_ROOT / koban
+            dest_json  = ann_dir / json_file.name
 
             # 既に移動済みならスキップ
             if dest_media.exists():
@@ -71,20 +72,21 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                 continue
 
             if dry_run:
-                logger.info(f"[dry-run] 移動予定: {koban}/{media_file.name} → B4/")
+                logger.info(f"[dry-run] 写真移動予定: {koban}/{media_file.name} → B4/")
                 if json_file.exists():
-                    logger.info(f"[dry-run]           {koban}/{json_file.name} → B4/")
+                    logger.info(f"[dry-run] JSON移動予定:  {koban}/{json_file.name} → _annotations/{koban}/")
                 moved += 1
                 continue
 
             try:
                 dest_dir.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(media_file), str(dest_media))
-                logger.info(f"移動: {koban}/{media_file.name} → B4/")
+                logger.info(f"写真移動: {koban}/{media_file.name} → B4/")
 
                 if json_file.exists():
+                    ann_dir.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(json_file), str(dest_json))
-                    logger.info(f"移動: {koban}/{json_file.name} → B4/")
+                    logger.info(f"JSON移動: {koban}/{json_file.name} → _annotations/{koban}/")
 
                 moved += 1
 

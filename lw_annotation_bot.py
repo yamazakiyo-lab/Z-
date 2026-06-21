@@ -545,10 +545,17 @@ def cmd_sync_annotations() -> None:
                 logger.warning(f"スキップ（必須フィールド不足）: {blob_item.name}")
                 continue
 
-            # .json サイドカー作成
-            sidecar_path = Path(file_path).with_suffix(".json")
+            # _annotations/<工番>/ に保存
+            try:
+                koban = Path(file_path).relative_to(TARGET_91_ROOT).parts[0]
+            except (ValueError, IndexError):
+                koban = "_unknown"
+            ann_dir = TARGET_91_ROOT / "_annotations" / koban
+            ann_dir.mkdir(parents=True, exist_ok=True)
+            sidecar_path = ann_dir / (Path(file_path).stem + ".json")
             sidecar_data = {
                 "doc_id": doc_id,
+                "file_path": file_path,
                 "comment": comment,
                 "user_id": user_id,
                 "annotated_at": annotated_at,
@@ -558,7 +565,7 @@ def cmd_sync_annotations() -> None:
                 json.dumps(sidecar_data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            logger.info(f"サイドカー作成: {sidecar_path.name}")
+            logger.info(f"アノテーション保存: _annotations/{koban}/{sidecar_path.name}")
 
             # Blob 削除（処理済み）
             container.delete_blob(blob_item.name)
