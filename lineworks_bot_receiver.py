@@ -351,7 +351,11 @@ def _start_inquiry(user_id: str, channel_id: str, file_blob: str) -> None:
         "buhin": "",
         "queued_files": [],
     }
-    _send_text(channel_id, user_id, "どの工番ですか？")
+    _send_text(channel_id, user_id,
+        "ファイルを受け取りました！\n"
+        "どの工番ですか？\n\n"
+        "💡 工番・部品・コメントが同じ写真は\nまとめて選択して送ると入力が1回で済みます。"
+    )
 
 
 def _upload_meta(file_blob: str, koban: str, buhin: str, comment: str, phase: str) -> None:
@@ -405,7 +409,8 @@ def _save_meta(user_id: str, phase: str) -> None:
             f"ありがとうございます！保存しました。\n\n"
             f"他に {len(queued)} 件のファイルが届いています。\n"
             f"同じ設定（工番: {koban} / 部品: {buhin} / フェーズ: {phase_label}）で保存しますか？\n"
-            f"Y → まとめて保存　N → 1件ずつ入力"
+            f"Y → まとめて保存　N → 1件ずつ入力\n\n"
+            f"💡 ヒント: 工番・部品・コメントが同じ写真はまとめて選択して送ると入力が1回で済みます。"
         )
     else:
         _conv.pop(user_id, None)
