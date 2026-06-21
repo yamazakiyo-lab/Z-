@@ -448,6 +448,14 @@ async def lineworks_callback(request: Request) -> Response:
                     "job_number": pending[user_id].get("job_number", ""),
                 }
 
+        if user_id not in _conv:
+            # 状態なし（想定外のメッセージ）→ 用途を案内
+            _send_text(channel_id, user_id,
+                "このBotは施工写真の記録・学習協力専用です 📸\n"
+                "写真を送ると工番・コメントを記録できます。\n"
+                "学習協力写真が届いたらコメントをお願いします！"
+            )
+
         if user_id in _conv:
             state_data = _conv[user_id]
             state = state_data["state"]
@@ -480,22 +488,29 @@ async def lineworks_callback(request: Request) -> Response:
                 state_data["state"] = STATE_WAITING_NEXT
                 _send_text(ch, user_id,
                     "ありがとうございます！コメントを保存しました 🎉\n"
-                    "次の写真も協力してもらえますか？\nY（はい）/ N（いいえ）"
+                    "次の写真も協力しますか？\nY → 続ける　N → 今日はここまで（明日また届きます）"
                 )
 
             elif state == STATE_WAITING_NEXT:
                 ch = state_data.get("channel_id", channel_id)
-                _conv.pop(user_id, None)
-                if text.upper() == "Y":
-                    # want_next に追加して annotation_state 保存（デスクトップが次回送信）
+                yes_words = {"y", "yes", "はい", "お願い", "続ける", "1"}
+                no_words  = {"n", "no", "いいえ", "ここまで", "やめる", "stop", "2"}
+                t = text.lower().strip()
+                if t in yes_words:
+                    _conv.pop(user_id, None)
                     ann_state = _load_annotation_state()
                     want_next = ann_state.setdefault("want_next", [])
                     if user_id not in want_next:
                         want_next.append(user_id)
                     _save_annotation_state(ann_state)
                     _send_text(ch, user_id, "ありがとうございます！次の写真を準備して送ります 📸")
+                elif t in no_words:
+                    _conv.pop(user_id, None)
+                    _send_text(ch, user_id, "ありがとうございました！またいつでも協力よろしくお願いします 🙏\n（明日また写真をお送りします）")
                 else:
-                    _send_text(ch, user_id, "ありがとうございました！またいつでも協力よろしくお願いします 🙏")
+                    _send_text(ch, user_id,
+                        "Y か N で答えてください 🙏\nY → 続ける　N → 今日はここまで（明日また届きます）"
+                    )
 
     return Response(content="OK", status_code=200)
 
