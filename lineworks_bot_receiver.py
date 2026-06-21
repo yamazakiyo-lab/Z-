@@ -517,6 +517,9 @@ async def lineworks_callback(request: Request) -> Response:
                     ann_state.setdefault("skipped", [])
                     if doc_id and doc_id not in ann_state["skipped"]:
                         ann_state["skipped"].append(doc_id)
+                    # 「？」スキップ回数を記録
+                    skipped_by = ann_state.setdefault("skipped_by", {})
+                    skipped_by[user_id] = skipped_by.get(user_id, 0) + 1
                     _save_annotation_state(ann_state)
                     _conv.pop(user_id, None)
                     _send_text(ch, user_id, "スキップしました。別の方に回します！\nまた写真が届いたらよろしくお願いします 🙏")

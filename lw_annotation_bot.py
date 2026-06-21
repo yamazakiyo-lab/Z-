@@ -378,6 +378,7 @@ def _calculate_ranking(period: str, comments: dict) -> tuple[list[dict], str]:
 def _format_ranking_message(
     ranking: list[dict], label: str, comments: dict, unannotated_count: int,
     abandoned: dict | None = None,
+    skipped_by: dict | None = None,
 ) -> str:
     lines = [f"【学習協力ランキング {label}】"]
     if not ranking:
@@ -409,6 +410,15 @@ def _format_ranking_message(
     lines.append("")
     lines.append(f"【残り未アノテーション】{unannotated_count:,}件")
     lines.append(f"【全体達成率】{pct}%（{total_annotated:,}/{total_files:,}件）")
+
+    # 「？」スキップランキング（週次のみ）
+    if skipped_by:
+        sorted_skipped = sorted(skipped_by.items(), key=lambda x: x[1], reverse=True)
+        if sorted_skipped:
+            lines.append("")
+            lines.append("【「？」スキップランキング（累計）】")
+            for uid, cnt in sorted_skipped[:5]:
+                lines.append(f"  {_display_name(uid)}  {cnt}回")
 
     # 放置ランキング（週次のみ・放置者がいる場合）
     if abandoned:
@@ -667,11 +677,12 @@ def cmd_ranking(period: str) -> None:
     users     = state.get("users", [])
     comments  = _load_comments()
     unannotated = _find_unannotated_docs(state)
-    # 週次のみ放置ランキングを表示
-    abandoned = state.get("abandoned", {}) if period == "week" else None
+    # 週次のみ放置・スキップランキングを表示
+    abandoned  = state.get("abandoned",  {}) if period == "week" else None
+    skipped_by = state.get("skipped_by", {}) if period == "week" else None
 
     ranking, label = _calculate_ranking(period, comments)
-    team_msg  = _format_ranking_message(ranking, label, comments, len(unannotated), abandoned)
+    team_msg  = _format_ranking_message(ranking, label, comments, len(unannotated), abandoned, skipped_by)
 
     for user_id in users:
         # チーム全体メッセージ
