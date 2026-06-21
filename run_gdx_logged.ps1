@@ -132,6 +132,29 @@ try {
             Write-Warning "[LW] lw_blob_sync.py が見つかりません。スキップします。"
         }
 
+        # ── LW: _LDExtraction → B4 振り分け ──────────────────────────────
+        $ldSortScript = Join-Path $pw 'ld_sort.py'
+        if (Test-Path -LiteralPath $ldSortScript) {
+            Write-Host "[LW] LDExtraction -> B4 振り分け開始"
+            Push-Location $pw
+            try {
+                if ($lwPython -eq 'py') {
+                    & $lwPython -3 $ldSortScript
+                } else {
+                    & $lwPython $ldSortScript
+                }
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "[LW] ld_sort.py がエラーで終了しました (code $LASTEXITCODE)"
+                } else {
+                    Write-Host "[LW] LDExtraction -> B4 振り分け完了"
+                }
+            } finally {
+                Pop-Location
+            }
+        } else {
+            Write-Warning "[LW] ld_sort.py が見つかりません。スキップします。"
+        }
+
         # ── 学習協力Bot: Blob アノテーション同期 → .json サイドカー作成 ───────
         $annBotScript = Join-Path $pw 'lw_annotation_bot.py'
         if (Test-Path -LiteralPath $annBotScript) {
