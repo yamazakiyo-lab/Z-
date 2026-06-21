@@ -252,8 +252,7 @@ def _find_unannotated_docs(state: dict) -> list[tuple[str, str]]:
             continue
         if Path(fp).suffix.lower() not in VISION_SUPPORTED_EXT:
             continue
-        if Path(fp).exists():
-            result.append((doc_id, fp))
+        result.append((doc_id, fp))
     return result
 
 
