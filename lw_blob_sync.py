@@ -36,7 +36,7 @@ BLOB_CONTAINER: str = os.environ.get("LW_BLOB_CONTAINER", "lw-raw")
 SYNC_DEST = Path(
     os.environ.get(
         "LW_SYNC_DEST",
-        r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\LDExtraction",
+        r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_LDExtraction",
     )
 )
 _default_state = Path(__file__).with_name("lw_blob_sync_state.json")

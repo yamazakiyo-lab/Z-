@@ -23,7 +23,7 @@ from pathlib import Path
 
 # ── パス定数 ───────────────────────────────────────────────────────────────────
 LD_EXTRACTION = Path(
-    r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\LDExtraction"
+    r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_LDExtraction"
 )
 BASE_DEST = Path(
     r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画"

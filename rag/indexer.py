@@ -174,8 +174,8 @@ def scan_media_files(root: Path) -> Iterator[Dict]:
         if not a_folder.is_dir():
             continue
 
-        # ── LDExtraction サブフォルダの処理 ──────────────────────────────
-        if a_folder.name == "LDExtraction":
+        # ── _LDExtraction サブフォルダの処理 ──────────────────────────────
+        if a_folder.name == "_LDExtraction":
             for ld_koban_dir in sorted(a_folder.iterdir()):
                 if not ld_koban_dir.is_dir():
                     continue
