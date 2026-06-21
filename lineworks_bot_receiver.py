@@ -81,6 +81,7 @@ STATE_WAITING_KOBAN        = "waiting_koban"
 STATE_WAITING_BUHIN        = "waiting_buhin"
 STATE_WAITING_COMMENT      = "waiting_comment"
 STATE_WAITING_PHASE        = "waiting_phase"         # フェーズ（B1/B2/B3）待ち
+STATE_WAITING_BATCH        = "waiting_batch"          # まとめ保存 Y/N 待ち
 # 学習協力 Bot 用ステート
 STATE_WAITING_ANNOTATION   = "waiting_annotation"   # 写真コメント待ち
 STATE_WAITING_NEXT         = "waiting_next"          # 次の写真送るか Y/N 待ち
@@ -334,44 +335,81 @@ _conv: dict[str, dict] = {}
 
 
 def _start_inquiry(user_id: str, channel_id: str, file_blob: str) -> None:
-    """ファイル受信後、工番質問を開始する。"""
+    """ファイル受信後、工番質問を開始する。会話中なら次のファイルをキューに積む。"""
+    if user_id in _conv:
+        # すでに会話中 → キューに追加
+        _conv[user_id].setdefault("queued_files", []).append(file_blob)
+        q = len(_conv[user_id]["queued_files"])
+        logger.info(f"キューに追加: {user_id} / queue={q}")
+        return
+
     _conv[user_id] = {
         "state": STATE_WAITING_KOBAN,
         "channel_id": channel_id,
         "file_blob": file_blob,
         "koban": "",
         "buhin": "",
+        "queued_files": [],
     }
     _send_text(channel_id, user_id, "どの工番ですか？")
 
 
-def _save_meta(user_id: str, phase: str) -> None:
-    """メタ情報を Blob に保存し、会話状態をクリアする。"""
-    state = _conv.pop(user_id, {})
-    channel_id = state.get("channel_id", "")
-    file_blob = state.get("file_blob", "")
+def _upload_meta(file_blob: str, koban: str, buhin: str, comment: str, phase: str) -> None:
+    """1ファイル分のメタを Blob に保存する。"""
     meta = {
         "file_blob": file_blob,
-        "koban": state.get("koban", ""),
-        "buhin": state.get("buhin", ""),
-        "comment": state.get("comment", ""),
+        "koban": koban,
+        "buhin": buhin,
+        "comment": comment,
         "phase": phase,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
     }
-    # meta ファイルのパスはファイルと同じプレフィックス（_meta.json を付ける）
     if file_blob:
         meta_blob = file_blob.rsplit(".", 1)[0] + "_meta.json"
     else:
         date_folder, uid = _make_blob_prefix()
         meta_blob = f"{date_folder}/{uid}_meta.json"
-
     _upload_to_blob(
         meta_blob,
         json.dumps(meta, ensure_ascii=False, indent=2).encode("utf-8"),
         "application/json",
     )
     logger.info(f"メタ保存完了: {meta}")
-    _send_text(channel_id, user_id, "ありがとうございます！保存しました。")
+
+
+def _save_meta(user_id: str, phase: str) -> None:
+    """メタ情報を Blob に保存し、キューがあれば一括確認へ。"""
+    state = _conv.get(user_id, {})
+    channel_id  = state.get("channel_id", "")
+    file_blob   = state.get("file_blob", "")
+    koban       = state.get("koban", "")
+    buhin       = state.get("buhin", "")
+    comment     = state.get("comment", "")
+    queued      = state.get("queued_files", [])
+
+    _upload_meta(file_blob, koban, buhin, comment, phase)
+
+    if queued:
+        # キューあり → まとめ保存を確認
+        _conv[user_id] = {
+            "state": STATE_WAITING_BATCH,
+            "channel_id": channel_id,
+            "koban": koban,
+            "buhin": buhin,
+            "comment": comment,
+            "phase": phase,
+            "queued_files": queued,
+        }
+        phase_label = {"B1": "着手前", "B2": "着手中", "B3": "出荷以降"}.get(phase, phase)
+        _send_text(channel_id, user_id,
+            f"ありがとうございます！保存しました。\n\n"
+            f"他に {len(queued)} 件のファイルが届いています。\n"
+            f"同じ設定（工番: {koban} / 部品: {buhin} / フェーズ: {phase_label}）で保存しますか？\n"
+            f"Y → まとめて保存　N → 1件ずつ入力"
+        )
+    else:
+        _conv.pop(user_id, None)
+        _send_text(channel_id, user_id, "ありがとうございます！保存しました。")
 
 
 # ── FastAPI アプリ ────────────────────────────────────────────────────────────
@@ -504,6 +542,35 @@ async def lineworks_callback(request: Request) -> Response:
                     _send_text(ch, user_id, "1・2・3 のいずれかを入力してください。\n1 → 着手前　2 → 着手中　3 → 出荷以降")
                 else:
                     _save_meta(user_id, phase)
+
+            elif state == STATE_WAITING_BATCH:
+                ans = text.strip().upper()
+                queued  = state_data.get("queued_files", [])
+                koban   = state_data.get("koban", "")
+                buhin   = state_data.get("buhin", "")
+                comment = state_data.get("comment", "")
+                phase   = state_data.get("phase", "")
+
+                if ans == "Y":
+                    for qf in queued:
+                        _upload_meta(qf, koban, buhin, comment, phase)
+                    _conv.pop(user_id, None)
+                    _send_text(ch, user_id, f"まとめて {len(queued)} 件保存しました！ありがとうございます。")
+
+                elif ans == "N":
+                    next_blob = queued.pop(0)
+                    _conv[user_id] = {
+                        "state": STATE_WAITING_KOBAN,
+                        "channel_id": ch,
+                        "file_blob": next_blob,
+                        "koban": "",
+                        "buhin": "",
+                        "queued_files": queued,
+                    }
+                    _send_text(ch, user_id, "では1件ずつ入力します。\nどの工番ですか？")
+
+                else:
+                    _send_text(ch, user_id, "Y（まとめて保存）または N（1件ずつ入力）で答えてください。")
 
             # ── 学習協力 Bot ステート ─────────────────────────────────
             elif state == STATE_WAITING_ANNOTATION:
