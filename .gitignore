@@ -60,3 +60,6 @@ rag/manifest.json
 rag/descriptions.json
 
 sync_log.txt
+
+# KEIRI-PC local configuration
+run_gdx_wrapper.bat
