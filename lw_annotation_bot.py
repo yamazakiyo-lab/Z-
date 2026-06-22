@@ -715,6 +715,27 @@ def cmd_add_user(user_id: str) -> None:
 
 
 # ── コマンド: 一斉送信 ───────────────────────────────────────────────────────
+def cmd_reset_pending(user_id: str | None = None) -> None:
+    """pending 状態を強制クリアする（返信が届かなかった場合の復旧用）。"""
+    state = _load_annotation_state()
+    pending = state.get("pending", {})
+    if not pending:
+        logger.info("pending 中のユーザーはいません。")
+        return
+    if user_id:
+        if user_id in pending:
+            del pending[user_id]
+            _save_annotation_state(state)
+            logger.info(f"pending クリア完了: {user_id}")
+        else:
+            logger.info(f"pending にいません: {user_id}")
+    else:
+        count = len(pending)
+        pending.clear()
+        _save_annotation_state(state)
+        logger.info(f"全 pending クリア完了: {count} 名")
+
+
 def cmd_broadcast(message: str) -> None:
     """登録済み全ユーザーにメッセージを一斉送信する。"""
     state = _load_annotation_state()
@@ -795,6 +816,8 @@ def main() -> None:
     parser.add_argument("--sync-annotations", action="store_true",
                         help="Blob の GDX アノテーションをローカル .json サイドカーに変換")
     parser.add_argument("--add-user", metavar="USER_ID", help="ユーザーを手動登録")
+    parser.add_argument("--reset-pending", nargs="?", const="__all__", metavar="USER_ID",
+                        help="pending 状態を強制クリア（引数なし=全員、USER_ID 指定=個人）")
     parser.add_argument("--broadcast", metavar="MESSAGE", help="登録済み全ユーザーにメッセージを一斉送信")
     parser.add_argument("--cleanup-reminder", action="store_true",
                         help="全ユーザーに Botチャット削除リマインダーを送信（月1回）")
@@ -814,6 +837,9 @@ def main() -> None:
         cmd_sync_annotations()
     elif args.add_user:
         cmd_add_user(args.add_user)
+    elif args.reset_pending is not None:
+        uid = None if args.reset_pending == "__all__" else args.reset_pending
+        cmd_reset_pending(uid)
     elif args.broadcast:
         cmd_broadcast(args.broadcast)
     elif args.cleanup_reminder:
