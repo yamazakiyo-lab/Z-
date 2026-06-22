@@ -10,6 +10,8 @@ __pycache__/
 *.so
 .Python
 venv/
+lw_venv/
+rag_venv/
 env/
 ENV/
 build/
