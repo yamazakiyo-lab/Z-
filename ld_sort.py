@@ -107,6 +107,31 @@ def _find_existing_a_folder(workno: str) -> Optional[Path]:
     return sorted(candidates, key=lambda p: p.name.lower())[0]
 
 
+# B-フォルダのキーワードマップ（前方一致検索用）
+B_FOLDER_KEYWORDS = {
+    "B1": "B1",
+    "B2": "B2",
+    "B3": "B3",
+    "B4": "B4",
+}
+
+
+def _find_or_create_b_folder(a_folder: Path, b_label: str, workno: str, dry_run: bool) -> Path:
+    """A-フォルダ内で b_label に対応する既存サブフォルダを探して返す。
+    見つからない場合は b_label 名のフォルダパスを返す（dry_run でなければ作成）。
+    GDX が作る '{workno}_B4整理前写真・動画' 形式にも対応。
+    """
+    keyword = B_FOLDER_KEYWORDS.get(b_label, b_label)
+    try:
+        for d in a_folder.iterdir():
+            if d.is_dir() and keyword in d.name:
+                return d
+    except Exception:
+        pass
+    # 既存なし → シンプルな b_label 名を使う
+    return a_folder / b_label
+
+
 def sort_ld_extraction(dry_run: bool = False) -> None:
     if not LD_EXTRACTION.exists():
         logger.error(f"LDExtraction が見つかりません: {LD_EXTRACTION}")
@@ -163,7 +188,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                 a_folder = BASE_DEST / koban
                 logger.warning(f"既存工番フォルダ未発見、新規作成: {koban}/")
 
-            dest_dir   = a_folder / b_folder
+            dest_dir   = _find_or_create_b_folder(a_folder, b_folder, workno or koban, dry_run)
             dest_media = dest_dir / media_file.name
             ann_dir    = ANNOTATIONS_ROOT / koban
             dest_json  = ann_dir / json_file.name
