@@ -32,13 +32,13 @@ if ($todayLogs.Count -eq 0) {
     $checkLog += $logContent
     $checkLog += "`r`n`r`n"
     
-    # Success/error judgment
-    if ($logContent -match "Error|ERROR|Failed|Exception" -and $logContent -notmatch "Success|Completed") {
-        $status = "ERROR"
-        $exitCode = 1
-    } else {
+    # 成功マーカーで判定（check_daily_run_status.ps1 と同じ基準）
+    if ($logContent -match "=== 全工程 完了 ===|===== 完了 =====") {
         $status = "OK"
         $exitCode = 0
+    } else {
+        $status = "ERROR"
+        $exitCode = 1
     }
 }
 

@@ -325,3 +325,9 @@ if (-not $NoPopup) {
 
 Write-Output "Summary written to: $summaryFile"
 Write-Output $popupMessage
+
+# ── GDX トランスクリプトログ詳細確認（check_gdx_log.ps1 統合） ────────────────
+$gdxCheckScript = Join-Path $workspace 'check_gdx_log.ps1'
+if (Test-Path -LiteralPath $gdxCheckScript) {
+    & powershell -NoProfile -ExecutionPolicy Bypass -File $gdxCheckScript -NoPopup
+}
