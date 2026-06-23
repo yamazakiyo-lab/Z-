@@ -721,7 +721,7 @@ async def lineworks_callback(request: Request) -> Response:
                     _save_annotation_state(ann_state)
                 elif t in no_words:
                     _conv.pop(user_id, None)
-                    _send_text(ch, user_id, "ありがとうございました！またいつでも協力よろしくお願いします 🙏\n（明日また写真をお送りします）")
+                    _send_text(ch, user_id, "ありがとうございました！また定時に写真をお送りします 🙏\n「T」を押すと再開できます。")
                 else:
                     _send_text(ch, user_id,
                         "Y か N で答えてください 🙏\nY → 続ける　N → 今日はここまで（明日また届きます）"
