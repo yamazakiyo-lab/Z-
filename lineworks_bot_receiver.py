@@ -597,7 +597,7 @@ async def lineworks_callback(request: Request) -> Response:
 
             # キャンセルコマンド（写真アップロードフロー中のみ）
             _upload_states = {STATE_WAITING_KOBAN, STATE_WAITING_BUHIN, STATE_WAITING_COMMENT, STATE_WAITING_PHASE, STATE_WAITING_BATCH}
-            if state in _upload_states and text.strip().lower() in {"キャンセル", "中止", "cancel"}:
+            if state in _upload_states and text.strip().lower() in {"x", "ｘ", "キャンセル", "中止", "cancel"}:
                 _conv.pop(user_id, None)
                 _send_text(ch, user_id, "入力を中止しました。")
             elif state == STATE_WAITING_KOBAN:
