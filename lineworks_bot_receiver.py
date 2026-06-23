@@ -507,7 +507,15 @@ async def lineworks_callback(request: Request) -> Response:
                 logger.error(f"ファイルダウンロード失敗: {e}")
 
         if user_id:
-            _start_inquiry(user_id, channel_id, file_blob)
+            # 学習協力中に写真を送ってきた場合は先に学習協力を終わらせるよう案内
+            current_state = _conv.get(user_id, {}).get("state", "")
+            if current_state in {STATE_WAITING_ANNOTATION, STATE_WAITING_NEXT}:
+                _send_text(channel_id, user_id,
+                    "学習協力の回答が終わっていません 📸\n"
+                    "先にコメントを入力してから写真を送ってください。"
+                )
+            else:
+                _start_inquiry(user_id, channel_id, file_blob)
 
     # ── テキスト受信（会話ステート処理） ─────────────────────────────────
     elif msg_type == "text":
@@ -587,7 +595,12 @@ async def lineworks_callback(request: Request) -> Response:
             state = state_data["state"]
             ch = state_data.get("channel_id", channel_id)
 
-            if state == STATE_WAITING_KOBAN:
+            # キャンセルコマンド（写真アップロードフロー中のみ）
+            _upload_states = {STATE_WAITING_KOBAN, STATE_WAITING_BUHIN, STATE_WAITING_COMMENT, STATE_WAITING_PHASE, STATE_WAITING_BATCH}
+            if state in _upload_states and text.strip().lower() in {"キャンセル", "中止", "cancel"}:
+                _conv.pop(user_id, None)
+                _send_text(ch, user_id, "入力を中止しました。")
+            elif state == STATE_WAITING_KOBAN:
                 state_data["koban"] = text
                 state_data["state"] = STATE_WAITING_BUHIN
                 _send_text(ch, user_id, "どの部分ですか？")
