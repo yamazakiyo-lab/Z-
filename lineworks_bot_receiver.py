@@ -514,6 +514,7 @@ async def lineworks_callback(request: Request) -> Response:
         text = content.get("text", "").strip()
 
         # _conv にない場合: annotation_state.json から pending を復元
+        _skip_state = False  # T トリガーで即開始した場合は後続ステート処理をスキップ
         if user_id not in _conv:
             ann_state = _load_annotation_state()
             # 新規ユーザー自動登録
@@ -569,6 +570,7 @@ async def lineworks_callback(request: Request) -> Response:
                         "job_number": job_number,
                     }
                     _save_annotation_state(ann_state)
+                    _skip_state = True  # 写真送信済み → テキスト"T"をコメントとして処理しない
                 else:
                     _send_text(channel_id, user_id, "現在送信できる写真がありません。次回の配信時にお届けします 📸")
             else:
@@ -580,7 +582,7 @@ async def lineworks_callback(request: Request) -> Response:
                     "「T」と送ると今すぐ学習協力写真が届きます。"
                 )
 
-        if user_id in _conv:
+        if not _skip_state and user_id in _conv:
             state_data = _conv[user_id]
             state = state_data["state"]
             ch = state_data.get("channel_id", channel_id)
