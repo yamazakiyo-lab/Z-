@@ -640,10 +640,12 @@ def cmd_send() -> None:
         logger.info("登録ユーザーがいません。lw_annotation_bot.py --add-user <user_id> で追加してください。")
         return
 
-    # 24時間タイムアウトチェック
-    expired = _expire_pending(state)
-    if expired:
-        logger.info(f"タイムアウト処理: {len(expired)} 名")
+    # 定期送信時は pending を自動リセット（毎回全員に届けるため）
+    # リセットされた写真は未アノテーションプールに戻り、次回以降また送信対象になる
+    pending = state.get("pending", {})
+    if pending:
+        logger.info(f"pending 自動リセット: {len(pending)} 名")
+        state["pending"] = {}
 
     unannotated = _find_unannotated_docs(state)
     if not unannotated:
@@ -655,10 +657,6 @@ def cmd_send() -> None:
 
     sent_count = 0
     for user_id in users:
-        # pending 中で want_next でもないユーザーはスキップ
-        if user_id in pending and user_id not in want_next:
-            logger.info(f"スキップ（pending中）: {user_id}")
-            continue
 
         doc_id, file_path = random.choice(unannotated)
         ok = _send_annotation_request(user_id, doc_id, file_path, state)
