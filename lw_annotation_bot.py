@@ -656,9 +656,12 @@ def cmd_send() -> None:
         return
 
     # 未アノテーションプールをBlobに保存（App Service側Y応答即時送信用）
+    # ユーザー数×10件程度をランダムサンプリングして保存（肥大化防止）
+    pool_size = max(100, len(users) * 10)
+    pool_sample = random.sample(unannotated, min(pool_size, len(unannotated)))
     state["unannotated_pool"] = [
         {"doc_id": d, "file_path": f, "blob_url": _to_blob_url(f)}
-        for d, f in unannotated
+        for d, f in pool_sample
     ]
 
     sent_count = 0
