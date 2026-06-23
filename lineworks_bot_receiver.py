@@ -533,12 +533,52 @@ async def lineworks_callback(request: Request) -> Response:
                 }
 
         if user_id not in _conv:
-            # 状態なし（想定外のメッセージ）→ 用途を案内
-            _send_text(channel_id, user_id,
-                "このBotは施工写真の記録・学習協力専用です 📸\n"
-                "写真を送ると工番・コメントを記録できます。\n"
-                "学習協力写真が届いたらコメントをお願いします！"
-            )
+            # トリガーワード「T」→ 学習協力をオンデマンド開始
+            if text.strip().lower() in {"t", "ｔ"}:
+                import random as _random
+                pool = ann_state.get("unannotated_pool", [])
+                if pool:
+                    item = _random.choice(pool)
+                    pool.remove(item)
+                    next_doc_id = item["doc_id"]
+                    next_fp     = item.get("file_path", "")
+                    next_url    = item.get("blob_url", "")
+                    job_number  = item.get("job_number", "")
+                    if next_url:
+                        _send_image(channel_id, user_id, next_url)
+                    else:
+                        _send_text(channel_id, user_id, f"📸 {Path(next_fp).name}")
+                    ann_msg = "この写真にコメントをお願いします！\n"
+                    if job_number:
+                        ann_msg += f"工番: {job_number}\n"
+                    ann_msg += "（作業内容・状態・部品名・気になった点など）\n"
+                    ann_msg += "わからない場合は「？」を入力してください。"
+                    _send_text(channel_id, user_id, ann_msg)
+                    ann_state.setdefault("pending", {})[user_id] = {
+                        "doc_id": next_doc_id,
+                        "file_path": next_fp,
+                        "job_number": job_number,
+                        "sent_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    ann_state["unannotated_pool"] = pool
+                    _conv[user_id] = {
+                        "state": STATE_WAITING_ANNOTATION,
+                        "channel_id": channel_id,
+                        "doc_id": next_doc_id,
+                        "file_path": next_fp,
+                        "job_number": job_number,
+                    }
+                    _save_annotation_state(ann_state)
+                else:
+                    _send_text(channel_id, user_id, "現在送信できる写真がありません。次回の配信時にお届けします 📸")
+            else:
+                # 状態なし（想定外のメッセージ）→ 用途を案内
+                _send_text(channel_id, user_id,
+                    "このBotは施工写真の記録・学習協力専用です 📸\n"
+                    "写真を送ると工番・コメントを記録できます。\n"
+                    "学習協力写真が届いたらコメントをお願いします！\n"
+                    "「T」と送ると今すぐ学習協力写真が届きます。"
+                )
 
         if user_id in _conv:
             state_data = _conv[user_id]
