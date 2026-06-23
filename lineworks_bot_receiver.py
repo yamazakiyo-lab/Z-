@@ -336,7 +336,7 @@ def _save_annotation_state(state: dict) -> None:
         logger.error(f"annotation_state.json 保存失敗: {e}")
 
 
-def _save_gdx_annotation(doc_id: str, file_path: str, comment: str, user_id: str) -> None:
+def _save_gdx_annotation(doc_id: str, file_path: str, comment: str, user_id: str, quality: str = "ok") -> None:
     """GDX 写真のアノテーションを Blob に保存する（デスクトップが .json サイドカーに変換）。"""
     client = _get_blob_client()
     if client is None:
@@ -348,6 +348,7 @@ def _save_gdx_annotation(doc_id: str, file_path: str, comment: str, user_id: str
             "file_path": file_path,
             "comment": comment,
             "user_id": user_id,
+            "quality": quality,
             "annotated_at": datetime.now(timezone.utc).isoformat(),
         }, ensure_ascii=False, indent=2).encode("utf-8")
         container = client.get_container_client(BLOB_CONTAINER)
@@ -675,18 +676,34 @@ async def lineworks_callback(request: Request) -> Response:
                     _conv.pop(user_id, None)
                     _send_text(ch, user_id, "スキップしました。別の方に回します！\nまた写真が届いたらよろしくお願いします 🙏")
                 else:
-                    # Blob に GDX アノテーション保存
-                    _save_gdx_annotation(doc_id, file_path, text, user_id)
-                    # annotation_state の pending から除去・want_next はデスクトップ側で処理
-                    ann_state = _load_annotation_state()
-                    ann_state.get("pending", {}).pop(user_id, None)
-                    _save_annotation_state(ann_state)
-                    # Y/N を聞く
-                    state_data["state"] = STATE_WAITING_NEXT
-                    _send_text(ch, user_id,
-                        "ありがとうございます！コメントを保存しました 🎉\n"
-                        "次の写真も協力しますか？\nY → 続ける　N → 今はここまで（定時または「T」で再開）"
-                    )
+                    # 文字数チェック（5文字未満はリトライ促す）
+                    MIN_COMMENT_LEN = 5
+                    is_short = len(text.strip()) < MIN_COMMENT_LEN
+                    is_retry = state_data.get("comment_retry", False)
+
+                    if is_short and not is_retry:
+                        # 1回だけ再入力を促す
+                        state_data["comment_retry"] = True
+                        _send_text(ch, user_id,
+                            "コメントが短すぎます 🙏\n"
+                            "作業内容・状態・部品名など、もう少し詳しく入力してください。\n"
+                            "（どうしても分からない場合は「？」を入力）"
+                        )
+                    else:
+                        # 保存（リトライ後も短い場合は quality=low）
+                        quality = "low" if is_short else "ok"
+                        _save_gdx_annotation(doc_id, file_path, text, user_id, quality)
+                        # annotation_state の pending から除去
+                        ann_state = _load_annotation_state()
+                        ann_state.get("pending", {}).pop(user_id, None)
+                        _save_annotation_state(ann_state)
+                        # Y/N を聞く
+                        state_data["state"] = STATE_WAITING_NEXT
+                        state_data.pop("comment_retry", None)
+                        _send_text(ch, user_id,
+                            "ありがとうございます！コメントを保存しました 🎉\n"
+                            "次の写真も協力しますか？\nY → 続ける　N → 今はここまで（定時または「T」で再開）"
+                        )
 
             elif state == STATE_WAITING_NEXT:
                 ch = state_data.get("channel_id", channel_id)
