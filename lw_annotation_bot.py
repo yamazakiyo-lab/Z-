@@ -659,8 +659,14 @@ def cmd_send() -> None:
     # ユーザー数×10件程度をランダムサンプリングして保存（肥大化防止）
     pool_size = max(100, len(users) * 10)
     pool_sample = random.sample(unannotated, min(pool_size, len(unannotated)))
+    def _job_number(fp: str) -> str:
+        try:
+            rel = Path(fp).relative_to(TARGET_91_ROOT)
+            return rel.parts[0] if rel.parts else ""
+        except ValueError:
+            return ""
     state["unannotated_pool"] = [
-        {"doc_id": d, "file_path": f, "blob_url": _to_blob_url(f)}
+        {"doc_id": d, "file_path": f, "blob_url": _to_blob_url(f), "job_number": _job_number(f)}
         for d, f in pool_sample
     ]
 

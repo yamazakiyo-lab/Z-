@@ -649,12 +649,7 @@ async def lineworks_callback(request: Request) -> Response:
                         next_doc_id  = item["doc_id"]
                         next_fp      = item.get("file_path", "")
                         next_url     = item.get("blob_url", "")
-                        job_number   = ""
-                        try:
-                            parts = Path(next_fp).parts
-                            job_number = parts[-2] if len(parts) >= 2 else ""
-                        except Exception:
-                            pass
+                        job_number   = item.get("job_number", "")
                         if next_url:
                             _send_image(ch, user_id, next_url)
                         else:
