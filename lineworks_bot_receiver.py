@@ -379,7 +379,7 @@ def _start_inquiry(user_id: str, channel_id: str, file_blob: str) -> None:
         "buhin": "",
         "queued_files": [],
     }
-    _send_text(channel_id, user_id, "ファイルを受け取りました！\nどの工番ですか？")
+    _send_text(channel_id, user_id, "ファイルを受け取りました！\nどの工番ですか？（中止する場合は「X」）")
 
 
 def _upload_meta(file_blob: str, koban: str, buhin: str, comment: str, phase: str) -> None:
