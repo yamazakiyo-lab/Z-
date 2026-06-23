@@ -67,6 +67,11 @@ PRIVATE_KEY_CONTENT: str = os.environ.get("LINEWORKS_PRIVATE_KEY", "")
 BOT_ID: str = os.environ.get("LINEWORKS_BOT_ID", "")
 BLOB_CONN_STR: str = os.environ.get("AZURE_BLOB_CONNECTION_STRING", "")
 BLOB_CONTAINER: str = os.environ.get("LW_BLOB_CONTAINER", "lw-raw")
+PHOTOS_BLOB_ENDPOINT: str = os.environ.get(
+    "AZURE_PHOTOS_BLOB_ENDPOINT",
+    "https://tsegphotos.blob.core.windows.net/photos",
+).rstrip("/")
+BLOB_SAS_TOKEN: str = os.environ.get("AZURE_BLOB_SAS_TOKEN", "")
 
 LW_TOKEN_URL = "https://auth.worksmobile.com/oauth2/v2.0/token"
 LW_FILE_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/attachments/{file_id}"
@@ -232,6 +237,29 @@ def _send_text(channel_id: str, user_id: str, text: str) -> None:
         logger.info(f"メッセージ送信完了: channel={channel_id}, user={user_id}")
     except Exception as e:
         logger.error(f"メッセージ送信失敗: {e}")
+
+
+# ── LINE WORKS 画像送信 ────────────────────────────────────────────────────────
+def _send_image(channel_id: str, user_id: str, image_url: str) -> None:
+    try:
+        token = _get_access_token()
+        if channel_id:
+            url = LW_SEND_CHANNEL_URL.format(bot_id=BOT_ID, channel_id=channel_id)
+        else:
+            url = LW_SEND_USER_URL.format(bot_id=BOT_ID, user_id=user_id)
+        resp = requests.post(
+            url,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            json={"content": {
+                "type": "image",
+                "originalContentUrl": image_url,
+                "previewImageUrl": image_url,
+            }},
+            timeout=10,
+        )
+        resp.raise_for_status()
+    except Exception as e:
+        logger.error(f"画像送信失敗: {e}")
 
 
 # ── LINE WORKS ファイルダウンロード ───────────────────────────────────────────
@@ -613,11 +641,47 @@ async def lineworks_callback(request: Request) -> Response:
                 if t in yes_words:
                     _conv.pop(user_id, None)
                     ann_state = _load_annotation_state()
-                    want_next = ann_state.setdefault("want_next", [])
-                    if user_id not in want_next:
-                        want_next.append(user_id)
+                    pool = ann_state.get("unannotated_pool", [])
+                    if pool:
+                        import random as _random
+                        item = _random.choice(pool)
+                        pool.remove(item)
+                        next_doc_id  = item["doc_id"]
+                        next_fp      = item.get("file_path", "")
+                        next_url     = item.get("blob_url", "")
+                        job_number   = ""
+                        try:
+                            parts = Path(next_fp).parts
+                            job_number = parts[-2] if len(parts) >= 2 else ""
+                        except Exception:
+                            pass
+                        if next_url:
+                            _send_image(ch, user_id, next_url)
+                        else:
+                            _send_text(ch, user_id, f"📸 {Path(next_fp).name}")
+                        ann_msg = "この写真にコメントをお願いします！\n"
+                        if job_number:
+                            ann_msg += f"工番: {job_number}\n"
+                        ann_msg += "（作業内容・状態・部品名・気になった点など）\n"
+                        ann_msg += "わからない場合は「？」を入力してください。"
+                        _send_text(ch, user_id, ann_msg)
+                        ann_state.setdefault("pending", {})[user_id] = {
+                            "doc_id": next_doc_id,
+                            "file_path": next_fp,
+                            "job_number": job_number,
+                            "sent_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                        ann_state["unannotated_pool"] = pool
+                        _conv[user_id] = {
+                            "state": STATE_WAITING_ANNOTATION,
+                            "channel_id": ch,
+                            "doc_id": next_doc_id,
+                            "file_path": next_fp,
+                            "job_number": job_number,
+                        }
+                    else:
+                        _send_text(ch, user_id, "現在送信できる写真がありません。次回の配信時にお届けします 📸")
                     _save_annotation_state(ann_state)
-                    _send_text(ch, user_id, "ありがとうございます！次の写真を準備して送ります 📸")
                 elif t in no_words:
                     _conv.pop(user_id, None)
                     _send_text(ch, user_id, "ありがとうございました！またいつでも協力よろしくお願いします 🙏\n（明日また写真をお送りします）")

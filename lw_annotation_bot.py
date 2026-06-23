@@ -655,9 +655,14 @@ def cmd_send() -> None:
         _save_annotation_state(state)
         return
 
+    # 未アノテーションプールをBlobに保存（App Service側Y応答即時送信用）
+    state["unannotated_pool"] = [
+        {"doc_id": d, "file_path": f, "blob_url": _to_blob_url(f)}
+        for d, f in unannotated
+    ]
+
     sent_count = 0
     for user_id in users:
-
         doc_id, file_path = random.choice(unannotated)
         ok = _send_annotation_request(user_id, doc_id, file_path, state)
         if ok:
