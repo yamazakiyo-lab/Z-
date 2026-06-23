@@ -588,7 +588,8 @@ async def lineworks_callback(request: Request) -> Response:
                     "このBotは施工写真の記録・学習協力専用です 📸\n"
                     "写真を送ると工番・コメントを記録できます。\n"
                     "学習協力写真が届いたらコメントをお願いします！\n"
-                    "「T」と送ると今すぐ学習協力写真が届きます。"
+                    "「T」と送ると今すぐ学習協力写真が届きます。\n"
+                    "途中で中止したい場合は「X」でキャンセルできます。"
                 )
 
         if not _skip_state and user_id in _conv:
@@ -662,7 +663,14 @@ async def lineworks_callback(request: Request) -> Response:
                 doc_id = state_data.get("doc_id", "")
                 file_path = state_data.get("file_path", "")
 
-                if text == "？":
+                if text.strip().lower() in {"x", "ｘ"}:
+                    # X → キャンセル（スキップ扱い）
+                    ann_state = _load_annotation_state()
+                    ann_state.get("pending", {}).pop(user_id, None)
+                    _save_annotation_state(ann_state)
+                    _conv.pop(user_id, None)
+                    _send_text(ch, user_id, "キャンセルしました。また定時に写真をお送りします 🙏\n「T」を押すと再開できます。")
+                elif text == "？":
                     # スキップ：skipped リストに移動し pending から除去
                     ann_state = _load_annotation_state()
                     ann_state.get("pending", {}).pop(user_id, None)
@@ -708,7 +716,7 @@ async def lineworks_callback(request: Request) -> Response:
             elif state == STATE_WAITING_NEXT:
                 ch = state_data.get("channel_id", channel_id)
                 yes_words = {"y", "yes", "はい", "お願い", "続ける", "1"}
-                no_words  = {"n", "no", "いいえ", "ここまで", "やめる", "stop", "2"}
+                no_words  = {"n", "no", "いいえ", "ここまで", "やめる", "stop", "2", "x", "ｘ"}
                 t = text.lower().strip()
                 if t in yes_words:
                     _conv.pop(user_id, None)
