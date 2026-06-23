@@ -672,7 +672,7 @@ async def lineworks_callback(request: Request) -> Response:
                     state_data["state"] = STATE_WAITING_NEXT
                     _send_text(ch, user_id,
                         "ありがとうございます！コメントを保存しました 🎉\n"
-                        "次の写真も協力しますか？\nY → 続ける　N → 今日はここまで（明日また届きます）"
+                        "次の写真も協力しますか？\nY → 続ける　N → 今はここまで（定時または「T」で再開）"
                     )
 
             elif state == STATE_WAITING_NEXT:
