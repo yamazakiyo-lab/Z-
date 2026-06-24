@@ -762,7 +762,7 @@ async def lineworks_callback(request: Request) -> Response:
                     _send_text(ch, user_id, "ありがとうございました！また定時に写真をお送りします 🙏\n「T」を押すと再開できます。")
                 else:
                     _send_text(ch, user_id,
-                        "Y か N で答えてください 🙏\nY → 続ける　N → 今日はここまで（明日また届きます）"
+                        "Y か N で答えてください 🙏\nY → 続ける　N → 今はここまで（定時または「T」で再開）"
                     )
 
     return Response(content="OK", status_code=200)
