@@ -80,6 +80,8 @@ ANNOTATION_STATE_BLOB  = "annotation_state.json"
 GDX_ANNOTATION_PREFIX  = "gdx_annotations/"
 
 VISION_SUPPORTED_EXT = {".jpg", ".jpeg", ".png"}
+VIDEO_EXT = {".mp4", ".mov", ".avi", ".mts", ".m2ts"}
+MEDIA_SUPPORTED_EXT = VISION_SUPPORTED_EXT | VIDEO_EXT
 
 # 休暇設定ファイル
 HOLIDAY_JSON_PATH = _ROOT / "lw_holiday.json"
@@ -278,7 +280,7 @@ def _find_unannotated_docs(state: dict) -> list[tuple[str, str]]:
     for doc_id, fp in manifest.items():
         if doc_id in comments or doc_id in pending_ids:
             continue
-        if Path(fp).suffix.lower() not in VISION_SUPPORTED_EXT:
+        if Path(fp).suffix.lower() not in MEDIA_SUPPORTED_EXT:
             continue
         result.append((doc_id, fp))
     return result
@@ -508,14 +510,21 @@ def _send_annotation_request(
 
     image_url = _to_blob_url(file_path)
     file_name = Path(file_path).name
+    is_video = Path(file_path).suffix.lower() in VIDEO_EXT
 
-    # 画像送信（失敗時はファイル名テキストで代替）
-    if image_url:
-        ok = _send_image(user_id, image_url)
-        if not ok:
-            _send_text(user_id, f"📸 {file_name}")
+    # 画像／動画送信
+    if is_video:
+        if image_url:
+            _send_text(user_id, f"🎬 動画: {file_name}\n{image_url}")
+        else:
+            _send_text(user_id, f"🎬 {file_name}")
     else:
-        _send_text(user_id, f"📸 {file_name}")
+        if image_url:
+            ok = _send_image(user_id, image_url)
+            if not ok:
+                _send_text(user_id, f"📸 {file_name}")
+        else:
+            _send_text(user_id, f"📸 {file_name}")
 
     # コメント依頼
     msg = "この写真・動画について教えてください！\n"
