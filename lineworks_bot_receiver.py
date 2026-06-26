@@ -561,7 +561,7 @@ async def lineworks_callback(request: Request) -> Response:
                     ann_msg = "この写真・動画について教えてください！\n"
                     if job_number:
                         ann_msg += f"工番: {job_number}\n"
-                    ann_msg += "（部品名・シーン・何をしているかなど）\n"
+                    ann_msg += "（部品名・シーン・何をしているかなど、5文字以上）\n"
                     ann_msg += "わからない場合はわかりそうな人に聞いてみましょう。\n"
                     ann_msg += "それでもわからない場合は「？」を入力してください。"
                     _send_text(channel_id, user_id, ann_msg)

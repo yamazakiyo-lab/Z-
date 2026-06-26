@@ -530,7 +530,7 @@ def _send_annotation_request(
     msg = "この写真・動画について教えてください！\n"
     if job_number:
         msg += f"工番: {job_number}\n"
-    msg += "（部品名・シーン・何をしているかなど）\n"
+    msg += "（部品名・シーン・何をしているかなど、5文字以上）\n"
     msg += "わからない場合はわかりそうな人に聞いてみましょう。\n"
     msg += "それでもわからない場合は「？」を入力してください。"
     _send_text(user_id, msg)
