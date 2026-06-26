@@ -518,11 +518,12 @@ def _send_annotation_request(
         _send_text(user_id, f"📸 {file_name}")
 
     # コメント依頼
-    msg = "この写真にコメントをお願いします！\n"
+    msg = "この写真・動画について教えてください！\n"
     if job_number:
         msg += f"工番: {job_number}\n"
-    msg += "（作業内容・状態・部品名・気になった点など）\n"
-    msg += "わからない場合は「？」を入力してください。"
+    msg += "（部品名・シーン・何をしているかなど）\n"
+    msg += "わからない場合はわかりそうな人に聞いてみましょう。\n"
+    msg += "それでもわからない場合は「？」を入力してください。"
     _send_text(user_id, msg)
 
     # pending 更新

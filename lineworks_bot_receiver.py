@@ -558,11 +558,12 @@ async def lineworks_callback(request: Request) -> Response:
                         _send_image(channel_id, user_id, next_url)
                     else:
                         _send_text(channel_id, user_id, f"📸 {Path(next_fp).name}")
-                    ann_msg = "この写真にコメントをお願いします！\n"
+                    ann_msg = "この写真・動画について教えてください！\n"
                     if job_number:
                         ann_msg += f"工番: {job_number}\n"
-                    ann_msg += "（作業内容・状態・部品名・気になった点など）\n"
-                    ann_msg += "わからない場合は「？」を入力してください。"
+                    ann_msg += "（部品名・シーン・何をしているかなど）\n"
+                    ann_msg += "わからない場合はわかりそうな人に聞いてみましょう。\n"
+                    ann_msg += "それでもわからない場合は「？」を入力してください。"
                     _send_text(channel_id, user_id, ann_msg)
                     ann_state.setdefault("pending", {})[user_id] = {
                         "doc_id": next_doc_id,
@@ -734,11 +735,12 @@ async def lineworks_callback(request: Request) -> Response:
                             _send_image(ch, user_id, next_url)
                         else:
                             _send_text(ch, user_id, f"📸 {Path(next_fp).name}")
-                        ann_msg = "この写真にコメントをお願いします！\n"
+                        ann_msg = "この写真・動画について教えてください！\n"
                         if job_number:
                             ann_msg += f"工番: {job_number}\n"
-                        ann_msg += "（作業内容・状態・部品名・気になった点など）\n"
-                        ann_msg += "わからない場合は「？」を入力してください。"
+                        ann_msg += "（部品名・シーン・何をしているかなど）\n"
+                        ann_msg += "わからない場合はわかりそうな人に聞いてみましょう。\n"
+                        ann_msg += "それでもわからない場合は「？」を入力してください。"
                         _send_text(ch, user_id, ann_msg)
                         ann_state.setdefault("pending", {})[user_id] = {
                             "doc_id": next_doc_id,
