@@ -52,13 +52,26 @@ def _to_blob_url(file_path: str) -> str | None:
 
 # ページ設定（必ず最初に呼ぶ）
 _favicon_path = Path(__file__).parent / "tseg_favicon.png"
-_page_icon = Image.open(_favicon_path) if _favicon_path.exists() else "🔍"
+try:
+    _page_icon = Image.open(_favicon_path) if _favicon_path.exists() else "🔍"
+except Exception:
+    _page_icon = "🔍"
 
 st.set_page_config(
     page_title="写真・動画 検索",
     page_icon=_page_icon,
     layout="wide",
 )
+
+# ブラウザタブのfaviconをTSEGロゴに設定
+if _favicon_path.exists():
+    import base64 as _b64
+    with open(_favicon_path, "rb") as _f:
+        _favicon_b64 = _b64.b64encode(_f.read()).decode()
+    st.markdown(
+        f'<link rel="shortcut icon" href="data:image/png;base64,{_favicon_b64}">',
+        unsafe_allow_html=True,
+    )
 
 # ── 接続チェック ───────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Azure AI Search に接続中...")
