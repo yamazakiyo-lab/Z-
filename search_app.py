@@ -45,7 +45,7 @@ def _to_blob_url(file_path: str) -> str | None:
 
 
 # ページ設定（必ず最初に呼ぶ）
-_LOGO_PATH = Path(__file__).parent / "static" / "tseg_favicon.png"
+_LOGO_PATH = Path(__file__).parent / "tseg_favicon.png"
 try:
     from PIL import Image as _PIL_Image
     _page_icon = _PIL_Image.open(_LOGO_PATH) if _LOGO_PATH.exists() else "🔍"
