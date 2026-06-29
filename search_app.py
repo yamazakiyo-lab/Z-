@@ -12,7 +12,8 @@ from __future__ import annotations
 import os
 import sys
 from datetime import datetime
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
+from PIL import Image
 from typing import List, Optional
 
 import streamlit as st
@@ -50,9 +51,12 @@ def _to_blob_url(file_path: str) -> str | None:
 
 
 # ページ設定（必ず最初に呼ぶ）
+_favicon_path = Path(__file__).parent / "tseg_favicon.png"
+_page_icon = Image.open(_favicon_path) if _favicon_path.exists() else "🔍"
+
 st.set_page_config(
     page_title="写真・動画 検索",
-    page_icon="🔍",
+    page_icon=_page_icon,
     layout="wide",
 )
 
