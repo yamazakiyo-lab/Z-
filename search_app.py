@@ -136,7 +136,7 @@ def main() -> None:
     if _LOGO_B64:
         st.markdown(
             '<h1 style="display:flex;align-items:center;gap:12px">'
-            '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="48" style="vertical-align:middle">'
+            '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="36" style="vertical-align:middle;margin-bottom:4px">'
             'Zフォルダ 写真・動画 検索'
             '</h1>',
             unsafe_allow_html=True,
