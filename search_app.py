@@ -126,7 +126,13 @@ def main() -> None:
     client = _get_search_client()
 
     # ヘッダー
-    st.title("🔍 Zフォルダ 写真・動画 検索")
+    st.markdown(
+        '<h1 style="display:flex;align-items:center;gap:12px">'
+        '<img src="app/static/tseg_favicon.png" width="48" style="vertical-align:middle">'
+        'Zフォルダ 写真・動画 検索'
+        '</h1>',
+        unsafe_allow_html=True,
+    )
     st.caption("工番・工事名・フォルダ名などで検索できます。")
     st.divider()
 
