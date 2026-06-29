@@ -63,7 +63,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# ブラウザタブのfaviconをTSEGロゴに設定
+# ブラウザタブのfaviconをTSEGロゴに設定（MutationObserverで再描画後も維持）
 if _favicon_path.exists():
     import base64 as _b64
     import streamlit.components.v1 as _components
@@ -71,14 +71,23 @@ if _favicon_path.exists():
         _favicon_b64 = _b64.b64encode(_f.read()).decode()
     _components.html(
         f"""<script>
-var ls = parent.document.querySelectorAll("link[rel~='icon']");
-ls.forEach(function(l){{ l.href='data:image/png;base64,{_favicon_b64}'; }});
-if(ls.length===0){{
-  var l=parent.document.createElement('link');
-  l.rel='icon'; l.type='image/png';
-  l.href='data:image/png;base64,{_favicon_b64}';
-  parent.document.head.appendChild(l);
-}}
+(function() {{
+  var DATA = 'data:image/png;base64,{_favicon_b64}';
+  function setFav() {{
+    var doc = parent.document;
+    var ls = doc.querySelectorAll("link[rel~='icon']");
+    if (ls.length === 0) {{
+      var l = doc.createElement('link');
+      l.rel = 'icon'; l.type = 'image/png'; l.href = DATA;
+      doc.head.appendChild(l);
+    }} else {{
+      ls.forEach(function(l) {{ l.href = DATA; }});
+    }}
+  }}
+  setFav();
+  var obs = new MutationObserver(setFav);
+  obs.observe(parent.document.head, {{childList: true, subtree: true, attributes: true, attributeFilter: ['href']}});
+}})();
 </script>""",
         height=0,
     )
@@ -265,38 +274,3 @@ def _render_result(doc: dict) -> None:
 
         with col_thumb:
             if media_type == "photo" and file_path:
-                try:
-                    st.image(image_src, width=160)
-                    if st.button("🔍 拡大", key=f"zoom_{doc.get('id','')}"):
-                        st.session_state["preview_path"] = image_src
-                        st.session_state["preview_name"] = file_name
-                        st.rerun()
-                except Exception:
-                    st.markdown(f"## {icon}")
-            elif media_type == "video" and file_path:
-                video_url = _to_blob_url(file_path)
-                if video_url:
-                    st.video(video_url)
-                else:
-                    st.markdown(f"## {icon}")
-            else:
-                st.markdown(f"## {icon}")
-
-        with col_info:
-            st.markdown(f"**{file_name}**")
-            st.markdown(
-                f"{phase_badge} {phase} ｜ 工番: `{workno}` ｜ {workno_name}"
-            )
-            if display_date:
-                st.caption(f"撮影日: {display_date}")
-            if content_text:
-                st.caption(f"[memo] {content_text}")
-
-        with col_path:
-            st.code(file_path, language=None)
-
-        st.divider()
-
-
-if __name__ == "__main__":
-    main()
