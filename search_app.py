@@ -63,22 +63,24 @@ st.set_page_config(
     layout="wide",
 )
 
-# ブラウザタブのfaviconをTSEGロゴに設定（JSでheadに注入）
+# ブラウザタブのfaviconをTSEGロゴに設定
 if _favicon_path.exists():
     import base64 as _b64
+    import streamlit.components.v1 as _components
     with open(_favicon_path, "rb") as _f:
         _favicon_b64 = _b64.b64encode(_f.read()).decode()
-    st.markdown(
+    _components.html(
         f"""<script>
-(function(){{
-  var link = document.querySelector("link[rel~='icon']");
-  if (!link) {{ link = document.createElement('link'); document.head.appendChild(link); }}
-  link.type = 'image/png';
-  link.rel = 'icon';
-  link.href = 'data:image/png;base64,{_favicon_b64}';
-}})();
+var ls = parent.document.querySelectorAll("link[rel~='icon']");
+ls.forEach(function(l){{ l.href='data:image/png;base64,{_favicon_b64}'; }});
+if(ls.length===0){{
+  var l=parent.document.createElement('link');
+  l.rel='icon'; l.type='image/png';
+  l.href='data:image/png;base64,{_favicon_b64}';
+  parent.document.head.appendChild(l);
+}}
 </script>""",
-        unsafe_allow_html=True,
+        height=0,
     )
 
 # ── 接続チェック ───────────────────────────────────────────────────────────────
