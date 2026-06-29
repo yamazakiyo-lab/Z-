@@ -78,6 +78,7 @@ MANIFEST_PATH     = _ROOT / "rag" / "manifest.json"
 COMMENTS_PATH     = _ROOT / "rag" / "comments.json"
 ANNOTATION_STATE_BLOB  = "annotation_state.json"
 GDX_ANNOTATION_PREFIX  = "gdx_annotations/"
+USER_NAMES_BLOB        = "lw_user_names.json"
 
 VISION_SUPPORTED_EXT = {".jpg", ".jpeg", ".png"}
 VIDEO_EXT = {".mp4", ".mov", ".avi", ".mts", ".m2ts"}
@@ -338,8 +339,28 @@ def _get_streak_badge(user_id: str, comments: dict) -> str:
 
 
 # ── ユーザー表示名 ────────────────────────────────────────────────────────────
+_user_names_cache: dict = {}
+
+def _load_user_names() -> dict:
+    global _user_names_cache
+    if _user_names_cache:
+        return _user_names_cache
+    container = _get_blob_container()
+    if container is None:
+        return {}
+    try:
+        data = container.download_blob(USER_NAMES_BLOB).readall()
+        _user_names_cache = json.loads(data.decode("utf-8"))
+    except Exception:
+        _user_names_cache = {}
+    return _user_names_cache
+
+
 def _display_name(user_id: str) -> str:
-    """user_id から表示名を生成（@ 前の部分を使用）。"""
+    """user_id から表示名を返す。キャッシュにあればそれを使用。"""
+    names = _load_user_names()
+    if user_id in names:
+        return names[user_id]
     return user_id.split("@")[0] if "@" in user_id else user_id
 
 

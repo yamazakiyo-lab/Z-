@@ -77,6 +77,8 @@ LW_TOKEN_URL = "https://auth.worksmobile.com/oauth2/v2.0/token"
 LW_FILE_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/attachments/{file_id}"
 LW_SEND_CHANNEL_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/channels/{channel_id}/messages"
 LW_SEND_USER_URL    = "https://www.worksapis.com/v1.0/bots/{bot_id}/users/{user_id}/messages"
+LW_USER_PROFILE_URL = "https://www.worksapis.com/v1.0/users/{user_id}"
+USER_NAMES_BLOB     = "lw_user_names.json"
 
 # ファイルダウンロード対象の content type
 DOWNLOADABLE_TYPES = {"image", "video", "file"}
@@ -358,6 +360,90 @@ def _save_gdx_annotation(doc_id: str, file_path: str, comment: str, user_id: str
         logger.error(f"GDX アノテーション保存失敗: {e}")
 
 
+# ── ユーザー名キャッシュ（Blob: lw_user_names.json） ─────────────────────────
+_user_names_cache: dict = {}
+_user_names_cache_loaded: bool = False
+
+def _load_user_names() -> dict:
+    global _user_names_cache, _user_names_cache_loaded
+    if _user_names_cache_loaded:
+        return _user_names_cache
+    client = _get_blob_client()
+    if client is None:
+        return {}
+    try:
+        container = client.get_container_client(BLOB_CONTAINER)
+        data = container.download_blob(USER_NAMES_BLOB).readall()
+        _user_names_cache = json.loads(data.decode("utf-8"))
+    except Exception:
+        _user_names_cache = {}
+    _user_names_cache_loaded = True
+    return _user_names_cache
+
+
+def _save_user_names(names: dict) -> None:
+    global _user_names_cache, _user_names_cache_loaded
+    _user_names_cache = names
+    _user_names_cache_loaded = True
+    client = _get_blob_client()
+    if client is None:
+        return
+    try:
+        container = client.get_container_client(BLOB_CONTAINER)
+        container.upload_blob(
+            USER_NAMES_BLOB,
+            json.dumps(names, ensure_ascii=False, indent=2).encode("utf-8"),
+            overwrite=True,
+        )
+    except Exception as e:
+        logger.warning(f"lw_user_names.json 保存失敗: {e}")
+
+
+def _fetch_and_cache_user_name(user_id: str) -> None:
+    """LINE WORKS API からユーザー名を取得してキャッシュする（失敗は無視）。"""
+    try:
+        private_key = _load_private_key()
+        now = time.time()
+        jwt_payload = {
+            "iss": CLIENT_ID,
+            "sub": SERVICE_ACCOUNT,
+            "iat": int(now),
+            "exp": int(now) + 3600,
+        }
+        assertion = pyjwt.encode(jwt_payload, private_key, algorithm="RS256")
+        token_resp = requests.post(
+            LW_TOKEN_URL,
+            data={
+                "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+                "assertion": assertion,
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "scope": "bot.message user.read",
+            },
+            timeout=10,
+        )
+        if not token_resp.ok:
+            return
+        token = token_resp.json().get("access_token", "")
+        if not token:
+            return
+        resp = requests.get(
+            LW_USER_PROFILE_URL.format(user_id=user_id),
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=5,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            name = data.get("displayName") or data.get("userName", "")
+            if name:
+                names = _load_user_names()
+                names[user_id] = name
+                _save_user_names(names)
+                logger.info(f"ユーザー名キャッシュ: {user_id} → {name}")
+    except Exception as e:
+        logger.warning(f"ユーザー名取得失敗 ({user_id}): {e}")
+
+
 # ── 会話状態管理（in-memory、channel_id をキーとする） ───────────────────────
 # 構造: { user_id: { "state": str, "channel_id": str, "file_blob": str, "koban": str, "buhin": str } }
 _conv: dict[str, dict] = {}
@@ -531,6 +617,9 @@ async def lineworks_callback(request: Request) -> Response:
                 ann_state.setdefault("users", []).append(user_id)
                 _save_annotation_state(ann_state)
                 logger.info(f"学習協力ユーザー登録: {user_id}")
+            # ユーザー名キャッシュ（未取得の場合のみ）
+            if user_id and user_id not in _load_user_names():
+                _fetch_and_cache_user_name(user_id)
             # pending があれば会話状態を復元
             pending = ann_state.get("pending", {})
             if user_id in pending:
