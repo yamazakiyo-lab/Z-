@@ -1,6 +1,7 @@
 [server]
 headless = true
 port = 8000
+enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
