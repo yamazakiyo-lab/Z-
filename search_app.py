@@ -135,7 +135,7 @@ def main() -> None:
     # ヘッダー
     if _LOGO_B64:
         st.markdown(
-            '<h1 style="display:flex;align-items:flex-end;gap:12px">'
+            '<h1 style="display:flex;align-items:flex-end;gap:12px;line-height:1;padding-bottom:0">'
             '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="64">'
             'TSEG FM SEARCH APP'
             '</h1>',
