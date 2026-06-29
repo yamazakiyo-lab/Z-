@@ -135,14 +135,14 @@ def main() -> None:
     # ヘッダー
     if _LOGO_B64:
         st.markdown(
-            '<h1 style="display:flex;align-items:center;gap:12px">'
-            '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="36" style="vertical-align:middle;margin-bottom:4px">'
-            'Zフォルダ 写真・動画 検索'
+            '<h1 style="display:flex;align-items:flex-end;gap:12px">'
+            '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="64">'
+            'TSEG FM SEARCH APP'
             '</h1>',
             unsafe_allow_html=True,
         )
     else:
-        st.title("🔍 Zフォルダ 写真・動画 検索")
+        st.title("🔍 TSEG FM SEARCH APP")
     st.caption("工番・工事名・フォルダ名などで検索できます。")
     st.divider()
 
