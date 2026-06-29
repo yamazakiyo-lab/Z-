@@ -1,0 +1,20 @@
+{
+  "name": "TSEG FM SEARCH APP",
+  "short_name": "FM Search",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1a7a4a",
+  "icons": [
+    {
+      "src": "app/static/tseg_favicon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "app/static/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}
