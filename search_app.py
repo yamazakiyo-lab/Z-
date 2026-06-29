@@ -63,13 +63,21 @@ st.set_page_config(
     layout="wide",
 )
 
-# ブラウザタブのfaviconをTSEGロゴに設定
+# ブラウザタブのfaviconをTSEGロゴに設定（JSでheadに注入）
 if _favicon_path.exists():
     import base64 as _b64
     with open(_favicon_path, "rb") as _f:
         _favicon_b64 = _b64.b64encode(_f.read()).decode()
     st.markdown(
-        f'<link rel="shortcut icon" href="data:image/png;base64,{_favicon_b64}">',
+        f"""<script>
+(function(){{
+  var link = document.querySelector("link[rel~='icon']");
+  if (!link) {{ link = document.createElement('link'); document.head.appendChild(link); }}
+  link.type = 'image/png';
+  link.rel = 'icon';
+  link.href = 'data:image/png;base64,{_favicon_b64}';
+}})();
+</script>""",
         unsafe_allow_html=True,
     )
 
