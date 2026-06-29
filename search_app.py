@@ -9,10 +9,11 @@
 """
 from __future__ import annotations
 
+import base64
 import os
 import sys
 from datetime import datetime
-from pathlib import PureWindowsPath
+from pathlib import Path, PureWindowsPath
 from typing import List, Optional
 
 import streamlit as st
@@ -20,9 +21,7 @@ import streamlit as st
 # ── Azure Blob Storage 設定 ───────────────────────────────────────────────────
 # App Service の環境変数に設定する。未設定時はローカルパスを直接使う（開発用）。
 _BLOB_BASE_URL: str = os.getenv("AZURE_BLOB_BASE_URL", "").rstrip("/")
-# 例: https://tsegphotos.blob.core.windows.net/photos
 _BLOB_SAS_TOKEN: str = os.getenv("AZURE_BLOB_SAS_TOKEN", "")
-# 例: sv=2026-02-06&ss=b&srt=co&sp=r...（先頭の ? は不要）
 _TARGET_91_ROOT_WIN: str = os.getenv(
     "TARGET_91_ROOT",
     r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画",
@@ -30,10 +29,6 @@ _TARGET_91_ROOT_WIN: str = os.getenv(
 
 
 def _to_blob_url(file_path: str) -> str | None:
-    """Z:ドライブのWindowsパスをAzure Blob Storage URLに変換する。
-
-    AZURE_BLOB_BASE_URL が未設定の場合は None を返す（ローカルパスにフォールバック）。
-    """
     if not _BLOB_BASE_URL or not file_path:
         return None
     try:
@@ -50,14 +45,28 @@ def _to_blob_url(file_path: str) -> str | None:
 
 
 # ページ設定（必ず最初に呼ぶ）
-# static/ フォルダから favicon を提供（enableStaticServing=true が必要）
-_FAVICON_URL = "app/static/tseg_favicon.png"
+_LOGO_PATH = Path(__file__).parent / "static" / "tseg_favicon.png"
+try:
+    from PIL import Image as _PIL_Image
+    _page_icon = _PIL_Image.open(_LOGO_PATH) if _LOGO_PATH.exists() else "🔍"
+    if hasattr(_page_icon, "load"):
+        _page_icon.load()
+except Exception:
+    _page_icon = "🔍"
 
 st.set_page_config(
     page_title="写真・動画 検索",
-    page_icon=_FAVICON_URL,
+    page_icon=_page_icon,
     layout="wide",
 )
+
+# タイトル用ロゴをbase64で埋め込む
+_LOGO_B64 = ""
+if _LOGO_PATH.exists():
+    try:
+        _LOGO_B64 = base64.b64encode(_LOGO_PATH.read_bytes()).decode()
+    except Exception:
+        pass
 
 # ── 接続チェック ───────────────────────────────────────────────────────────────
 @st.cache_resource(show_spinner="Azure AI Search に接続中...")
@@ -95,12 +104,10 @@ def do_search(
     if media_type:
         filters.append(f"media_type eq '{media_type}'")
     if year:
-        # capture_date_raw は YYMMDD なので下2桁で年を絞る
         yy = str(year % 100).zfill(2)
         filters.append(f"capture_date_raw ge '{yy}0101' and capture_date_raw le '{yy}1231'")
 
     filter_expr = " and ".join(filters) if filters else None
-
     search_text = query.strip() if query.strip() else "*"
 
     try:
@@ -126,13 +133,16 @@ def main() -> None:
     client = _get_search_client()
 
     # ヘッダー
-    st.markdown(
-        '<h1 style="display:flex;align-items:center;gap:12px">'
-        '<img src="app/static/tseg_favicon.png" width="48" style="vertical-align:middle">'
-        'Zフォルダ 写真・動画 検索'
-        '</h1>',
-        unsafe_allow_html=True,
-    )
+    if _LOGO_B64:
+        st.markdown(
+            '<h1 style="display:flex;align-items:center;gap:12px">'
+            '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="48" style="vertical-align:middle">'
+            'Zフォルダ 写真・動画 検索'
+            '</h1>',
+            unsafe_allow_html=True,
+        )
+    else:
+        st.title("🔍 Zフォルダ 写真・動画 検索")
     st.caption("工番・工事名・フォルダ名などで検索できます。")
     st.divider()
 
@@ -186,7 +196,6 @@ def main() -> None:
         st.caption("ファイルパスをコピーして\nエクスプローラーで開けます。")
 
     # ── 検索実行 ──────────────────────────────────────────────────────────────
-    # 初回表示 or 検索ボタン or Enterキー
     if query or search_clicked:
         with st.spinner("検索中..."):
             results = do_search(
@@ -199,7 +208,6 @@ def main() -> None:
 
         st.markdown(f"**{len(results)} 件** 見つかりました。")
 
-        # フルサイズプレビュー（モーダル）
         if st.session_state.get("preview_path"):
             _preview_dialog()
 
@@ -230,7 +238,6 @@ def _render_result(doc: dict) -> None:
     file_path = doc.get("file_path", "")
     capture_raw = doc.get("capture_date_raw", "")
 
-    # 日付を YYMMDD → YYYY-MM-DD に変換して表示
     display_date = ""
     if len(capture_raw) == 6:
         yy, mm, dd = capture_raw[:2], capture_raw[2:4], capture_raw[4:6]
@@ -238,8 +245,6 @@ def _render_result(doc: dict) -> None:
         display_date = f"{year}-{mm}-{dd}"
 
     content_text = doc.get("content_text", "")
-
-    # Blob URL（Azureデプロイ時）またはローカルパス（開発時）
     image_src = _to_blob_url(file_path) or file_path
 
     with st.container():
