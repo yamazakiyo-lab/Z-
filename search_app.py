@@ -55,7 +55,7 @@ except Exception:
     _page_icon = "🔍"
 
 st.set_page_config(
-    page_title="写真・動画 検索",
+    page_title="TSEG FM SEARCH APP",
     page_icon=_page_icon,
     layout="wide",
 )
