@@ -45,15 +45,16 @@ import sys
 import time
 import uuid
 from base64 import b64encode
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Optional
 
 import requests
 import jwt as pyjwt
-from azure.storage.blob import BlobServiceClient, ContentSettings
+from azure.storage.blob import BlobServiceClient, ContentSettings, generate_blob_sas, BlobSasPermissions
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 
 # ── 環境変数読み込み ──────────────────────────────────────────────────────────
 load_dotenv()
@@ -72,6 +73,7 @@ PHOTOS_BLOB_ENDPOINT: str = os.environ.get(
     "https://tsegphotos.blob.core.windows.net/photos",
 ).rstrip("/")
 BLOB_SAS_TOKEN: str = os.environ.get("AZURE_BLOB_SAS_TOKEN", "")
+PHOTOS_CONTAINER: str = os.environ.get("AZURE_PHOTOS_CONTAINER", "photos")
 
 LW_TOKEN_URL = "https://auth.worksmobile.com/oauth2/v2.0/token"
 LW_FILE_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/attachments/{file_id}"
@@ -857,6 +859,33 @@ async def lineworks_callback(request: Request) -> Response:
                     )
 
     return Response(content="OK", status_code=200)
+
+
+@app.get("/video/{blob_path:path}")
+async def video_redirect(blob_path: str) -> RedirectResponse:
+    """動画BlobのSAS URLへリダイレクト（LINE WORKSがクエリ文字列を切り捨てる対策）。"""
+    try:
+        client = _get_blob_client()
+        if client is None:
+            raise HTTPException(status_code=500, detail="Storage not configured")
+        account_name = client.account_name
+        account_key = client.credential.account_key
+        sas = generate_blob_sas(
+            account_name=account_name,
+            container_name=PHOTOS_CONTAINER,
+            blob_name=blob_path,
+            account_key=account_key,
+            permission=BlobSasPermissions(read=True),
+            expiry=datetime.now(timezone.utc) + timedelta(hours=1),
+        )
+        url = f"https://{account_name}.blob.core.windows.net/{PHOTOS_CONTAINER}/{blob_path}?{sas}"
+        logger.info(f"動画リダイレクト: {blob_path}")
+        return RedirectResponse(url=url, status_code=302)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"動画リダイレクト失敗: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")

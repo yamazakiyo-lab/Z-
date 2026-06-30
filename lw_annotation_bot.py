@@ -58,6 +58,10 @@ BOT_ID: str           = os.environ.get("LINEWORKS_BOT_ID", "")
 BLOB_CONN_STR: str    = os.environ.get("AZURE_BLOB_CONNECTION_STRING", "")
 BLOB_CONTAINER: str   = os.environ.get("LW_BLOB_CONTAINER", "lw-raw")
 BLOB_SAS_TOKEN: str   = os.environ.get("AZURE_BLOB_SAS_TOKEN", "")
+LW_RECEIVER_BASE_URL: str = os.environ.get(
+    "LW_RECEIVER_BASE_URL",
+    "https://tseg-lw-receiver.azurewebsites.net",
+).rstrip("/")
 PHOTOS_BLOB_ENDPOINT: str = os.environ.get(
     "AZURE_PHOTOS_BLOB_ENDPOINT",
     "https://tsegphotos.blob.core.windows.net/photos",
@@ -294,6 +298,16 @@ def _to_blob_url(file_path: str) -> str:
         rel_str = str(rel).replace("\\", "/")
         sas = f"?{BLOB_SAS_TOKEN}" if BLOB_SAS_TOKEN else ""
         return f"{PHOTOS_BLOB_ENDPOINT}/{rel_str}{sas}"
+    except ValueError:
+        return ""
+
+
+def _to_video_redirect_url(file_path: str) -> str:
+    """動画はreceiver経由のリダイレクトURLを返す（LINE WORKSのクエリ文字列切り捨て対策）。"""
+    try:
+        rel = Path(file_path).relative_to(TARGET_91_ROOT)
+        rel_str = str(rel).replace("\\", "/")
+        return f"{LW_RECEIVER_BASE_URL}/video/{rel_str}"
     except ValueError:
         return ""
 
@@ -535,8 +549,10 @@ def _send_annotation_request(
 
     # 画像／動画送信
     if is_video:
-        if image_url:
-            _send_text(user_id, f"🎬 動画: {file_name}\n{image_url}")
+        # LINE WORKSはURL内の?以降を切り捨てるためreceiver経由でリダイレクト
+        video_url = _to_video_redirect_url(file_path) or image_url
+        if video_url:
+            _send_text(user_id, f"🎬 動画: {file_name}\n{video_url}")
         else:
             _send_text(user_id, f"🎬 {file_name}")
     else:
