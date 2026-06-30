@@ -356,10 +356,12 @@ def _upload_thumbnail(file_path: str) -> str:
 
 def _to_video_redirect_url(file_path: str) -> str:
     """動画はreceiver経由のリダイレクトURLを返す（LINE WORKSのクエリ文字列切り捨て対策）。"""
+    from urllib.parse import quote
     try:
         rel = Path(file_path).relative_to(TARGET_91_ROOT)
         rel_str = str(rel).replace("\\", "/")
-        return f"{LW_RECEIVER_BASE_URL}/video/{rel_str}"
+        encoded = quote(rel_str, safe="/")   # スペース・日本語をエンコード（/は保持）
+        return f"{LW_RECEIVER_BASE_URL}/video/{encoded}"
     except ValueError:
         return ""
 
