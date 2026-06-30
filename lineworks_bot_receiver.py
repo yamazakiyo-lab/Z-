@@ -365,6 +365,7 @@ def _save_gdx_annotation(doc_id: str, file_path: str, comment: str, user_id: str
 # ── ユーザー名キャッシュ（Blob: lw_user_names.json） ─────────────────────────
 _user_names_cache: dict = {}
 _user_names_cache_loaded: bool = False
+_user_name_fetch_attempted: set = set()  # 取得試行済み（失敗含む）→ 再試行防止
 
 def _load_user_names() -> dict:
     global _user_names_cache, _user_names_cache_loaded
@@ -403,6 +404,8 @@ def _save_user_names(names: dict) -> None:
 
 def _fetch_and_cache_user_name(user_id: str) -> None:
     """LINE WORKS API からユーザー名を取得してキャッシュする（失敗は無視）。"""
+    # 取得試行済みとしてマーク（失敗しても再試行しない）
+    _user_name_fetch_attempted.add(user_id)
     try:
         private_key = _load_private_key()
         now = time.time()
@@ -425,6 +428,7 @@ def _fetch_and_cache_user_name(user_id: str) -> None:
             timeout=10,
         )
         if not token_resp.ok:
+            logger.warning(f"ユーザー名取得: トークン取得失敗 ({user_id}) status={token_resp.status_code}")
             return
         token = token_resp.json().get("access_token", "")
         if not token:
@@ -442,6 +446,8 @@ def _fetch_and_cache_user_name(user_id: str) -> None:
                 names[user_id] = name
                 _save_user_names(names)
                 logger.info(f"ユーザー名キャッシュ: {user_id} → {name}")
+        else:
+            logger.warning(f"ユーザー名取得: プロフィールAPI失敗 ({user_id}) status={resp.status_code}")
     except Exception as e:
         logger.warning(f"ユーザー名取得失敗 ({user_id}): {e}")
 
@@ -619,8 +625,8 @@ async def lineworks_callback(request: Request) -> Response:
                 ann_state.setdefault("users", []).append(user_id)
                 _save_annotation_state(ann_state)
                 logger.info(f"学習協力ユーザー登録: {user_id}")
-            # ユーザー名キャッシュ（未取得の場合のみ）
-            if user_id and user_id not in _load_user_names():
+            # ユーザー名キャッシュ（未取得かつ未試行の場合のみ）
+            if user_id and user_id not in _load_user_names() and user_id not in _user_name_fetch_attempted:
                 _fetch_and_cache_user_name(user_id)
             # pending があれば会話状態を復元
             pending = ann_state.get("pending", {})
