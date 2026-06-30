@@ -50,6 +50,18 @@ try {
             throw "lw_blob_sync.py exited with code $LASTEXITCODE"
         }
         Write-Host "[LW] 同期完了"
+
+        # --sync-annotations
+        $annotScript = Join-Path $pw 'lw_annotation_bot.py'
+        $annotPython = Join-Path $pw 'venv\Scripts\python.exe'
+        if (-not (Test-Path -LiteralPath $annotPython)) { $annotPython = 'py' }
+        Write-Host "[LW] --sync-annotations 開始"
+        if ($annotPython -eq 'py') {
+            & $annotPython -3 $annotScript --sync-annotations
+        } else {
+            & $annotPython $annotScript --sync-annotations
+        }
+        Write-Host "[LW] --sync-annotations 完了"
     } finally {
         Pop-Location
     }
