@@ -643,7 +643,7 @@ async def lineworks_callback(request: Request) -> Response:
                     pool.remove(item)
                     next_doc_id = item["doc_id"]
                     next_fp     = item.get("file_path", "")
-                    next_url    = item.get("blob_url", "")
+                    next_url    = item.get("thumb_url", "") or item.get("blob_url", "")
                     job_number  = item.get("job_number", "")
                     if next_url:
                         _send_image(channel_id, user_id, next_url)
@@ -820,7 +820,7 @@ async def lineworks_callback(request: Request) -> Response:
                         pool.remove(item)
                         next_doc_id  = item["doc_id"]
                         next_fp      = item.get("file_path", "")
-                        next_url     = item.get("blob_url", "")
+                        next_url     = item.get("thumb_url", "") or item.get("blob_url", "")
                         job_number   = item.get("job_number", "")
                         if next_url:
                             _send_image(ch, user_id, next_url)

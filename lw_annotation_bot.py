@@ -34,6 +34,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import io
 import os
 import random
 import sys
@@ -43,7 +44,7 @@ from pathlib import Path
 
 import requests
 import jwt as pyjwt
-from azure.storage.blob import BlobServiceClient
+from azure.storage.blob import BlobServiceClient, ContentSettings
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -62,6 +63,9 @@ LW_RECEIVER_BASE_URL: str = os.environ.get(
     "LW_RECEIVER_BASE_URL",
     "https://tseg-lw-receiver.azurewebsites.net",
 ).rstrip("/")
+PHOTOS_CONTAINER: str = os.environ.get("AZURE_PHOTOS_CONTAINER", "photos")
+THUMB_MAX_PX: int = 1000
+THUMB_MAX_BYTES: int = 200 * 1024  # 200KB
 PHOTOS_BLOB_ENDPOINT: str = os.environ.get(
     "AZURE_PHOTOS_BLOB_ENDPOINT",
     "https://tsegphotos.blob.core.windows.net/photos",
@@ -299,6 +303,54 @@ def _to_blob_url(file_path: str) -> str:
         sas = f"?{BLOB_SAS_TOKEN}" if BLOB_SAS_TOKEN else ""
         return f"{PHOTOS_BLOB_ENDPOINT}/{rel_str}{sas}"
     except ValueError:
+        return ""
+
+
+def _upload_thumbnail(file_path: str) -> str:
+    """画像をリサイズ・圧縮してBlobにアップロードし、SAS URLを返す。
+    既にアップロード済みの場合はそのURLを返す。失敗時は空文字。"""
+    try:
+        from PIL import Image as _PILImage
+        rel = Path(file_path).relative_to(TARGET_91_ROOT)
+        rel_str = str(rel).replace("\\", "/")
+        thumb_name = str(Path(rel_str).with_suffix("")) + "_thumb.jpg"
+
+        if not BLOB_CONN_STR:
+            return ""
+        client = BlobServiceClient.from_connection_string(BLOB_CONN_STR)
+        container = client.get_container_client(PHOTOS_CONTAINER)
+        blob_client = container.get_blob_client(thumb_name)
+
+        # 既存チェック（再利用）
+        try:
+            blob_client.get_blob_properties()
+            sas = f"?{BLOB_SAS_TOKEN}" if BLOB_SAS_TOKEN else ""
+            return f"https://{client.account_name}.blob.core.windows.net/{PHOTOS_CONTAINER}/{thumb_name}{sas}"
+        except Exception:
+            pass
+
+        # リサイズ・圧縮
+        img = _PILImage.open(file_path).convert("RGB")
+        img.thumbnail((THUMB_MAX_PX, THUMB_MAX_PX), _PILImage.LANCZOS)
+        quality = 85
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=quality, optimize=True)
+        while buf.tell() > THUMB_MAX_BYTES and quality > 30:
+            quality -= 10
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+        buf.seek(0)
+
+        # アップロード
+        blob_client.upload_blob(
+            buf.read(), overwrite=True,
+            content_settings=ContentSettings(content_type="image/jpeg"),
+        )
+        logger.info(f"サムネイルアップロード: {thumb_name} (quality={quality})")
+        sas = f"?{BLOB_SAS_TOKEN}" if BLOB_SAS_TOKEN else ""
+        return f"https://{client.account_name}.blob.core.windows.net/{PHOTOS_CONTAINER}/{thumb_name}{sas}"
+    except Exception as e:
+        logger.warning(f"サムネイル生成失敗 ({file_path}): {e}")
         return ""
 
 
@@ -543,19 +595,20 @@ def _send_annotation_request(
     except ValueError:
         pass
 
-    image_url = _to_blob_url(file_path)
     file_name = Path(file_path).name
     is_video = Path(file_path).suffix.lower() in VIDEO_EXT
 
     # 画像／動画送信
     if is_video:
         # LINE WORKSはURL内の?以降を切り捨てるためreceiver経由でリダイレクト
-        video_url = _to_video_redirect_url(file_path) or image_url
+        video_url = _to_video_redirect_url(file_path) or _to_blob_url(file_path)
         if video_url:
             _send_text(user_id, f"🎬 動画: {file_name}\n{video_url}")
         else:
             _send_text(user_id, f"🎬 {file_name}")
     else:
+        # サムネイル（1000px・200KB）を生成してから送信
+        image_url = _upload_thumbnail(file_path) or _to_blob_url(file_path)
         if image_url:
             ok = _send_image(user_id, image_url)
             if not ok:
@@ -713,7 +766,13 @@ def cmd_send() -> None:
         except ValueError:
             return ""
     state["unannotated_pool"] = [
-        {"doc_id": d, "file_path": f, "blob_url": _to_blob_url(f), "job_number": _job_number(f)}
+        {
+            "doc_id": d,
+            "file_path": f,
+            "blob_url": _to_blob_url(f),
+            "thumb_url": _upload_thumbnail(f) if Path(f).suffix.lower() in VISION_SUPPORTED_EXT else "",
+            "job_number": _job_number(f),
+        }
         for d, f in pool_sample
     ]
 
