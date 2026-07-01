@@ -57,10 +57,10 @@ $t3 = New-ScheduledTaskTrigger -Daily -At "10:15"
 Register-ScheduledTask -TaskName "LW_Ranking_Weekly" -Action $a3 -Trigger $t3 -Settings $settings -RunLevel Highest -Force | Out-Null
 Write-Host "OK: LW_Ranking_Weekly daily 10:15 (first workday only)"
 
-# LW_Cleanup_Reminder: monthly day 1 at 10:05
+# LW_Cleanup_Reminder: every 2 weeks at 14:00
 $trCleanup = '"' + $batCleanup + '"'
-schtasks /Create /SC MONTHLY /D 1 /TN "LW_Cleanup_Reminder" /TR $trCleanup /ST 10:05 /RL HIGHEST /F
-Write-Host "OK: LW_Cleanup_Reminder monthly day1 10:05"
+schtasks /Create /SC WEEKLY /MO 2 /D MON /TN "LW_Cleanup_Reminder" /TR $trCleanup /ST 14:00 /RL HIGHEST /F
+Write-Host "OK: LW_Cleanup_Reminder every 2 weeks Monday 14:00"
 
 # LW_Holiday_Reminder: yearly May 6 at 10:10
 $trHoliday = '"' + $batHoliday + '"'
