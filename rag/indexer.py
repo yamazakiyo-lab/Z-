@@ -135,13 +135,13 @@ def _make_id(file_path: str) -> str:
     return hashlib.sha256(file_path.encode("utf-8")).hexdigest()
 
 
-# ── LDExtraction ファイル名からコメント抽出 ──────────────────────────────────
+# ── LWExtraction ファイル名からコメント抽出 ──────────────────────────────────
 # lw_blob_sync.py が生成するファイル名: YYYYMMDD_HHMMSS[_部品][_コメント]
 _LD_FNAME_RE = re.compile(r"^\d{8}_\d{6}(?:_(.+))?$")
 
 
 def _parse_ld_comment(stem: str) -> str:
-    """LDExtraction ファイル名のステムから 部品_コメント 部分を返す。"""
+    """LWExtraction ファイル名のステムから 部品_コメント 部分を返す。"""
     m = _LD_FNAME_RE.match(stem)
     if not m or not m.group(1):
         return ""
@@ -159,8 +159,8 @@ def scan_media_files(root: Path) -> Iterator[Dict]:
             {workno}_B2着手中写真・動画/
               {workno}_001_250611.jpg
 
-    LDExtraction（LINE WORKS Bot 受信ファイル）:
-        root/LDExtraction/
+    LWExtraction（LINE WORKS Bot 受信ファイル）:
+        root/LWExtraction/
           {workno}/
             YYYYMMDD_HHMMSS_{部品}_{コメント}.mp4
     """
@@ -174,8 +174,8 @@ def scan_media_files(root: Path) -> Iterator[Dict]:
         if not a_folder.is_dir():
             continue
 
-        # ── _LDExtraction サブフォルダの処理 ──────────────────────────────
-        if a_folder.name == "_LDExtraction":
+        # ── _LWExtraction サブフォルダの処理 ──────────────────────────────
+        if a_folder.name == "_LWExtraction":
             for ld_koban_dir in sorted(a_folder.iterdir()):
                 if not ld_koban_dir.is_dir():
                     continue
@@ -421,7 +421,7 @@ class PhotoIndexer:
         total_uploaded = 0
 
         for doc in scan_media_files(root):
-            # 説明文（AI生成）と LDExtraction コメントを結合して content_text に設定
+            # 説明文（AI生成）と LWExtraction コメントを結合して content_text に設定
             ai_desc = descriptions.get(doc["id"], "")
             ld_comment = doc.get("content_text", "")  # scan_media_files が設定済みの場合
             parts = [p for p in [ld_comment, ai_desc] if p]

@@ -135,10 +135,10 @@ try {
             Write-Warning "[LW] lw_blob_sync.py が見つかりません。スキップします。"
         }
 
-        # ── LW: _LDExtraction → B4 振り分け ──────────────────────────────
+        # ── LW: _LWExtraction → B4 振り分け ──────────────────────────────
         $ldSortScript = Join-Path $pw 'ld_sort.py'
         if (Test-Path -LiteralPath $ldSortScript) {
-            Write-Host "[LW] LDExtraction -> B4 振り分け開始"
+            Write-Host "[LW] LWExtraction -> B4 振り分け開始"
             Push-Location $pw
             try {
                 if ($lwPython -eq 'py') {
@@ -149,7 +149,7 @@ try {
                 if ($LASTEXITCODE -ne 0) {
                     Write-Warning "[LW] ld_sort.py がエラーで終了しました (code $LASTEXITCODE)"
                 } else {
-                    Write-Host "[LW] LDExtraction -> B4 振り分け完了"
+                    Write-Host "[LW] LWExtraction -> B4 振り分け完了"
                 }
             } finally {
                 Pop-Location

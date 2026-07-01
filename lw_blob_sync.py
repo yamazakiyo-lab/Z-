@@ -12,7 +12,7 @@ lw_blob_sync.py  -  LINE WORKS 受信ファイルをローカルへ同期
 環境変数 (.env または OS 環境変数):
   AZURE_BLOB_CONNECTION_STRING  Azure Blob Storage 接続文字列
   LW_BLOB_CONTAINER             コンテナ名（省略時: lw-raw）
-  LW_SYNC_DEST                  同期先ルート（省略時: Z:\\takachiho\\...\\LDExtraction）
+  LW_SYNC_DEST                  同期先ルート（省略時: Z:\\takachiho\\...\\LWExtraction）
   LW_SYNC_STATE                 同期済み記録ファイル（省略時: スクリプトと同階層）
 """
 
@@ -36,7 +36,7 @@ BLOB_CONTAINER: str = os.environ.get("LW_BLOB_CONTAINER", "lw-raw")
 SYNC_DEST = Path(
     os.environ.get(
         "LW_SYNC_DEST",
-        r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_LDExtraction",
+        r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_LWExtraction",
     )
 )
 _default_state = Path(__file__).with_name("lw_blob_sync_state.json")

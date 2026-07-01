@@ -67,6 +67,12 @@ $trHoliday = '"' + $batHoliday + '"'
 schtasks /Create /SC MONTHLY /D 6 /M MAY /TN "LW_Holiday_Reminder" /TR $trHoliday /ST 10:10 /RL HIGHEST /F
 Write-Host "OK: LW_Holiday_Reminder yearly May6 10:10"
 
+# CHECK_DAILYRUNS: daily 12:00
+$checkLogScript = Join-Path $pw 'check_and_cleanup_logs.ps1'
+$trCheckLogs = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $checkLogScript + '"'
+schtasks /Create /SC DAILY /TN "CHECK_DAILYRUNS" /TR $trCheckLogs /ST 12:00 /RL HIGHEST /F
+Write-Host "OK: CHECK_DAILYRUNS 12:00"
+
 Write-Host ""
 Write-Host "=== LW Tasks ==="
 Get-ScheduledTask | Where-Object { $_.TaskName -like "LW_*" } |

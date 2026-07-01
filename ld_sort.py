@@ -1,13 +1,13 @@
 """
 ld_sort.py
-_LDExtraction/<工番>/ の写真・動画を 91/<工番フルネーム>/B1|B2|B3|B4/ に、
+_LWExtraction/<工番>/ の写真・動画を 91/<工番フルネーム>/B1|B2|B3|B4/ に,
 メタ JSON を _annotations/<工番>/ に振り分けるスクリプト
 
 使用方法:
   python ld_sort.py [--dry-run]
 
 動作:
-  1. _LDExtraction/<工番>/ の画像・動画ファイルを探す
+  1. _LWExtraction/<工番>/ の画像・動画ファイルを探す
   2. _GDExtraction/工事一覧表.csv でマスタを読み込む
   3. 91フォルダ内の既存工番フォルダ（フルネーム）を前方一致で検索
      見つからない場合はマスタからフルネームで新規作成
@@ -15,7 +15,7 @@ _LDExtraction/<工番>/ の写真・動画を 91/<工番フルネーム>/B1|B2|B
   4. JSON の phase に従って B1|B2|B3 に振り分け（なければ B4）
      B-フォルダも既存（GDXの {workno}_B4整理前写真・動画 等）を前方一致で検索
   5. _meta.json を _annotations/<工番>/ に移動
-  6. 空になった _LDExtraction/<工番>/ を削除
+  6. 空になった _LWExtraction/<工番>/ を削除
 
 注意:
   - --dry-run では実際の移動は行わず結果のみ表示
@@ -35,7 +35,7 @@ from typing import Dict, Optional
 BASE_DEST = Path(
     r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画"
 )
-LD_EXTRACTION  = BASE_DEST / "_LDExtraction"
+LD_EXTRACTION  = BASE_DEST / "_LWExtraction"
 GD_EXTRACTION  = BASE_DEST / "_GDExtraction"
 ANNOTATIONS_ROOT = BASE_DEST / "_annotations"
 
@@ -232,7 +232,7 @@ def _find_b_folder(a_folder: Path, b_label: str) -> Path:
 
 def sort_ld_extraction(dry_run: bool = False) -> None:
     if not LD_EXTRACTION.exists():
-        logger.error(f"_LDExtraction が見つかりません: {LD_EXTRACTION}")
+        logger.error(f"_LWExtraction が見つかりません: {LD_EXTRACTION}")
         return
 
     master = _read_master()
