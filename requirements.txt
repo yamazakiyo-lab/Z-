@@ -3,6 +3,13 @@ Pillow>=10.0.0
 azure-search-documents>=11.4.0
 azure-core>=1.30.0
 python-dotenv>=1.0.0
+# Google Drive API
+google-api-python-client>=2.198.0
+google-auth>=2.55.1
+google-auth-oauthlib>=1.4.0
+google-auth-httplib2>=0.4.0
+googleapis-common-protos>=1.75.0
+requests-oauthlib>=2.0.0
 # LINE WORKS Bot Receiver
 fastapi>=0.111.0
 uvicorn[standard]>=0.29.0
