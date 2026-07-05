@@ -577,6 +577,72 @@ def rename_92_files_to_master(target_root: Path, master: Dict[str, str]):
     p(f"[RENAME SUMMARY:92] renamed={renamed}, skipped={skipped}")
 
 
+def rename_271_shirei_files_to_master(target_271_root: Path, master: Dict[str, str]):
+    """271_修理工事指令書 直下のファイルを「工番_工事名_指令書」形式にリネームする。
+
+    対応する入力形式:
+      - 工番のみ          : 4605-00.pdf
+      - 工番_任意文字列   : 4605-00_第一金属工業.pdf
+      - 指令書_工番_任意  : 指令書_4605-00_第一金属工業.pdf
+    いずれも → {workno}_{工事名}_指令書.ext
+    """
+    if not target_271_root.is_dir():
+        p(f"[WARN] 271 root not found: {target_271_root}")
+        return
+
+    _SHIREI_PREFIX = re.compile(r"^指令書[_\s]+")
+
+    renamed = 0
+    skipped = 0
+
+    for src in sorted(target_271_root.iterdir(), key=lambda pth: pth.name.lower()):
+        if not src.is_file():
+            continue
+        if src.name.startswith("~$"):
+            continue
+
+        stem = src.stem
+
+        # 工番抽出: まず先頭から直接試みる（工番のみ・工番_xxx 形式）
+        workno, _ = _extract_workno_suffix(stem)
+
+        # 工番が取れなければ「指令書_」プレフィックスを除いて再試行
+        if not workno:
+            rest = _SHIREI_PREFIX.sub("", stem)
+            workno, _ = _extract_workno_suffix(rest)
+
+        if not workno:
+            p(f"[WARN] 271: 工番抽出失敗: {src.name}")
+            continue
+
+        koujimei = master.get(workno)
+        if not koujimei:
+            p(f"[WARN] 271: マスタに工番なし: {workno} ({src.name})")
+            continue
+
+        desired_stem = sanitize_name(f"{workno}_{normalize_master_name(koujimei)}_指令書")
+        desired_name = f"{desired_stem}{src.suffix}"
+        desired_path = src.parent / desired_name
+
+        if src.name == desired_name:
+            continue
+
+        if desired_path.exists():
+            skipped += 1
+            p(f"[WARN] rename skip (271) (target exists): {src.name} -> {desired_name}")
+            continue
+
+        try:
+            src.rename(desired_path)
+            renamed += 1
+            p(f"[RENAME:271] {src.name} -> {desired_name}")
+        except Exception as e:
+            skipped += 1
+            p(f"[WARN] rename failed (271): {src} ({e})")
+
+    p(f"[RENAME SUMMARY:271] renamed={renamed}, skipped={skipped}")
+
+
 def rename_existing_paths_english_spaces(target_root: Path, *, label: str = ""):
     """既存のフォルダ名・ファイル名に対して英単語間 `_` を半角スペースへ戻す。"""
     if not target_root.is_dir():

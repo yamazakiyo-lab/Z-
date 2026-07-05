@@ -17,7 +17,10 @@ from .drive_sync import (
 from .master import (
     apply_gdextraction_master_renames,
     move_gdextraction_to_91_B4_with_master,
+    rename_271_shirei_files_to_master,
     write_gdextraction_master_preview_report,
+    _pick_master_file,
+    _read_csv_master,
 )
 from .organizer import Config91, Logger, Organizer91
 from .utils import ensure_local_dir, p, sanitize_name
@@ -71,6 +74,11 @@ def parse_args() -> MainConfig:
         help="9781 のルートフォルダを指定（指定しない場合は処理しない）",
     )
     parser.add_argument(
+        "--target-271-root",
+        metavar="PATH",
+        help="271_修理工事指令書のルートフォルダを指定（指定しない場合はデフォルト値を使用）",
+    )
+    parser.add_argument(
         "--drive-parent",
         metavar="ID",
         help="Drive 上の同期元親フォルダ ID を指定（'root' も可）",
@@ -114,6 +122,7 @@ def parse_args() -> MainConfig:
         target_252_root=Path(args.target_252_root) if args.target_252_root else default.target_252_root,
         target_92_root=Path(args.target_92_root) if args.target_92_root else default.target_92_root,
         target_9781_root=Path(args.target_9781_root) if args.target_9781_root else default.target_9781_root,
+        target_271_root=Path(args.target_271_root) if args.target_271_root else default.target_271_root,
         drive_parent=args.drive_parent if args.drive_parent else default.drive_parent,
         log_drive_descendant_counts=args.log_drive_descendant_counts,
         sync_gdx_to_drive_during_process=not args.no_sync_during_process,
@@ -208,6 +217,18 @@ def main():
         sync_during_process=cfg.sync_gdx_to_drive_during_process,
     )
     p("=== [2] 完了 ===")
+
+    p("=== [2.5] 271_修理工事指令書 ファイルリネーム（工番_工事名_指令書）===")
+    if cfg.target_271_root and cfg.target_271_root.is_dir():
+        master_file_271 = _pick_master_file(cfg.gd_root)
+        if master_file_271:
+            master_271 = _read_csv_master(master_file_271)
+            rename_271_shirei_files_to_master(cfg.target_271_root, master_271)
+        else:
+            p("[WARN] 271リネーム: マスタCSVが見つからないためスキップ")
+    else:
+        p(f"[SKIP] 271 root not found or not set: {cfg.target_271_root}")
+    p("=== [2.5] 完了 ===")
 
     p("=== [3] 91整理（Organizer91）を実行 ===")
     cfg91 = Config91(target_91_root=cfg.target_91_root, dry_run=cfg.dry_run)

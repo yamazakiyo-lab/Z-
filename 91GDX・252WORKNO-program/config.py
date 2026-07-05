@@ -15,6 +15,7 @@ class MainConfig:
     target_252_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\25_リビルト・中古機\252_整備資料")
     target_92_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\92_PO LIST")
     target_9781_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\97_技術資料\978_CADデータ図庫\9781_工事工番")
+    target_271_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\27_サービス・出張工事\271_修理工事指令書")
     drive_parent: str = "root"
     log_drive_descendant_counts: bool = False
     sync_gdx_to_drive_during_process: bool = True
