@@ -28,7 +28,7 @@ try {
     try {
         Write-Host "Working directory: $(Get-Location)"
         Write-Host "Script: $script"
-        $args_list = @('$script', '--send')
+        $args_list = @($script, '--send')
         if ($DryRun) { $args_list += '--dry-run' }
         Write-Host "Executing: $launcher $args_list"
         & $launcher $args_list
