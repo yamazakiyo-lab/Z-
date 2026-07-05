@@ -584,63 +584,172 @@ def rename_271_shirei_files_to_master(target_271_root: Path, master: Dict[str, s
       - 工番のみ          : 4605-00.pdf
       - 工番_任意文字列   : 4605-00_第一金属工業.pdf
       - 指令書_工番_任意  : 指令書_4605-00_第一金属工業.pdf
-    いずれも → {workno}_{工事名}_指令書.ext
+    複数ファイル同一工番 : _1, _2 のサフィックスを追加
+    いずれも → {workno}_{工事名}_指令書(_N).ext
     """
     if not target_271_root.is_dir():
         p(f"[WARN] 271 root not found: {target_271_root}")
         return
 
-    _SHIREI_PREFIX = re.compile(r"^指令書[_\s]+")
+    # ステップ1: 複数の _指令書_ を削除（クリーンアップ）
+    _cleanup_duplicate_shirei_suffix_271(target_271_root)
+    
+    # ステップ2: 正規リネーム（工番グループ化とサフィックス処理対応）
+    _rename_271_with_suffix(target_271_root, master)
 
-    renamed = 0
-    skipped = 0
 
+def _cleanup_duplicate_shirei_suffix_271(target_271_root: Path):
+    """_指令書_1_指令書_1_指令書_1 のような重複を削除。"""
+    cleaned = 0
+    
     for src in sorted(target_271_root.iterdir(), key=lambda pth: pth.name.lower()):
         if not src.is_file():
             continue
         if src.name.startswith("~$"):
             continue
-
+        
         stem = src.stem
+        
+        # 複数の _指令書_ が含まれるか
+        shirei_count = stem.count("_指令書_")
+        if shirei_count >= 2:
+            # すべての _指令書_N パターンを削除
+            cleaned_stem = re.sub(r"(_指令書_\d+)+$", "", stem)
+            cleaned_name = f"{cleaned_stem}_指令書{src.suffix}"
+            cleaned_path = src.parent / cleaned_name
+            
+            if src.name != cleaned_name and not cleaned_path.exists():
+                try:
+                    src.rename(cleaned_path)
+                    cleaned += 1
+                    p(f"[CLEANUP:271] {src.name} -> {cleaned_name}")
+                except Exception as e:
+                    p(f"[WARN] cleanup failed (271): {src.name}: {e}")
+    
+    if cleaned > 0:
+        p(f"[CLEANUP SUMMARY:271] cleaned={cleaned}")
 
-        # 工番抽出: まず先頭から直接試みる（工番のみ・工番_xxx 形式）
-        workno, _ = _extract_workno_suffix(stem)
 
-        # 工番が取れなければ「指令書_」プレフィックスを除いて再試行
-        if not workno:
-            rest = _SHIREI_PREFIX.sub("", stem)
-            workno, _ = _extract_workno_suffix(rest)
-
-        if not workno:
-            p(f"[WARN] 271: 工番抽出失敗: {src.name}")
+def _rename_271_with_suffix(target_271_root: Path, master: Dict[str, str]):
+    """271ファイルを工番でグループ化し、同一工番の複数ファイルに _1, _2 のサフィックスを付ける。"""
+    
+    _SHIREI_PREFIX = re.compile(r"^指令書[_\s]+")
+    
+    # 第1パス: 工番を抽出してグループ化
+    file_info = []  # (src_path, workno, base_name)
+    workno_groups = {}
+    
+    for src in sorted(target_271_root.iterdir(), key=lambda pth: pth.name.lower()):
+        if not src.is_file():
             continue
-
-        koujimei = master.get(workno)
-        if not koujimei:
-            p(f"[WARN] 271: マスタに工番なし: {workno} ({src.name})")
+        if src.name.startswith("~$"):
             continue
-
-        desired_stem = sanitize_name(f"{workno}_{normalize_master_name(koujimei)}_指令書")
-        desired_name = f"{desired_stem}{src.suffix}"
-        desired_path = src.parent / desired_name
-
-        if src.name == desired_name:
+        
+        stem = src.stem
+        
+        # プレフィックス除去
+        if stem.startswith("指令書"):
+            stem = _SHIREI_PREFIX.sub("", stem)
+        
+        # 工番抽出: \d+-\d+ パターン（2桁-2桁も対応）
+        workno = None
+        
+        # パターン1: 既に「_指令書」で終わっている
+        if stem.endswith("_指令書"):
+            m = re.match(r"^(\d+\-\d+)_(.+)_指令書$", stem)
+            if m:
+                workno = m.group(1)
+                desc = m.group(2)
+                base_name = sanitize_name(f"{workno}_{desc}_指令書")
+                file_info.append((src, workno, base_name))
             continue
-
-        if desired_path.exists():
-            skipped += 1
-            p(f"[WARN] rename skip (271) (target exists): {src.name} -> {desired_name}")
+        
+        # パターン2: 工番_説明 形式
+        m = re.match(r"^(\d+\-\d+)_(.+)$", stem)
+        if m:
+            workno = m.group(1)
+            desc = m.group(2)
+            base_name = sanitize_name(f"{workno}_{desc}_指令書")
+            file_info.append((src, workno, base_name))
             continue
-
-        try:
-            src.rename(desired_path)
-            renamed += 1
-            p(f"[RENAME:271] {src.name} -> {desired_name}")
-        except Exception as e:
-            skipped += 1
-            p(f"[WARN] rename failed (271): {src} ({e})")
-
+        
+        # パターン3: 工番のみ
+        m = re.match(r"^(\d+\-\d+)$", stem)
+        if m:
+            workno = m.group(1)
+            # マスタから工事名を取得
+            if workno in master:
+                desc = master[workno]
+                base_name = sanitize_name(f"{workno}_{desc}_指令書")
+                file_info.append((src, workno, base_name))
+            else:
+                # マスタにない場合は工番のみで指令書を追加
+                base_name = sanitize_name(f"{workno}_指令書")
+                file_info.append((src, workno, base_name))
+            continue
+    
+    # グループ化
+    for src, workno, base_name in file_info:
+        if workno not in workno_groups:
+            workno_groups[workno] = []
+        workno_groups[workno].append((src, base_name))
+    
+    # 第2パス: リネーム（複数ファイル時はサフィックス付け）
+    renamed = 0
+    skipped = 0
+    
+    for workno, files_in_group in sorted(workno_groups.items()):
+        has_suffix = len(files_in_group) > 1
+        
+        if has_suffix:
+            # 最初のファイルから説明部分を抽出して共有
+            first_src, first_base_name = files_in_group[0]
+            m = re.match(r"^\d+\-\d+_(.+)_指令書$", first_base_name)
+            if m:
+                common_desc = m.group(1)
+                for idx, (src, base_name) in enumerate(files_in_group, 1):
+                    desired_name = f"{workno}_{common_desc}_指令書_{idx}{src.suffix}"
+                    desired_path = src.parent / desired_name
+                    
+                    if src.name == desired_name:
+                        continue
+                    
+                    if desired_path.exists():
+                        skipped += 1
+                        p(f"[WARN] rename skip (271) (target exists): {src.name} -> {desired_name}")
+                        continue
+                    
+                    try:
+                        src.rename(desired_path)
+                        renamed += 1
+                        p(f"[RENAME:271] {src.name} -> {desired_name}")
+                    except Exception as e:
+                        skipped += 1
+                        p(f"[WARN] rename failed (271): {src.name}: {e}")
+        else:
+            # 単一ファイル
+            for src, base_name in files_in_group:
+                desired_name = f"{base_name}{src.suffix}"
+                desired_path = src.parent / desired_name
+                
+                if src.name == desired_name:
+                    continue
+                
+                if desired_path.exists():
+                    skipped += 1
+                    p(f"[WARN] rename skip (271) (target exists): {src.name} -> {desired_name}")
+                    continue
+                
+                try:
+                    src.rename(desired_path)
+                    renamed += 1
+                    p(f"[RENAME:271] {src.name} -> {desired_name}")
+                except Exception as e:
+                    skipped += 1
+                    p(f"[WARN] rename failed (271): {src.name}: {e}")
+    
     p(f"[RENAME SUMMARY:271] renamed={renamed}, skipped={skipped}")
+
 
 
 def rename_existing_paths_english_spaces(target_root: Path, *, label: str = ""):
