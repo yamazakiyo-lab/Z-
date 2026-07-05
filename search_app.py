@@ -150,21 +150,18 @@ def _get_search_client():
 def do_search(
     client,
     query: str,
-    phase: Optional[str],
+    phases: List[str],
     media_types: List[str],
-    year: Optional[int],
     top: int = 50,
 ) -> List[dict]:
     """AI Search にクエリを投げて結果を返す。"""
     filters: List[str] = []
-    if phase:
-        filters.append(f"phase eq '{phase}'")
+    if phases:
+        phases_str = ",".join(phases)
+        filters.append(f"search.in(phase, '{phases_str}', ',')")
     if media_types:
         types_str = ",".join(media_types)
         filters.append(f"search.in(media_type, '{types_str}', ',')")
-    if year:
-        yy = str(year % 100).zfill(2)
-        filters.append(f"capture_date_raw ge '{yy}0101' and capture_date_raw le '{yy}1231'")
 
     # 工番パターン（例: 3477-00）は workno フィールドで完全一致フィルタを追加
     # → 標準アナライザーが "-" を分割するため "4555-00" も "00" でマッチする問題を防ぐ
@@ -179,6 +176,7 @@ def do_search(
         results = client.search(
             search_text=search_text,
             filter=filter_expr,
+            search_mode="all",   # スペース区切りはAND検索（全語一致）
             select=[
                 "id", "file_path", "file_name", "workno", "workno_name",
                 "phase", "media_type", "capture_date", "capture_date_raw",
@@ -209,6 +207,19 @@ def main() -> None:
     else:
         st.title("🔍 TSEG FMP SEARCH APP")
     st.caption("写真・動画・過去の指令書PDFを検索できます。")
+    st.markdown("""
+<style>
+div[data-testid="stTextInput"] input {
+    border: 2px solid #21A159 !important;
+    border-radius: 8px !important;
+    padding: 10px 14px !important;
+}
+div[data-testid="stTextInput"] input:focus {
+    border-color: #44CC77 !important;
+    box-shadow: 0 0 0 2px rgba(33,161,89,0.25) !important;
+}
+</style>
+""", unsafe_allow_html=True)
     st.divider()
 
     # ── 検索フォーム ──────────────────────────────────────────────────────────
@@ -216,20 +227,16 @@ def main() -> None:
     with col_q:
         query = st.text_input(
             label="検索キーワード",
-            placeholder="例: 1234-01　/ 高知プラント　/ B2　/ 250611",
+            placeholder="",
             label_visibility="collapsed",
         )
     with col_btn:
         search_clicked = st.button("検索", use_container_width=True, type="primary")
 
     # ── フィルタ行（メイン画面） ─────────────────────────────────────────────
-    phase_labels = {
-        "B1": "B1 着手前",
-        "B2": "B2 着手中",
-        "B3": "B3 出荷以降",
-        "B4": "B4 整理前",
-    }
-    fc1, fc2, fc3, fc4, fc5, fc6 = st.columns([1, 1, 1.3, 1.8, 1.8, 1.2])
+    fc1, fc2, fc3, _sp, fc4, fc5, fc6, fc7, _sp2, fc8 = st.columns(
+        [1, 1, 1.3, 0.3, 1, 1, 1, 1, 0.3, 1.5]
+    )
     with fc1:
         show_photo = st.checkbox("📷 写真")
     with fc2:
@@ -237,34 +244,35 @@ def main() -> None:
     with fc3:
         show_shirei = st.checkbox("📄 指令書PDF")
     with fc4:
-        phase_sel = st.selectbox(
-            "フェーズ",
-            ["（指定なし）", "B1", "B2", "B3", "B4"],
-            format_func=lambda x: phase_labels.get(x, x),
-            label_visibility="visible",
-        )
-        phase_val = phase_sel if phase_sel != "（指定なし）" else None
+        show_b1 = st.checkbox("🟦 B1")
     with fc5:
-        current_year = datetime.now().year
-        year_options = ["（指定なし）"] + list(range(current_year, current_year - 6, -1))
-        year_sel = st.selectbox("撮影年", year_options)
-        year_val = int(year_sel) if year_sel != "（指定なし）" else None
+        show_b2 = st.checkbox("🟩 B2")
     with fc6:
+        show_b3 = st.checkbox("🟨 B3")
+    with fc7:
+        show_b4 = st.checkbox("🟥 B4")
+    with fc8:
         top_n = st.number_input("最大件数", min_value=10, max_value=200, value=50, step=10)
 
     # 種別フィルタ組み立て（未選択 = すべて表示）
     media_val: List[str] = []
-    if show_photo:   media_val.append("photo")
-    if show_video:   media_val.append("video")
-    if show_shirei:  media_val.append("shirei")
+    if show_photo:  media_val.append("photo")
+    if show_video:  media_val.append("video")
+    if show_shirei: media_val.append("shirei")
+
+    # フェーズフィルタ組み立て（未選択 = すべて表示）
+    phases_val: List[str] = []
+    if show_b1: phases_val.append("B1")
+    if show_b2: phases_val.append("B2")
+    if show_b3: phases_val.append("B3")
+    if show_b4: phases_val.append("B4")
 
     # アクティブフィルタのサマリー表示
     active: List[str] = []
     if show_photo:   active.append("📷 写真")
     if show_video:   active.append("🎬 動画")
     if show_shirei:  active.append("📄 指令書PDF")
-    if phase_val:    active.append(f"フェーズ: {phase_labels.get(phase_val, phase_val)}")
-    if year_val:     active.append(f"{year_val}年")
+    if phases_val:   active.append("フェーズ: " + "/".join(phases_val))
     if active:
         st.info("🔍 絞り込み中: " + " ｜ ".join(active))
 
@@ -273,7 +281,7 @@ def main() -> None:
     if query or search_clicked:
         with st.spinner("検索中..."):
             results = do_search(
-                client, query, phase_val, media_val or [], year_val, top=int(top_n)
+                client, query, phases_val, media_val or [], top=int(top_n)
             )
 
         if not results:
@@ -290,7 +298,7 @@ def main() -> None:
         for doc in results:
             _render_result(doc)
     else:
-        st.info("キーワードを入力するか、フィルタを選択して「検索」を押してください。")
+        st.info("キーワードまたはフィルタを選択して検索してください。\n複数キーワードの場合はスペースで区切ってください。")
 
 
 @st.dialog("📷 フルサイズ表示", width="large")
