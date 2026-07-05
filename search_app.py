@@ -222,49 +222,61 @@ def main() -> None:
     with col_btn:
         search_clicked = st.button("検索", use_container_width=True, type="primary")
 
-    # ── サイドバー フィルタ ────────────────────────────────────────────────────
-    with st.sidebar:
-        st.header("🔧 フィルタ")
-
-        phase_options = ["（指定なし）", "B1", "B2", "B3", "B4"]
-        phase_labels = {
-            "B1": "B1 着手前",
-            "B2": "B2 着手中",
-            "B3": "B3 出荷以降",
-            "B4": "B4 整理前",
-        }
+    # ── フィルタ行（メイン画面） ─────────────────────────────────────────────
+    phase_labels = {
+        "B1": "B1 着手前",
+        "B2": "B2 着手中",
+        "B3": "B3 出荷以降",
+        "B4": "B4 整理前",
+    }
+    fc1, fc2, fc3, fc4, fc5, fc6 = st.columns([1, 1, 1.3, 1.8, 1.8, 1.2])
+    with fc1:
+        show_photo = st.checkbox("📷 写真")
+    with fc2:
+        show_video = st.checkbox("🎬 動画")
+    with fc3:
+        show_shirei = st.checkbox("📄 指令書PDF")
+    with fc4:
         phase_sel = st.selectbox(
             "フェーズ",
-            phase_options,
+            ["（指定なし）", "B1", "B2", "B3", "B4"],
             format_func=lambda x: phase_labels.get(x, x),
+            label_visibility="visible",
         )
         phase_val = phase_sel if phase_sel != "（指定なし）" else None
-
-        media_options = ["photo", "video", "shirei"]
-        media_labels = {"photo": "📷 写真", "video": "🎬 動画", "shirei": "📄 指令書(PDF)"}
-        media_sel = st.multiselect(
-            "種別（複数選択可）",
-            media_options,
-            format_func=lambda x: media_labels.get(x, x),
-        )
-        media_val = media_sel  # List[str]、空リスト = 絞り込みなし
-
+    with fc5:
         current_year = datetime.now().year
         year_options = ["（指定なし）"] + list(range(current_year, current_year - 6, -1))
         year_sel = st.selectbox("撮影年", year_options)
         year_val = int(year_sel) if year_sel != "（指定なし）" else None
+    with fc6:
+        top_n = st.number_input("最大件数", min_value=10, max_value=200, value=50, step=10)
 
-        st.divider()
-        top_n = st.slider("最大表示件数", 10, 200, 50, 10)
+    # 種別フィルタ組み立て（未選択 = すべて表示）
+    media_val: List[str] = []
+    if show_photo:   media_val.append("photo")
+    if show_video:   media_val.append("video")
+    if show_shirei:  media_val.append("shirei")
 
-        st.divider()
+    # アクティブフィルタのサマリー表示
+    active: List[str] = []
+    if show_photo:   active.append("📷 写真")
+    if show_video:   active.append("🎬 動画")
+    if show_shirei:  active.append("📄 指令書PDF")
+    if phase_val:    active.append(f"フェーズ: {phase_labels.get(phase_val, phase_val)}")
+    if year_val:     active.append(f"{year_val}年")
+    if active:
+        st.info("🔍 絞り込み中: " + " ｜ ".join(active))
+
+    # サイドバーは最小限（モバイルでは非表示になるため）
+    with st.sidebar:
         st.caption("ファイルパスをコピーして\nエクスプローラーで開けます。")
 
     # ── 検索実行 ──────────────────────────────────────────────────────────────
     if query or search_clicked:
         with st.spinner("検索中..."):
             results = do_search(
-                client, query, phase_val, media_val or [], year_val, top=top_n
+                client, query, phase_val, media_val or [], year_val, top=int(top_n)
             )
 
         if not results:
