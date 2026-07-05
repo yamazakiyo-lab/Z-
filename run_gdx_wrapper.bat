@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 set "SCRIPT_DIR=%~dp0"
 
 REM Git 最新コード取得（ローカル変更を一時保存）
