@@ -139,6 +139,7 @@ try {
 
         # ── [3] AzCopy: Blob Storage 同期（差分のみ） ────────────────────
         Write-Host "[AZCOPY] Blob Storage 同期開始"
+        $azCopy = 'C:\azcopy\azcopy_windows_amd64_10.32.4\azcopy.exe'
         $azCopyCount = 0
         $azCopyFailed = $false
         $blobSasToken = $env:AZURE_BLOB_SAS_TOKEN
@@ -266,31 +267,6 @@ try {
                 Pop-Location
             }
         } else {
-            Write-Warning "[LW] ld_sort.py が見つかりません。スキップします。"
-        }
-
-        # ── 学習協力Bot: Blob アノテーション同期 → .json サイドカー作成 ───────
-        $annBotScript = Join-Path $pw 'lw_annotation_bot.py'
-        if (Test-Path -LiteralPath $annBotScript) {
-            Write-Host "[BOT] アノテーション同期開始"
-            Push-Location $pw
-            try {
-                if ($lwPython -eq 'py') {
-                    & $lwPython -3 $annBotScript --sync-annotations
-                } else {
-                    & $lwPython $annBotScript --sync-annotations
-                }
-                if ($LASTEXITCODE -ne 0) {
-                    Write-Warning "[BOT] lw_annotation_bot.py --sync-annotations がエラー (code $LASTEXITCODE)"
-                } else {
-                    Write-Host "[BOT] アノテーション同期完了"
-                }
-
-                # --send は専用タスク（LW_Send_Morning / LW_Send_Afternoon）で実行するためここでは行わない
-            } finally {
-                Pop-Location
-            }
-        } else {
             Write-Warning "[BOT] lw_annotation_bot.py が見つかりません。スキップします。"
         }
 
@@ -314,4 +290,15 @@ try {
         if ($isDryRun) {
             Write-Host "[DRY-RUN] ドライランモードで実行しました"
         }
+    } finally {
+        Pop-Location
+    }
+} catch {
+    Write-Error $_
+} finally {
+    if ($lockStream) {
+        try { $lockStream.Dispose() } catch {}
+    }
+    Stop-Transcript
+}
 
