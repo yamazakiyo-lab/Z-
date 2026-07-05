@@ -111,6 +111,34 @@ try {
             Write-Warning "[AZCOPY] azcopy.exe または SAS トークンが見つかりません。スキップします。"
         }
 
+        # ── AzCopy: 271_修理工事指令書 PDF Blob 同期 ─────────────────
+        $blobSasToken271 = $env:AZURE_BLOB_271_SAS_TOKEN
+        if (-not $blobSasToken271) {
+            $envFile = Join-Path $ragDir '.env'
+            if (Test-Path $envFile) {
+                Get-Content $envFile | ForEach-Object {
+                    if ($_ -match '^AZURE_BLOB_271_SAS_TOKEN=(.+)$') {
+                        $blobSasToken271 = $Matches[1].Trim('"').Trim("'")
+                    }
+                }
+            }
+        }
+        # 専用トークンが無ければ共通トークンにフォールバック
+        if (-not $blobSasToken271) { $blobSasToken271 = $blobSasToken }
+        if ((Test-Path -LiteralPath $azCopy) -and $blobSasToken271) {
+            Write-Host "[AZCOPY:271] 指令書PDF Blob Storage 同期開始"
+            $src271 = 'Z:\takachiho\2to9_業務別フォルダ\27_サービス・出張工事\271_修理工事指令書'
+            $dst271 = "https://tsegphotos.blob.core.windows.net/shirei-pdf?$blobSasToken271"
+            & $azCopy sync $src271 $dst271 --recursive --include-pattern "*.pdf;*.PDF"
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning "[AZCOPY:271] 同期がエラーで終了しました (code $LASTEXITCODE)"
+            } else {
+                Write-Host "[AZCOPY:271] 指令書PDF Blob Storage 同期完了"
+            }
+        } else {
+            Write-Warning "[AZCOPY:271] azcopy.exe または271用SASトークンが見つかりません。スキップします。"
+        }
+
         # ── LW: LINE WORKS Blob 同期 ──────────────────────────────────
         $lwScript = Join-Path $pw 'lw_blob_sync.py'
         $lwPython = if ($venvPython -and (Test-Path -LiteralPath $venvPython)) { $venvPython } else { 'py' }

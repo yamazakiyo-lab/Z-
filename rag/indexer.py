@@ -39,6 +39,7 @@ from .config import (
     MANIFEST_PATH,
     SEARCH_INDEX_NAME,
     TARGET_91_ROOT,
+    TARGET_271_ROOT,
     UPLOAD_BATCH_SIZE,
     ensure_search_credentials,
 )
@@ -47,6 +48,7 @@ from .describer import load_descriptions
 # ── メディア定義 ───────────────────────────────────────────────────────────────
 PHOTO_EXT: frozenset = frozenset({".jpg", ".jpeg", ".png", ".heic", ".heif"})
 VIDEO_EXT: frozenset = frozenset({".mp4", ".mov", ".avi", ".mts", ".m2ts"})
+PDF_EXT: frozenset = frozenset({".pdf"})
 MEDIA_EXT: frozenset = PHOTO_EXT | VIDEO_EXT
 JUNK_NAMES: frozenset = frozenset({"Thumbs.db", "desktop.ini", ".DS_Store"})
 
@@ -257,6 +259,58 @@ def scan_media_files(root: Path) -> Iterator[Dict]:
                 }
 
 
+# ── 指令書 PDF スキャン（271_修理工事指令書） ───────────────────────────────────
+def scan_shirei_files(root_271: Path) -> Iterator[Dict]:
+    """
+    271_修理工事指令書 配下のPDFファイルを走査し、ドキュメント辞書を yield する。
+
+    想定ファイル名（リネーム後）: {workno}_{工事名}_指令書.pdf
+    """
+    if not root_271.is_dir():
+        print(f"[WARN] 271スキャン対象が存在しません: {root_271}", file=sys.stderr)
+        return
+
+    indexed_at = datetime.now(tz=timezone.utc).isoformat()
+
+    for fn in sorted(os.listdir(root_271)):
+        file_path = root_271 / fn
+        if not file_path.is_file():
+            continue
+        if fn.startswith("~$") or fn in JUNK_NAMES:
+            continue
+        ext = file_path.suffix.lower()
+        if ext not in PDF_EXT:
+            continue
+
+        fp_str = str(file_path)
+        stem = file_path.stem  # e.g. "4605-00_第一金属工業_指令書"
+
+        workno = _get_workno_from_name(stem)
+        workno_name = ""
+        if workno:
+            rest = stem[len(workno):].lstrip("_- ")
+            if rest.endswith("_指令書"):
+                workno_name = rest[: -len("_指令書")]
+            else:
+                workno_name = rest
+
+        yield {
+            "id": _make_id(fp_str),
+            "file_path": fp_str,
+            "file_name": fn,
+            "workno": workno or "",
+            "workno_name": workno_name,
+            "phase": "",
+            "media_type": "shirei",
+            "capture_date": None,
+            "capture_date_raw": "",
+            "extension": ext,
+            "folder_path": str(root_271),
+            "indexed_at": indexed_at,
+            "content_text": "",
+        }
+
+
 # ── マニフェスト（削除検知用） ─────────────────────────────────────────────────
 def load_manifest() -> Dict[str, str]:
     """manifest.json から {id: file_path} を読み込む。"""
@@ -392,17 +446,23 @@ class PhotoIndexer:
         return ok
 
     # ── フルラン ───────────────────────────────────────────────────────────────
-    def run(self, root: Optional[Path] = None) -> None:
+    def run(self, root: Optional[Path] = None, root_271: Optional[Path] = None) -> None:
         """
         root 配下を全走査してインデックスを更新する。
 
         Args:
-            root: スキャン対象。None の場合は config の TARGET_91_ROOT を使用。
+            root: スキャン対象（91フォルダ）。None の場合は config の TARGET_91_ROOT を使用。
+            root_271: 指令書PDFスキャン対象。None の場合は config の TARGET_271_ROOT を使用。
         """
+        import itertools
+
         if root is None:
             root = TARGET_91_ROOT
+        if root_271 is None:
+            root_271 = TARGET_271_ROOT
 
         print(f"[START] スキャン開始: {root}")
+        print(f"[START] 指令書スキャン: {root_271}")
         self.ensure_index()
 
         # ── 前回マニフェスト読み込み ────────────────────────────────────────
@@ -420,7 +480,7 @@ class PhotoIndexer:
         total_scanned = 0
         total_uploaded = 0
 
-        for doc in scan_media_files(root):
+        for doc in itertools.chain(scan_media_files(root), scan_shirei_files(root_271)):
             # 説明文（AI生成）と LWExtraction コメントを結合して content_text に設定
             ai_desc = descriptions.get(doc["id"], "")
             ld_comment = doc.get("content_text", "")  # scan_media_files が設定済みの場合

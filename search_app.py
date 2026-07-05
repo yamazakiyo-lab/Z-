@@ -26,6 +26,13 @@ _TARGET_91_ROOT_WIN: str = os.getenv(
     "TARGET_91_ROOT",
     r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画",
 )
+_BLOB_271_BASE_URL: str = os.getenv("AZURE_BLOB_271_BASE_URL", "").rstrip("/")
+# 271専用SASトークン。未設定時は共通トークンにフォールバック。
+_BLOB_271_SAS_TOKEN: str = os.getenv("AZURE_BLOB_271_SAS_TOKEN", "") or _BLOB_SAS_TOKEN
+_TARGET_271_ROOT_WIN: str = os.getenv(
+    "TARGET_271_ROOT",
+    r"Z:\takachiho\2to9_業務別フォルダ\27_サービス・出張工事\271_修理工事指令書",
+)
 
 
 def _to_blob_url(file_path: str) -> str | None:
@@ -44,6 +51,22 @@ def _to_blob_url(file_path: str) -> str | None:
         return None
 
 
+def _to_blob_url_271(file_path: str) -> str | None:
+    if not _BLOB_271_BASE_URL or not file_path:
+        return None
+    try:
+        win_path = PureWindowsPath(file_path)
+        root_path = PureWindowsPath(_TARGET_271_ROOT_WIN)
+        rel = win_path.relative_to(root_path)
+        blob_path = "/".join(rel.parts)
+        url = f"{_BLOB_271_BASE_URL}/{blob_path}"
+        if _BLOB_271_SAS_TOKEN:
+            url += f"?{_BLOB_271_SAS_TOKEN}"
+        return url
+    except (ValueError, Exception):
+        return None
+
+
 # ページ設定（必ず最初に呼ぶ）
 _LOGO_PATH = Path(__file__).parent / "tseg_favicon.png"
 try:
@@ -55,7 +78,7 @@ except Exception:
     _page_icon = "🔍"
 
 st.set_page_config(
-    page_title="TSEG FM SEARCH APP",
+    page_title="TSEG FMP SEARCH APP",
     page_icon=_page_icon,
     layout="wide",
 )
@@ -108,7 +131,7 @@ def do_search(
     client,
     query: str,
     phase: Optional[str],
-    media_type: Optional[str],
+    media_types: List[str],
     year: Optional[int],
     top: int = 50,
 ) -> List[dict]:
@@ -116,8 +139,9 @@ def do_search(
     filters: List[str] = []
     if phase:
         filters.append(f"phase eq '{phase}'")
-    if media_type:
-        filters.append(f"media_type eq '{media_type}'")
+    if media_types:
+        types_str = ",".join(media_types)
+        filters.append(f"search.in(media_type, '{types_str}', ',')")
     if year:
         yy = str(year % 100).zfill(2)
         filters.append(f"capture_date_raw ge '{yy}0101' and capture_date_raw le '{yy}1231'")
@@ -152,13 +176,13 @@ def main() -> None:
         st.markdown(
             '<h1 style="display:flex;align-items:flex-end;gap:12px;line-height:1;padding-bottom:0">'
             '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="64">'
-            'TSEG FM SEARCH APP'
+            'TSEG FMP SEARCH APP'
             '</h1>',
             unsafe_allow_html=True,
         )
     else:
-        st.title("🔍 TSEG FM SEARCH APP")
-    st.caption("工番・工事名・フォルダ名などで検索できます。")
+        st.title("🔍 TSEG FMP SEARCH APP")
+    st.caption("写真・動画・過去の指令書を検索できます。")
     st.divider()
 
     # ── 検索フォーム ──────────────────────────────────────────────────────────
@@ -190,14 +214,14 @@ def main() -> None:
         )
         phase_val = phase_sel if phase_sel != "（指定なし）" else None
 
-        media_options = ["（指定なし）", "photo", "video"]
-        media_labels = {"photo": "📷 写真", "video": "🎬 動画"}
-        media_sel = st.selectbox(
-            "種別",
+        media_options = ["photo", "video", "shirei"]
+        media_labels = {"photo": "📷 写真", "video": "🎬 動画", "shirei": "📄 指令書(PDF)"}
+        media_sel = st.multiselect(
+            "種別（複数選択可）",
             media_options,
             format_func=lambda x: media_labels.get(x, x),
         )
-        media_val = media_sel if media_sel != "（指定なし）" else None
+        media_val = media_sel  # List[str]、空リスト = 絞り込みなし
 
         current_year = datetime.now().year
         year_options = ["（指定なし）"] + list(range(current_year, current_year - 6, -1))
@@ -214,7 +238,7 @@ def main() -> None:
     if query or search_clicked:
         with st.spinner("検索中..."):
             results = do_search(
-                client, query, phase_val, media_val, year_val, top=top_n
+                client, query, phase_val, media_val or [], year_val, top=top_n
             )
 
         if not results:
@@ -244,7 +268,7 @@ def _render_result(doc: dict) -> None:
     """検索結果1件を表示する。"""
     phase = doc.get("phase", "")
     media_type = doc.get("media_type", "")
-    icon = "📷" if media_type == "photo" else "🎬"
+    icon = "📷" if media_type == "photo" else "🎬" if media_type == "video" else "📄"
     phase_badge = {"B1": "🟦", "B2": "🟩", "B3": "🟨", "B4": "🟥"}.get(phase, "⬜")
 
     workno = doc.get("workno", "")
@@ -279,6 +303,12 @@ def _render_result(doc: dict) -> None:
                 video_url = _to_blob_url(file_path)
                 if video_url:
                     st.video(video_url)
+                else:
+                    st.markdown(f"## {icon}")
+            elif media_type == "shirei" and file_path:
+                pdf_url = _to_blob_url_271(file_path)
+                if pdf_url:
+                    st.markdown(f"[📄 PDFを開く]({pdf_url})")
                 else:
                     st.markdown(f"## {icon}")
             else:
