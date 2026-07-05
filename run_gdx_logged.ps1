@@ -1,6 +1,10 @@
 ﻿if (-not $PSScriptRoot) {
     $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 }
+
+# ドライラン判定（--dry-run フラグ）
+$isDryRun = $args -contains '--dry-run'
+
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
 $utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'
 if (Test-Path -LiteralPath $utf8Init) { . $utf8Init }
@@ -16,12 +20,23 @@ $env:GDX_RUNTIME_ROOT = $runtimeRoot
 
 $lockDir = Join-Path $pw '.runtime'
 if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir -Force | Out-Null }
-$lockPath = Join-Path $lockDir 'gdx.lock'
-$log = Join-Path $logdir ("gdx_run_{0}_{1}.txt" -f $ts, $hostName)
+$lockPath = Join-Path $lockDir 'dailyrun.lock'
+$log = Join-Path $logdir ("dailyrun_{0}_{1}.txt" -f $ts, $hostName)
 $lockStream = $null
+
+# ── 結果フラグ初期化 ──────────────────────────────────────
+$results = @{
+    GDX = 'UNKNOWN'
+    OTHER = 'UNKNOWN'
+    AzCopy = 'UNKNOWN'
+}
 
 Start-Transcript -Path $log -Force
 try {
+    if ($isDryRun) {
+        Write-Host "[DRY-RUN] 本実行ではなくドライランモードで実行します"
+    }
+    
     try {
         $lockStream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
         $lockStream.SetLength(0)
@@ -29,10 +44,11 @@ try {
         $writer.WriteLine("host=$hostName")
         $writer.WriteLine("pid=$PID")
         $writer.WriteLine("started=$(Get-Date -Format s)")
+        $writer.WriteLine("dryrun=$isDryRun")
         $writer.Flush()
         $writer.Dispose()
     } catch [System.IO.IOException] {
-        Write-Host "[SKIP] GDX is already running on another host or process. lock=$lockPath"
+        Write-Host "[SKIP] DailyRun is already running on another host or process. lock=$lockPath"
         exit 0
     }
 
@@ -48,16 +64,54 @@ try {
     }
     Push-Location $pw
     try {
+        # ── [1] GDX処理実行 ──────────────────────────────────────────────
+        Write-Host "[GDX] GDXパイプライン開始"
         if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
-            & $venvPython $script
+            if ($isDryRun) {
+                & $venvPython $script --dry-run
+            } else {
+                & $venvPython $script
+            }
         } else {
-            & $launcher -3 $script
+            if ($isDryRun) {
+                & $launcher -3 $script --dry-run
+            } else {
+                & $launcher -3 $script
+            }
         }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "[GDX] run_gdx.py がエラーで終了しました (code $LASTEXITCODE)。RAG/AzCopy は続行します。"
+        if ($LASTEXITCODE -eq 0) {
+            $results.GDX = 'PASS'
+            Write-Host "[GDX] ✓ GDXパイプライン完了"
+        } else {
+            $results.GDX = 'FAIL'
+            Write-Warning "[GDX] ✗ run_gdx.py がエラーで終了しました (code $LASTEXITCODE)。以降のステップは続行します。"
         }
 
-        # ── RAG: インデックス更新 ──────────────────────────────────────
+        # ── [2] OTHER処理実行 ────────────────────────────────────────────
+        $otherScript = Join-Path $pw 'run_91other.py'
+        if (Test-Path -LiteralPath $otherScript) {
+            Write-Host "[OTHER] 91OTHER処理開始"
+            if ($isDryRun) {
+                Write-Host "[OTHER] [DRY-RUN] 実行スキップ"
+                $results.OTHER = 'SKIP'
+            } else {
+                if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
+                    & $venvPython $otherScript
+                } else {
+                    & $launcher -3 $otherScript
+                }
+                if ($LASTEXITCODE -eq 0) {
+                    $results.OTHER = 'PASS'
+                    Write-Host "[OTHER] ✓ 91OTHER処理完了"
+                } else {
+                    $results.OTHER = 'FAIL'
+                    Write-Warning "[OTHER] ✗ run_91other.py がエラーで終了しました (code $LASTEXITCODE)。以降のステップは続行します。"
+                }
+            }
+        } else {
+            Write-Warning "[OTHER] run_91other.py が見つかりません。スキップします。"
+            $results.OTHER = 'SKIP'
+        }
         $ragDir = $pw  # $PSScriptRoot（UNCパス）を使用。$env:USERPROFILEはデスクトップPCのローカルパスになるため不可
         $ragPython = Join-Path $ragDir 'rag_venv\Scripts\python.exe'
         if (-not (Test-Path -LiteralPath $ragPython)) {
@@ -83,8 +137,10 @@ try {
             Pop-Location
         }
 
-        # ── AzCopy: Blob Storage 同期（差分のみ） ─────────────────────
-        $azCopy = 'C:\azcopy\azcopy_windows_amd64_10.32.4\azcopy.exe'
+        # ── [3] AzCopy: Blob Storage 同期（差分のみ） ────────────────────
+        Write-Host "[AZCOPY] Blob Storage 同期開始"
+        $azCopyCount = 0
+        $azCopyFailed = $false
         $blobSasToken = $env:AZURE_BLOB_SAS_TOKEN
         if (-not $blobSasToken) {
             # .env から読み込み
@@ -104,6 +160,7 @@ try {
             & $azCopy sync $src $dst --recursive
             if ($LASTEXITCODE -ne 0) {
                 Write-Warning "[AZCOPY] 同期がエラーで終了しました (code $LASTEXITCODE)"
+                $azCopyFailed = $true
             } else {
                 Write-Host "[AZCOPY] Blob Storage 同期完了"
             }
@@ -132,6 +189,7 @@ try {
             & $azCopy sync $src271 $dst271 --recursive --include-pattern "*.pdf;*.PDF"
             if ($LASTEXITCODE -ne 0) {
                 Write-Warning "[AZCOPY:271] 同期がエラーで終了しました (code $LASTEXITCODE)"
+                $azCopyFailed = $true
             } else {
                 Write-Host "[AZCOPY:271] 指令書PDF Blob Storage 同期完了"
             }
@@ -208,16 +266,52 @@ try {
                 Pop-Location
             }
         } else {
+            Write-Warning "[LW] ld_sort.py が見つかりません。スキップします。"
+        }
+
+        # ── 学習協力Bot: Blob アノテーション同期 → .json サイドカー作成 ───────
+        $annBotScript = Join-Path $pw 'lw_annotation_bot.py'
+        if (Test-Path -LiteralPath $annBotScript) {
+            Write-Host "[BOT] アノテーション同期開始"
+            Push-Location $pw
+            try {
+                if ($lwPython -eq 'py') {
+                    & $lwPython -3 $annBotScript --sync-annotations
+                } else {
+                    & $lwPython $annBotScript --sync-annotations
+                }
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "[BOT] lw_annotation_bot.py --sync-annotations がエラー (code $LASTEXITCODE)"
+                } else {
+                    Write-Host "[BOT] アノテーション同期完了"
+                }
+
+                # --send は専用タスク（LW_Send_Morning / LW_Send_Afternoon）で実行するためここでは行わない
+            } finally {
+                Pop-Location
+            }
+        } else {
             Write-Warning "[BOT] lw_annotation_bot.py が見つかりません。スキップします。"
         }
-    } finally {
-        Pop-Location
-    }
-} catch {
-    Write-Error $_
-} finally {
-    if ($lockStream) {
-        try { $lockStream.Dispose() } catch {}
-    }
-    Stop-Transcript
-}
+
+        # ── AzCopyフラグ判定 ─────────────────────────────────────────
+        if ($isDryRun) {
+            $results.AzCopy = 'SKIP'
+        } elseif (-not $azCopyFailed) {
+            $results.AzCopy = 'PASS'
+        } else {
+            $results.AzCopy = 'FAIL'
+        }
+
+        # ── [RESULT] 結果サマリー出力 ──────────────────────────────────
+        $summaryMsg = "[RESULT] GDX=$($results.GDX), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
+        Write-Host ""
+        Write-Host "════════════════════════════════════════════════════════"
+        Write-Host $summaryMsg
+        Write-Host "════════════════════════════════════════════════════════"
+        
+        # ドライランモードの場合は表示
+        if ($isDryRun) {
+            Write-Host "[DRY-RUN] ドライランモードで実行しました"
+        }
+
