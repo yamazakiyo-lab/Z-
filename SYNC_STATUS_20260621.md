@@ -30,31 +30,4 @@ $lwPython = if ($venvPython -and (Test-Path -LiteralPath $venvPython)) { $venvPy
 
 ### 次ステップ
 
-ノートPC側で以下を実行して、修正をY:に同期してください：
-
-```powershell
-# ノートPC（C: ローカルパス）で実行
-Copy-Item "C:\Users\user\tseg_vscode\Zフォルダ整理\run_gdx_logged.ps1" `
-          "Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\run_gdx_logged.ps1" -Force
-```
-
-または WATCH_SYNC_TO_Y を実行してください。
-
-### 同期確認（デスクトップPC）
-
-同期後、デスクトップPC側で確認：
-
-```powershell
-# デスクトップPC（KEIRI-PC）で実行
-$lines = @(Get-Content "Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\run_gdx_logged.ps1")
-Write-Host "Line 48: $($lines[47])"
-Write-Host "Line 110: $($lines[109])"
-```
-
-以下が表示されれば OK：
-- Line 48: `if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {`
-- Line 110: `$lwPython = if ($venvPython -and (Test-Path -LiteralPath $venvPython)) { $venvPython } else { 'py' }`
-
----
-
-**Status**: ノートPC修正済み → Y:同期待機中
+修正内容をテストして検証してください。

@@ -48,35 +48,6 @@ $lwPython = if ($venvPython -and (Test-Path -LiteralPath $venvPython)) { $venvPy
 
 ---
 
-## 次ステップ（ノートPC側で実行）
-
-### 1. Y: への同期トリガー
-以下いずれかを実行してください：
-
-**方法A: 自動同期プログラム実行**
-```powershell
-# WATCH_SYNC_TO_Y.ps1 を実行
-```
-
-**方法B: 手動コピー**
-```powershell
-Copy-Item "C:\Users\user\tseg_vscode\Zフォルダ整理\run_gdx_logged.ps1" `
-          "Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\run_gdx_logged.ps1" -Force
-```
-
-### 2. デスクトップPC側での検証
-同期完了後、デスクトップPC側で Y: のファイルを確認：
-
-```powershell
-# デスクトップPC（KEIRI-PC）で実行
-$lines = @(Get-Content "Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\run_gdx_logged.ps1")
-Write-Host "Line 48: $($lines[47])"
-Write-Host "Line 110: $($lines[109])"
-```
-
-**期待される出力：**
-- Line 48: `if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {`
-- Line 110: `$lwPython = if ($venvPython -and (Test-Path -LiteralPath $venvPython)) { $venvPython } else { 'py' }`
 
 ---
 
