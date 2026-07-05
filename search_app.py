@@ -12,10 +12,29 @@ from __future__ import annotations
 import base64
 import html as _html
 import os
+import re as _re
 import sys
 from datetime import datetime
 from pathlib import Path, PureWindowsPath
 from typing import List, Optional
+
+# 工番パターン: 数字1〜6桁 + ハイフン or アンダースコア + 2桁 (例: 3477-00, A1234-01)
+_WORKNO_QUERY_RE = _re.compile(r'^[A-Za-z]*\d{1,6}[-_]\d{2}$')
+
+
+def _normalize_workno_query(query: str) -> Optional[str]:
+    """クエリが工番パターンなら正規化した工番文字列を返す。そうでなければ None。"""
+    q = query.strip()
+    m = _re.match(r'^([A-Za-z]*)(\d+)[-_](\d{2})$', q)
+    if not m:
+        return None
+    prefix = m.group(1).upper()
+    digits = m.group(2)
+    right = m.group(3)
+    if prefix:
+        return f"{prefix}{digits}-{right}"
+    left = digits.lstrip("0") or "0"
+    return f"{left}-{right}"
 
 import streamlit as st
 
@@ -146,6 +165,12 @@ def do_search(
     if year:
         yy = str(year % 100).zfill(2)
         filters.append(f"capture_date_raw ge '{yy}0101' and capture_date_raw le '{yy}1231'")
+
+    # 工番パターン（例: 3477-00）は workno フィールドで完全一致フィルタを追加
+    # → 標準アナライザーが "-" を分割するため "4555-00" も "00" でマッチする問題を防ぐ
+    _norm_wno = _normalize_workno_query(query) if query.strip() else None
+    if _norm_wno:
+        filters.append(f"workno eq '{_norm_wno}'")
 
     filter_expr = " and ".join(filters) if filters else None
     search_text = query.strip() if query.strip() else "*"
