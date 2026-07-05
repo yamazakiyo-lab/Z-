@@ -167,15 +167,25 @@ def main():
     p(f"TARGET_92_ROOT  : {cfg.target_92_root}")
     p(f"TARGET_9781_ROOT: {cfg.target_9781_root}")
     p(f"DRIVE_PARENT    : {cfg.drive_parent}")
-
-    service = drive_authentication()
+    
+    if cfg.dry_run:
+        p("[DRY-RUN] Drive 認証をスキップします")
+        service = None
+    else:
+        service = drive_authentication()
+    
     ensure_local_dir(str(cfg.gd_root))
     ensure_local_dir(str(cfg.target_91_root))
 
     p("=== [1] Drive -> GDExtraction 吸い取り（Drive指定親直下フォルダのみ） ===")
-    root_items = drive_list_children(service, cfg.drive_parent)
-    drive_folders = [it for it in root_items if it["mimeType"] == "application/vnd.google-apps.folder"]
-    p(f"[1] Drive親直下フォルダ数: {len(drive_folders)}")
+    
+    if service is None:
+        p("[SKIP] [1] ドライランモード: Drive 吸い取りはスキップ")
+        drive_folders = []
+    else:
+        root_items = drive_list_children(service, cfg.drive_parent)
+        drive_folders = [it for it in root_items if it["mimeType"] == "application/vnd.google-apps.folder"]
+        p(f"[1] Drive親直下フォルダ数: {len(drive_folders)}")
 
     for i, f in enumerate(drive_folders, 1):
         folder_name = f["name"]
@@ -247,7 +257,10 @@ def main():
     p("=== [3] 完了 ===")
 
     p("=== [4] GDExtraction のフォルダ構成を Drive へ（空フォルダ）最終同期 ===")
-    sync_gdx_tree_checkpoint(service, str(cfg.gd_root), cfg.drive_parent, "最終同期")
+    if service is None:
+        p("[SKIP] [4] ドライランモード: Drive 最終同期はスキップ")
+    else:
+        sync_gdx_tree_checkpoint(service, str(cfg.gd_root), cfg.drive_parent, "最終同期")
     p("=== [4] 完了 ===")
 
     p("=== 全工程 完了 ===")
