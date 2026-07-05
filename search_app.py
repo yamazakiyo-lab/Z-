@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import base64
+import html as _html
 import os
 import sys
 from datetime import datetime
@@ -308,7 +309,11 @@ def _render_result(doc: dict) -> None:
             elif media_type == "shirei" and file_path:
                 pdf_url = _to_blob_url_271(file_path)
                 if pdf_url:
-                    st.markdown(f"[📄 PDFを開く]({pdf_url})")
+                    safe_url = _html.escape(pdf_url)
+                    st.markdown(
+                        f'<a href="{safe_url}" target="_blank">📄 PDFを開く</a>',
+                        unsafe_allow_html=True,
+                    )
                 else:
                     st.markdown(f"## {icon}")
             else:
