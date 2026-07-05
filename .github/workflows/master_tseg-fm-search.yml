@@ -8,6 +8,14 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'search_app.py'
+      - 'requirements.txt'
+      - '.streamlit/**'
+      - 'rag/**'
+      - 'static/**'
+      - 'tseg_favicon.png'
+      - '.github/workflows/master_tseg-fm-search.yml'
   workflow_dispatch:
 
 jobs:

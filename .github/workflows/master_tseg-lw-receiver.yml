@@ -8,6 +8,11 @@ on:
   push:
     branches:
       - master
+    paths:
+      - 'lineworks_bot_receiver.py'
+      - 'requirements.txt'
+      - 'requirements_lw.txt'
+      - '.github/workflows/master_tseg-lw-receiver.yml'
   workflow_dispatch:
 
 jobs:
