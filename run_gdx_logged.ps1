@@ -52,6 +52,8 @@ try {
         exit 0
     }
 
+    Start-Transcript -Path $log -Force -Encoding UTF8
+
     $launcher = 'py'
     $script = Join-Path $pw 'run_gdx.py'
     $gdxProjectDir = Get-ChildItem -LiteralPath $pw -Directory |
@@ -95,10 +97,13 @@ try {
                 Write-Host "[OTHER] [DRY-RUN] 実行スキップ"
                 $results.OTHER = 'SKIP'
             } else {
+                Write-Host "[OTHER] Python スクリプト実行: $otherScript"
                 if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
-                    & $venvPython $otherScript
+                    Write-Host "[OTHER] venv Python: $venvPython"
+                    & $venvPython $otherScript 2>&1
                 } else {
-                    & $launcher -3 $otherScript
+                    Write-Host "[OTHER] py ランチャー利用"
+                    & $launcher -3 $otherScript 2>&1
                 }
                 if ($LASTEXITCODE -eq 0) {
                     $results.OTHER = 'PASS'
