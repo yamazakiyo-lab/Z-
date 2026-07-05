@@ -52,8 +52,6 @@ try {
         exit 0
     }
 
-    Start-Transcript -Path $log -Force -Encoding UTF8
-
     $launcher = 'py'
     $script = Join-Path $pw 'run_gdx.py'
     $gdxProjectDir = Get-ChildItem -LiteralPath $pw -Directory |
@@ -97,20 +95,32 @@ try {
                 Write-Host "[OTHER] [DRY-RUN] 実行スキップ"
                 $results.OTHER = 'SKIP'
             } else {
-                Write-Host "[OTHER] Python スクリプト実行: $otherScript"
-                if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
-                    Write-Host "[OTHER] venv Python: $venvPython"
-                    & $venvPython $otherScript 2>&1
-                } else {
-                    Write-Host "[OTHER] py ランチャー利用"
-                    & $launcher -3 $otherScript 2>&1
-                }
-                if ($LASTEXITCODE -eq 0) {
-                    $results.OTHER = 'PASS'
-                    Write-Host "[OTHER] ✓ 91OTHER処理完了"
-                } else {
-                    $results.OTHER = 'FAIL'
-                    Write-Warning "[OTHER] ✗ run_91other.py がエラーで終了しました (code $LASTEXITCODE)。以降のステップは続行します。"
+                $otherTimeout = 1800  # 30分
+                $otherStartTime = Get-Date
+                try {
+                    if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
+                        $proc = Start-Process -FilePath $venvPython -ArgumentList $otherScript -PassThru -NoNewWindow
+                    } else {
+                        $proc = Start-Process -FilePath $launcher -ArgumentList @('-3', $otherScript) -PassThru -NoNewWindow
+                    }
+                    if ($proc.WaitForExit($otherTimeout * 1000)) {
+                        # 完了
+                        if ($proc.ExitCode -eq 0) {
+                            $results.OTHER = 'PASS'
+                            Write-Host "[OTHER] ✓ 91OTHER処理完了"
+                        } else {
+                            $results.OTHER = 'FAIL'
+                            Write-Warning "[OTHER] ✗ run_91other.py がエラーで終了しました (code $($proc.ExitCode))。以降のステップは続行します。"
+                        }
+                    } else {
+                        # タイムアウト
+                        Write-Warning "[OTHER] ⏱ 91OTHER処理がタイムアウト（30分以上）しました。プロセスを強制終了します。"
+                        $proc.Kill()
+                        $results.OTHER = 'TIMEOUT'
+                    }
+                } catch {
+                    Write-Warning "[OTHER] ✗ 予期しないエラーが発生しました: $_"
+                    $results.OTHER = 'ERROR'
                 }
             }
         } else {
