@@ -268,9 +268,6 @@ def main() -> None:
     if active:
         st.info("🔍 絞り込み中: " + " ｜ ".join(active))
 
-    # サイドバーは最小限（モバイルでは非表示になるため）
-    with st.sidebar:
-        st.caption("ファイルパスをコピーして\nエクスプローラーで開けます。")
 
     # ── 検索実行 ──────────────────────────────────────────────────────────────
     if query or search_clicked:
