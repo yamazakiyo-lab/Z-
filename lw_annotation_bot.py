@@ -120,6 +120,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ── ドライランモード ───────────────────────────────────────────────────────────
+DRY_RUN: bool = False
+
 # ── LINE WORKS アクセストークン ───────────────────────────────────────────────
 _access_token: str    = ""
 _token_expires_at: float = 0.0
@@ -166,6 +169,9 @@ def _get_access_token() -> str:
 
 # ── メッセージ送信 ────────────────────────────────────────────────────────────
 def _send_text(user_id: str, text: str) -> bool:
+    if DRY_RUN:
+        logger.info(f"[DRY-RUN] テキスト送信（ユーザー: {user_id}）")
+        return True
     try:
         token = _get_access_token()
         url = LW_SEND_USER_URL.format(bot_id=BOT_ID, user_id=user_id)
@@ -183,6 +189,9 @@ def _send_text(user_id: str, text: str) -> bool:
 
 
 def _send_image(user_id: str, image_url: str) -> bool:
+    if DRY_RUN:
+        logger.info(f"[DRY-RUN] 画像送信（ユーザー: {user_id}, URL: {image_url}）")
+        return True
     try:
         token = _get_access_token()
         url = LW_SEND_USER_URL.format(bot_id=BOT_ID, user_id=user_id)
@@ -945,7 +954,14 @@ def main() -> None:
                         help="管理者に lw_holiday.json 更新リマインダーを送信（GW明け年次）")
     parser.add_argument("--ranking-weekly", action="store_true",
                         help="週初め営業日にのみ週間ランキングを配信（毎日スケジュール実行）")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="ドライランモード（送信せず確認のみ）")
     args = parser.parse_args()
+    
+    global DRY_RUN
+    DRY_RUN = args.dry_run
+    if DRY_RUN:
+        logger.info("[DRY-RUN] ドライランモードで実行します")
 
     if args.send:
         cmd_send()

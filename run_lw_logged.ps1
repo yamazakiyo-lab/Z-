@@ -1,8 +1,20 @@
+param(
+    [switch]$DryRun = $false
+)
+
+if (-not $PSScriptRoot) {
+    $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
+}
+
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
 $utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'
 if (Test-Path -LiteralPath $utf8Init) { . $utf8Init }
 $hostName = $env:COMPUTERNAME
 $pw = $PSScriptRoot
+
+if ($DryRun) {
+    Write-Host "[DRY-RUN] ドライランモードで実行します"
+}
 
 $logdir = Join-Path $pw 'lw_logs'
 if (-not (Test-Path $logdir)) { New-Item -ItemType Directory -Path $logdir -Force | Out-Null }
@@ -41,10 +53,12 @@ try {
     Write-Host "[LW] 同期開始: $ts"
     Push-Location $pw
     try {
+        $scriptArgs = @($script)
+        if ($DryRun) { $scriptArgs += '--dry-run' }
         if ($python -eq 'py') {
-            & $python -3 $script
+            & $python -3 $scriptArgs
         } else {
-            & $python $script
+            & $python $scriptArgs
         }
         if ($LASTEXITCODE -ne 0) {
             throw "lw_blob_sync.py exited with code $LASTEXITCODE"
@@ -56,10 +70,12 @@ try {
         $annotPython = Join-Path $pw 'venv\Scripts\python.exe'
         if (-not (Test-Path -LiteralPath $annotPython)) { $annotPython = 'py' }
         Write-Host "[LW] --sync-annotations 開始"
+        $annotArgs = @($annotScript, '--sync-annotations')
+        if ($DryRun) { $annotArgs += '--dry-run' }
         if ($annotPython -eq 'py') {
-            & $annotPython -3 $annotScript --sync-annotations
+            & $annotPython -3 $annotArgs
         } else {
-            & $annotPython $annotScript --sync-annotations
+            & $annotPython $annotArgs
         }
         Write-Host "[LW] --sync-annotations 完了"
     } finally {

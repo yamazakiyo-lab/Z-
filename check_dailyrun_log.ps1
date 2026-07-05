@@ -27,11 +27,11 @@ if ($todayLogs.Count -eq 0) {
     $latestLog = $todayLogs[0]
     $checkLog += "[OK] Log detected: $($latestLog.Name) (LastWrite: $($latestLog.LastWriteTime))`r`n`r`n"
     
-    # Check last lines of log
-    $logContent = Get-Content -Path $latestLog.FullName -Tail 30 -Raw
+    # Check last lines of log (PowerShell 5.1: -Raw と -Tail は同時使用不可)
+    $logContent = Get-Content -Path $latestLog.FullName -Raw
     $checkLog += "=== LOG TAIL ===" + "`r`n"
-    $checkLog += $logContent
-    $checkLog += "`r`n`r`n"
+    $logContent | Select-String '.' -Context 0 | Select-Object -Last 30 | ForEach-Object { $checkLog += $_.Line + "`r`n" }
+    $checkLog += "`r`n"
     
     # [RESULT] ラインから結果を抽出
     $resultLine = $logContent | Select-String '\[RESULT\]' | Select-Object -Last 1

@@ -1,3 +1,7 @@
+param(
+    [switch]$DryRun = $false
+)
+
 if (-not $PSScriptRoot) {
     $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 }
@@ -15,14 +19,19 @@ $log = Join-Path $logdir ("lw_send_run_{0}_{1}.txt" -f $ts, $hostName)
 Start-Transcript -Path $log -Force
 try {
     Write-Host "=== LW_Send_Annotation $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
+    if ($DryRun) {
+        Write-Host "[DRY-RUN] ドライランモードで実行します"
+    }
     $launcher = 'py'
     $script = Join-Path $pw 'lw_annotation_bot.py'
     Push-Location $pw
     try {
         Write-Host "Working directory: $(Get-Location)"
         Write-Host "Script: $script"
-        Write-Host "Executing: $launcher $script --send"
-        & $launcher $script --send
+        $args_list = @('$script', '--send')
+        if ($DryRun) { $args_list += '--dry-run' }
+        Write-Host "Executing: $launcher $args_list"
+        & $launcher $args_list
         $exitCode = $LASTEXITCODE
         Write-Host "Exit code: $exitCode"
     } finally {
