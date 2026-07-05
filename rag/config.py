@@ -43,6 +43,13 @@ TARGET_91_ROOT: Path = Path(
     )
 )
 
+TARGET_271_ROOT: Path = Path(
+    os.getenv(
+        "TARGET_271_ROOT",
+        r"Z:\takachiho\2to9_業務別フォルダ\27_サービス・出張工事\271_修理工事指令書",
+    )
+)
+
 # ── マニフェスト（削除検知用） ─────────────────────────────────────────────────
 # 前回インデックス登録済みファイルの id → file_path マッピングを保存する JSON
 MANIFEST_PATH: Path = _ROOT / "rag" / "manifest.json"
