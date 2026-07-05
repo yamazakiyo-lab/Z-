@@ -208,7 +208,7 @@ def main() -> None:
         )
     else:
         st.title("🔍 TSEG FMP SEARCH APP")
-    st.caption("写真・動画・過去の指令書を検索できます。")
+    st.caption("写真・動画・過去の指令書PDFを検索できます。")
     st.divider()
 
     # ── 検索フォーム ──────────────────────────────────────────────────────────
