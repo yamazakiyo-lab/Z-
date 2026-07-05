@@ -244,15 +244,15 @@ div[data-testid="stTextInput"] input:focus {
     with fc3:
         show_shirei = st.checkbox("📄 指令書PDF")
     with fc4:
-        show_b1 = st.checkbox("🟦 B1")
+        show_b1 = st.checkbox("🟦 B1 着手前")
     with fc5:
-        show_b2 = st.checkbox("🟩 B2")
+        show_b2 = st.checkbox("🟩 B2 着手中")
     with fc6:
-        show_b3 = st.checkbox("🟨 B3")
+        show_b3 = st.checkbox("🟨 B3 出荷以降")
     with fc7:
-        show_b4 = st.checkbox("🟥 B4")
+        show_b4 = st.checkbox("🟥 B4 整理前")
     with fc8:
-        top_n = st.number_input("最大件数", min_value=10, max_value=200, value=50, step=10)
+        top_n = st.number_input("表示件数", min_value=10, max_value=200, value=50, step=10)
 
     # 種別フィルタ組み立て（未選択 = すべて表示）
     media_val: List[str] = []
