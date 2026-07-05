@@ -89,9 +89,17 @@ $checkLog += "Overall Status: $overallStatus`r`n"
 $checkLog += "Time: $checkTime`r`n"
 $checkLog += "Host: $hostname`r`n"
 
-# Save check log
+# Save check log to both C and Y drives
 $checkLogPath = Join-Path $logDir "dailyrun_check_${today}.log"
 $checkLog | Out-File -FilePath $checkLogPath -Encoding UTF8 -Append
+
+# Also save to Y drive for visibility from notebook PC
+$yCheckDir = "Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\check_logs"
+if (-not (Test-Path -LiteralPath $yCheckDir)) { 
+    New-Item -ItemType Directory -Path $yCheckDir -Force | Out-Null 
+}
+$yCheckLogPath = Join-Path $yCheckDir "dailyrun_check_${today}.log"
+$checkLog | Out-File -FilePath $yCheckLogPath -Encoding UTF8 -Append
 
 Write-Host $checkLog
 exit $exitCode
