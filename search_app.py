@@ -170,7 +170,13 @@ def do_search(
         filters.append(f"workno eq '{_norm_wno}'")
 
     filter_expr = " and ".join(filters) if filters else None
-    search_text = query.strip() if query.strip() else "*"
+    # 工番パターン（例: 3970-00）の場合はフィルタのみで検索。
+    # テキスト検索を併用するとアナライザーが "00" 等を分割して
+    # 他の文書にも誤マッチするため search_text は * に固定する。
+    if _norm_wno:
+        search_text = "*"
+    else:
+        search_text = query.strip() if query.strip() else "*"
 
     try:
         results = client.search(
