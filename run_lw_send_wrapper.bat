@@ -7,3 +7,4 @@ if "%isDryRun%"=="--dry-run" (
 ) else (
     powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0run_lw_send_logged.ps1"
 )
+exit /b %ERRORLEVEL%
