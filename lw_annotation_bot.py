@@ -424,11 +424,14 @@ def _load_user_names() -> dict:
         return _user_names_cache
     container = _get_blob_container()
     if container is None:
+        logger.warning("_load_user_names: Blob コンテナに接続できません（AZURE_BLOB_CONNECTION_STRING 未設定？）")
         return {}
     try:
         data = container.download_blob(USER_NAMES_BLOB).readall()
         _user_names_cache = json.loads(data.decode("utf-8"))
-    except Exception:
+        logger.info(f"lw_user_names.json 読み込み完了: {len(_user_names_cache)} 件")
+    except Exception as e:
+        logger.warning(f"lw_user_names.json 読み込み失敗（Blobに未登録 or 接続エラー）: {e}")
         _user_names_cache = {}
     return _user_names_cache
 
