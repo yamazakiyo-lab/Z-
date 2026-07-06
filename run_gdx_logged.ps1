@@ -315,5 +315,13 @@ try {
         try { $lockStream.Dispose() } catch {}
     }
     Stop-Transcript
+    # Y: ドライブにもコピー（ラップトップから確認できるよう）
+    $yLogDir = "Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\gdx_logs"
+    if (Test-Path "Y:\") {
+        if (-not (Test-Path -LiteralPath $yLogDir)) {
+            New-Item -ItemType Directory -Path $yLogDir -Force | Out-Null
+        }
+        try { Copy-Item -LiteralPath $log -Destination $yLogDir -Force } catch {}
+    }
 }
 
