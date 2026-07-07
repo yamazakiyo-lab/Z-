@@ -425,6 +425,7 @@ def _fetch_users_from_api() -> dict:
         token = _get_access_token()
         users_dict = {}
         url = "https://www.worksapis.com/v1.0/users?count=100"
+        page_count = 0
         
         while url:
             resp = requests.get(
@@ -434,10 +435,11 @@ def _fetch_users_from_api() -> dict:
             )
             resp.raise_for_status()
             data = resp.json()
+            page_count += 1
             
-            # ユーザーの表示名を構築
-            for user in data.get("data", []):
-                user_id = user.get("id")
+            # ユーザーの表示名を構築（レスポンスキーは "users" ）
+            for user in data.get("users", []):
+                user_id = user.get("userId") or user.get("id")  # userIdまたはid
                 user_name = user.get("userName", {})
                 last_name = user_name.get("lastName", "")
                 first_name = user_name.get("firstName", "")
