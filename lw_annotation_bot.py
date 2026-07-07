@@ -156,7 +156,7 @@ def _get_access_token() -> str:
             "assertion": assertion,
             "client_id": CLIENT_ID,
             "client_secret": CLIENT_SECRET,
-            "scope": "bot.message",
+            "scope": "bot.message user.read",
         },
         timeout=10,
     )
@@ -417,31 +417,166 @@ def _get_streak_badge(user_id: str, comments: dict) -> str:
 
 # ── ユーザー表示名 ────────────────────────────────────────────────────────────
 _user_names_cache: dict = {}
+_user_names_cache_time: float = 0.0
 
-def _load_user_names() -> dict:
-    global _user_names_cache
-    if _user_names_cache:
-        return _user_names_cache
+def _fetch_users_from_api() -> dict:
+    """LINE WORKS Directory API から全ユーザーを取得し、{userId: 表示名} 辞書を返す。"""
+    try:
+        token = _get_access_token()
+        users_dict = {}
+        url = "https://www.worksapis.com/v1.0/users?count=100"
+        
+        while url:
+            resp = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            
+            # ユーザーの表示名を構築
+            for user in data.get("data", []):
+                user_id = user.get("id")
+                user_name = user.get("userName", {})
+                last_name = user_name.get("lastName", "")
+                first_name = user_name.get("firstName", "")
+                display_name = f"{last_name}{first_name}".strip()
+                if not display_name:
+                    display_name = user.get("email", user_id)  # フォールバック
+                if user_id:
+                    users_dict[user_id] = display_name
+            
+            # 次ページへ（カーソルベースページネーション）
+            next_cursor = data.get("responseMetaData", {}).get("nextCursor")
+            if next_cursor:
+                url = f"https://www.worksapis.com/v1.0/users?count=100&cursor={next_cursor}"
+            else:
+                url = None
+        
+        logger.info(f"LINE WORKS Users API 取得完了: {len(users_dict)} 件")
+        return users_dict
+    except Exception as e:
+        logger.error(f"LINE WORKS Users API 取得失敗: {e}")
+        return {}
+
+
+def _get_blob_file_properties() -> dict | None:
+    """Blob ファイルの last_modified を取得。存在しない場合は None。"""
     container = _get_blob_container()
     if container is None:
-        logger.warning("_load_user_names: Blob コンテナに接続できません（AZURE_BLOB_CONNECTION_STRING 未設定？）")
-        return {}
+        return None
     try:
-        data = container.download_blob(USER_NAMES_BLOB).readall()
-        _user_names_cache = json.loads(data.decode("utf-8"))
-        logger.info(f"lw_user_names.json 読み込み完了: {len(_user_names_cache)} 件")
+        blob_client = container.get_blob_client(USER_NAMES_BLOB)
+        props = blob_client.get_blob_properties()
+        return {
+            "last_modified": props.last_modified.timestamp() if props.last_modified else 0,
+            "size": props.size,
+        }
+    except Exception:
+        return None
+
+
+def _save_user_names_to_blob(users_dict: dict) -> bool:
+    """ユーザー辞書を Blob に保存。"""
+    container = _get_blob_container()
+    if container is None:
+        return False
+    try:
+        container.upload_blob(
+            USER_NAMES_BLOB,
+            json.dumps(users_dict, ensure_ascii=False, indent=2).encode("utf-8"),
+            overwrite=True,
+        )
+        logger.info(f"lw_user_names.json を Blob に保存: {len(users_dict)} 件")
+        return True
     except Exception as e:
-        logger.warning(f"lw_user_names.json 読み込み失敗（Blobに未登録 or 接続エラー）: {e}")
-        _user_names_cache = {}
-    return _user_names_cache
+        logger.error(f"lw_user_names.json 保存失敗: {e}")
+        return False
+
+
+def _load_user_names() -> dict:
+    """LINE WORKS Users API から表示名を取得。キャッシュは24時間。"""
+    global _user_names_cache, _user_names_cache_time
+    now = time.time()
+    
+    # メモリキャッシュがあり、前回取得から1時間以内なら使用
+    if _user_names_cache and (now - _user_names_cache_time) < 3600:
+        return _user_names_cache
+    
+    # Blob キャッシュの更新時刻を確認
+    blob_props = _get_blob_file_properties()
+    if blob_props and (now - blob_props["last_modified"]) < 86400:  # 24時間以内
+        # Blob から読み込み
+        container = _get_blob_container()
+        if container is not None:
+            try:
+                data = container.download_blob(USER_NAMES_BLOB).readall()
+                _user_names_cache = json.loads(data.decode("utf-8"))
+                _user_names_cache_time = now
+                logger.info(f"lw_user_names.json を Blob から読み込み: {len(_user_names_cache)} 件")
+                return _user_names_cache
+            except Exception as e:
+                logger.warning(f"Blob からの読み込み失敗: {e}")
+    
+    # API から新規取得
+    users_dict = _fetch_users_from_api()
+    if users_dict:
+        _user_names_cache = users_dict
+        _user_names_cache_time = now
+        _save_user_names_to_blob(users_dict)
+        return users_dict
+    
+    # API失敗時は既存Blobキャッシュを使用
+    if blob_props:
+        container = _get_blob_container()
+        if container is not None:
+            try:
+                data = container.download_blob(USER_NAMES_BLOB).readall()
+                _user_names_cache = json.loads(data.decode("utf-8"))
+                _user_names_cache_time = now
+                logger.warning("API失敗のため既存Blobキャッシュを使用")
+                return _user_names_cache
+            except Exception:
+                pass
+    
+    _user_names_cache = {}
+    _user_names_cache_time = now
+    return {}
 
 
 def _display_name(user_id: str) -> str:
-    """user_id から表示名を返す。キャッシュにあればそれを使用。"""
+    """user_id から表示名を返す。見つからない場合は1回API再取得を試行。"""
     names = _load_user_names()
     if user_id in names:
         return names[user_id]
-    return user_id.split("@")[0] if "@" in user_id else user_id
+    
+    # 辞書に無いIDの場合、1回API再取得を試行
+    try:
+        logger.info(f"未登録ユーザーの再取得を試行: {user_id}")
+        token = _get_access_token()
+        resp = requests.get(
+            f"https://www.worksapis.com/v1.0/users/{user_id}",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            timeout=10,
+        )
+        if resp.status_code == 200:
+            user = resp.json()
+            user_name = user.get("userName", {})
+            last_name = user_name.get("lastName", "")
+            first_name = user_name.get("firstName", "")
+            display_name = f"{last_name}{first_name}".strip()
+            if not display_name:
+                display_name = user.get("email", user_id)
+            logger.info(f"ユーザー再取得成功: {user_id} -> {display_name}")
+            return display_name
+    except Exception as e:
+        logger.warning(f"ユーザー再取得失敗 ({user_id}): {e}")
+    
+    # フォールバック: UUID先頭8桁
+    short_id = user_id[:8] if len(user_id) >= 8 else user_id
+    logger.warning(f"表示名不明なため UUID先頭8桁を使用: {short_id}")
+    return short_id
 
 
 # ── ランキング計算 ────────────────────────────────────────────────────────────
