@@ -32,11 +32,13 @@ try {
     $launcher = 'py'
     $script = Join-Path $pw 'run_91other.py'
     Push-Location $pw
+    $otherStatus = 'FAIL'
     try {
         & $launcher -3 $script
         if ($LASTEXITCODE -ne 0) {
             throw "run_91other.py exited with code $LASTEXITCODE"
         }
+        $otherStatus = 'PASS'
     } finally {
         Pop-Location
     }
@@ -46,6 +48,8 @@ try {
     if ($lockStream) {
         try { $lockStream.Dispose() } catch {}
     }
+    # タスクステータスを Blob に書く
+    & $launcher -3 (Join-Path $pw 'write_task_status.py') --task other --status $otherStatus
     Stop-Transcript
     # Y: ドライブにもコピー（ラップトップから確認できるよう）
     $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\other_logs'

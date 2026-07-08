@@ -34,12 +34,21 @@ try {
         & $launcher $args_list
         $exitCode = $LASTEXITCODE
         Write-Host "Exit code: $exitCode"
+
+        # タスクステータスを Blob に書く
+        if (-not $DryRun) {
+            $lwSendStatus = if ($exitCode -eq 0) { 'PASS' } else { 'FAIL' }
+            & $launcher (Join-Path $pw 'write_task_status.py') --task lw_send --status $lwSendStatus --message "exit=$exitCode"
+        }
     } finally {
         Pop-Location
     }
 } catch {
     Write-Host "ERROR: $_"
     Write-Host $_.ScriptStackTrace
+    if (-not $DryRun) {
+        & $launcher (Join-Path $pw 'write_task_status.py') --task lw_send --status FAIL --message "$_"
+    }
 } finally {
     Stop-Transcript
     # Y: ドライブにもコピー（ラップトップから確認できるよう）
