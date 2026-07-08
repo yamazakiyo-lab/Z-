@@ -305,6 +305,13 @@ try {
         if ($isDryRun) {
             Write-Host "[DRY-RUN] ドライランモードで実行しました"
         }
+
+        # タスクステータスを Blob に書く
+        if (-not $isDryRun) {
+            $gdxOverall = if ($results.GDX -eq 'PASS' -and $results.AzCopy -ne 'FAIL') { 'PASS' } else { 'FAIL' }
+            $statusMsg = "GDX=$($results.GDX), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
+            & $launcher -3 (Join-Path $pw 'write_task_status.py') --task gdx --status $gdxOverall --message $statusMsg
+        }
     } finally {
         Pop-Location
     }

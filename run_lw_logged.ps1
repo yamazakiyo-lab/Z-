@@ -78,11 +78,20 @@ try {
             & $annotPython $annotArgs
         }
         Write-Host "[LW] --sync-annotations 完了"
+
+        # タスクステータスを Blob に書く
+        if (-not $DryRun) {
+            & $python -3 (Join-Path $pw 'write_task_status.py') --task lw --status PASS
+        }
     } finally {
         Pop-Location
     }
 } catch {
     Write-Error $_
+    if (-not $DryRun) {
+        $python2 = if (Test-Path -LiteralPath (Join-Path $pw '91GDX・252WORKNO-program\venv\Scripts\python.exe')) { Join-Path $pw '91GDX・252WORKNO-program\venv\Scripts\python.exe' } else { 'py' }
+        & $python2 -3 (Join-Path $pw 'write_task_status.py') --task lw --status FAIL --message "$_"
+    }
 } finally {
     if ($lockStream) {
         try { $lockStream.Dispose() } catch {}
