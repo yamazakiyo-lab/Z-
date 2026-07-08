@@ -847,7 +847,30 @@ def cmd_sync_annotations() -> None:
         except Exception as e:
             logger.error(f"エラー ({blob_item.name}): {e}")
 
+    _save_comments(comments)
     logger.info(f"GDX アノテーション同期完了: {new_count} 件")
+
+
+def cmd_rebuild_comments() -> None:
+    """_annotations/ サイドカーから comments.json を復旧する。"""
+    comments = {}
+    ann_root = TARGET_91_ROOT / "_annotations"
+    
+    if not ann_root.exists():
+        logger.warning(f"_annotations/ フォルダが存在しません: {ann_root}")
+        return
+    
+    for sidecar_path in ann_root.rglob("*.json"):
+        try:
+            data = json.loads(sidecar_path.read_text(encoding="utf-8"))
+            doc_id = data.get("doc_id")
+            if doc_id:
+                comments[doc_id] = data
+        except Exception as e:
+            logger.error(f"サイドカー読み込みエラー ({sidecar_path}): {e}")
+    
+    _save_comments(comments)
+    logger.info(f"comments.json 復旧完了: {len(comments)} 件")
 
 
 # ── コマンド: 写真送信 ────────────────────────────────────────────────────────
@@ -1084,6 +1107,8 @@ def main() -> None:
     parser.add_argument("--ranking", choices=["week", "month", "year"], help="ランキング配信")
     parser.add_argument("--sync-annotations", action="store_true",
                         help="Blob の GDX アノテーションをローカル .json サイドカーに変換")
+    parser.add_argument("--rebuild-comments", action="store_true",
+                        help="_annotations/ サイドカーから comments.json を復旧")
     parser.add_argument("--add-user", metavar="USER_ID", help="ユーザーを手動登録")
     parser.add_argument("--reset-pending", nargs="?", const="__all__", metavar="USER_ID",
                         help="pending 状態を強制クリア（引数なし=全員、USER_ID 指定=個人）")
@@ -1111,6 +1136,8 @@ def main() -> None:
         cmd_ranking_weekly()
     elif args.sync_annotations:
         cmd_sync_annotations()
+    elif args.rebuild_comments:
+        cmd_rebuild_comments()
     elif args.add_user:
         cmd_add_user(args.add_user)
     elif args.reset_pending is not None:
