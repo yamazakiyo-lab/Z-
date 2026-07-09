@@ -2,10 +2,12 @@
 # schedule_lw_send.ps1
 # Register LINE WORKS Bot scheduled tasks
 # Tasks:
+#   LW_Morning_Greeting   Daily 08:05  --morning-greeting
 #   LW_Send_Morning       Daily 10:00  --send
 #   LW_Send_Afternoon     Daily 15:00  --send
 #   LW_Ranking_Weekly     Daily 10:15  --ranking-weekly (fires only on first workday of week)
-#   LW_Cleanup_Reminder   Monthly 1st  10:05  --cleanup-reminder
+#   LW_Evening_Reminder   Daily 16:55  --evening-reminder
+#   LW_Cleanup_Reminder   Bi-weekly Mon 14:00  --cleanup-reminder
 #   LW_Holiday_Reminder   Yearly May 6 10:10  --holiday-reminder
 
 if (-not $PSScriptRoot) {
@@ -72,6 +74,20 @@ $checkLogScript = Join-Path $pw 'check_and_cleanup_logs.ps1'
 $trCheckLogs = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $checkLogScript + '"'
 schtasks /Create /SC DAILY /TN "CHECK_DAILYRUNS" /TR $trCheckLogs /ST 12:00 /RL HIGHEST /F
 Write-Host "OK: CHECK_DAILYRUNS 12:00"
+
+# LW_Morning_Greeting: daily 08:05
+$batMorning = Resolve-TaskPath (Join-Path $pw 'run_lw_morning_greeting_wrapper.bat')
+$a4 = New-ScheduledTaskAction -Execute $batMorning
+$t4 = New-ScheduledTaskTrigger -Daily -At "08:05"
+Register-ScheduledTask -TaskName "LW_Morning_Greeting" -Action $a4 -Trigger $t4 -Settings $settings -RunLevel Highest -Force | Out-Null
+Write-Host "OK: LW_Morning_Greeting 08:05"
+
+# LW_Evening_Reminder: daily 16:55
+$batEvening = Resolve-TaskPath (Join-Path $pw 'run_lw_evening_reminder_wrapper.bat')
+$a5 = New-ScheduledTaskAction -Execute $batEvening
+$t5 = New-ScheduledTaskTrigger -Daily -At "16:55"
+Register-ScheduledTask -TaskName "LW_Evening_Reminder" -Action $a5 -Trigger $t5 -Settings $settings -RunLevel Highest -Force | Out-Null
+Write-Host "OK: LW_Evening_Reminder 16:55"
 
 Write-Host ""
 Write-Host "=== LW Tasks ==="
