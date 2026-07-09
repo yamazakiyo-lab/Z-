@@ -922,7 +922,12 @@ def cmd_send() -> None:
         state["pending"] = {}
 
     unannotated = _find_unannotated_docs(state)
+    manifest = _load_manifest()
     if not unannotated:
+        if not manifest:
+            # manifest.json が空 = インデックス未生成 or Z:ドライブ未接続。誤送信を防ぐためスキップ。
+            logger.warning("manifest.json が空のため --send をスキップします（run_rag_index.py を先に実行してください）")
+            return
         logger.info("未アノテーション写真がありません。")
         for user_id in users:
             _send_text(user_id, "🎉 すべての写真にアノテーションが完了しました！ありがとうございます！")
