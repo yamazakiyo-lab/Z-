@@ -1068,6 +1068,109 @@ def cmd_cleanup_reminder() -> None:
     logger.info(f"削除リマインダー送信完了: {len(users)} 名")
 
 
+# ── コマンド: 朝の挨拶 ───────────────────────────────────────────────────────
+def cmd_morning_greeting() -> None:
+    """会社稼働日（平日・非休暇日）の朝に挨拶メッセージを送信する。"""
+    today = date.today()
+    if _is_holiday(today):
+        logger.info(f"今日（{today}）は休日のためスキップ。")
+        return
+    state = _load_annotation_state()
+    users = state.get("users", [])
+    if not users:
+        logger.warning("登録ユーザーがいません。")
+        return
+    msg = (
+        "おはようございます！☀️\n"
+        "今日も良い1日でありますように。\n"
+        "今日の作業中の作業写真投稿のご協力をお願いします！📸"
+    )
+    for user_id in users:
+        _send_text(user_id, msg)
+        time.sleep(0.3)
+    logger.info(f"朝の挨拶送信完了: {len(users)} 名")
+
+
+# ── コマンド: 夕方リマインダー ────────────────────────────────────────────────
+def cmd_evening_reminder() -> None:
+    """会社稼働日（平日・非休暇日）の夕方にリマインダーを送信する。"""
+    today = date.today()
+    if _is_holiday(today):
+        logger.info(f"今日（{today}）は休日のためスキップ。")
+        return
+    state = _load_annotation_state()
+    users = state.get("users", [])
+    if not users:
+        logger.warning("登録ユーザーがいません。")
+        return
+    msg = (
+        "今日の作業写真投稿はやりましたか？📷\n"
+        "お疲れ様でした！"
+    )
+    for user_id in users:
+        _send_text(user_id, msg)
+        time.sleep(0.3)
+    logger.info(f"夕方リマインダー送信完了: {len(users)} 名")
+
+
+# ── 写真投稿ランキング集計 ────────────────────────────────────────────────────
+def _calculate_photo_ranking(period: str) -> tuple[list[dict], str]:
+    """Blob の _meta.json から写真・動画投稿数を集計してランキングを返す。
+    user_id が含まれないメタ（旧形式）はスキップ。"""
+    container = _get_blob_container()
+    if container is None:
+        return [], period
+    now = datetime.now(timezone.utc)
+    if period == "week":
+        since = now - timedelta(days=7)
+        label = "週間"
+    elif period == "month":
+        since = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        label = "月間"
+    else:
+        since = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        label = "年間"
+
+    counts: dict[str, int] = {}
+    meta_blobs = [b for b in container.list_blobs() if b.name.endswith("_meta.json")]
+    for blob_item in meta_blobs:
+        try:
+            raw = container.download_blob(blob_item.name).readall()
+            meta = json.loads(raw.decode("utf-8"))
+            uid = meta.get("user_id", "")
+            if not uid:
+                continue
+            recorded_at = meta.get("recorded_at", "")
+            if recorded_at:
+                dt = datetime.fromisoformat(recorded_at)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                if dt < since:
+                    continue
+            counts[uid] = counts.get(uid, 0) + 1
+        except Exception:
+            continue
+
+    ranking = sorted(counts.items(), key=lambda x: x[1], reverse=True)
+    return [
+        {"rank": i + 1, "user_id": uid, "count": cnt}
+        for i, (uid, cnt) in enumerate(ranking)
+    ], label
+
+
+def _format_photo_ranking_message(ranking: list[dict], label: str) -> str:
+    lines = [f"【作業写真投稿ランキング {label}】📸"]
+    if not ranking:
+        lines.append("まだ投稿データがありません。")
+    else:
+        medals = ["🥇", "🥈", "🥉"]
+        for r in ranking[:10]:
+            medal = medals[r["rank"] - 1] if r["rank"] <= 3 else f"{r['rank']}位"
+            name = _display_name(r["user_id"])
+            lines.append(f"{medal} {name}  {r['count']}件")
+    return "\n".join(lines)
+
+
 # ── コマンド: 週次ランキング（週初め営業日のみ） ─────────────────────────────
 def _is_first_workday_of_week(target: date | None = None) -> bool:
     """今日が週の最初の営業日（月曜 or 休み明け初日）かどうかを返す。"""
@@ -1079,12 +1182,22 @@ def _is_first_workday_of_week(target: date | None = None) -> bool:
 
 
 def cmd_ranking_weekly() -> None:
-    """週の最初の営業日にのみ週間ランキングを配信する。"""
+    """週の最初の営業日にのみ週間ランキングを配信する（アノテーション + 写真投稿）。"""
     if not _is_first_workday_of_week():
         logger.info(f"今日（{date.today()}）は週初め営業日ではないためスキップ。")
         return
     logger.info("週初め営業日のため週間ランキングを配信します。")
+    # アノテーションランキング
     cmd_ranking("week")
+    # 写真投稿ランキング
+    state = _load_annotation_state()
+    users = state.get("users", [])
+    photo_ranking, label = _calculate_photo_ranking("week")
+    photo_msg = _format_photo_ranking_message(photo_ranking, label)
+    for user_id in users:
+        _send_text(user_id, photo_msg)
+        time.sleep(0.3)
+    logger.info(f"写真投稿ランキング配信完了: {len(users)} 名")
 
 
 # ── コマンド: 休暇設定更新リマインダー（GW明け年次） ─────────────────────────
@@ -1124,6 +1237,10 @@ def main() -> None:
                         help="管理者に lw_holiday.json 更新リマインダーを送信（GW明け年次）")
     parser.add_argument("--ranking-weekly", action="store_true",
                         help="週初め営業日にのみ週間ランキングを配信（毎日スケジュール実行）")
+    parser.add_argument("--morning-greeting", action="store_true",
+                        help="会社稼働日の朝の挨拶を送信（8:05 スケジュール用）")
+    parser.add_argument("--evening-reminder", action="store_true",
+                        help="会社稼働日の夕方リマインダーを送信（16:55 スケジュール用）")
     parser.add_argument("--dry-run", action="store_true",
                         help="ドライランモード（送信せず確認のみ）")
     args = parser.parse_args()
@@ -1139,6 +1256,10 @@ def main() -> None:
         cmd_ranking(args.ranking)
     elif args.ranking_weekly:
         cmd_ranking_weekly()
+    elif args.morning_greeting:
+        cmd_morning_greeting()
+    elif args.evening_reminder:
+        cmd_evening_reminder()
     elif args.sync_annotations:
         cmd_sync_annotations()
     elif args.rebuild_comments:

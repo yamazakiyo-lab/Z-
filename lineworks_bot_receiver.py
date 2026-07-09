@@ -477,7 +477,8 @@ def _start_inquiry(user_id: str, channel_id: str, file_blob: str) -> None:
     _send_text(channel_id, user_id, "ファイルを受け取りました！\nどの工番ですか？（中止する場合は「X」）")
 
 
-def _upload_meta(file_blob: str, koban: str, buhin: str, comment: str, phase: str) -> None:
+def _upload_meta(file_blob: str, koban: str, buhin: str, comment: str, phase: str,
+                 user_id: str = "") -> None:
     """1ファイル分のメタを Blob に保存する。"""
     meta = {
         "file_blob": file_blob,
@@ -486,6 +487,7 @@ def _upload_meta(file_blob: str, koban: str, buhin: str, comment: str, phase: st
         "comment": comment,
         "phase": phase,
         "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "user_id": user_id,  # 写真投稿ランキング集計用
     }
     if file_blob:
         meta_blob = file_blob.rsplit(".", 1)[0] + "_meta.json"
@@ -510,7 +512,7 @@ def _save_meta(user_id: str, phase: str) -> None:
     comment     = state.get("comment", "")
     queued      = state.get("queued_files", [])
 
-    _upload_meta(file_blob, koban, buhin, comment, phase)
+    _upload_meta(file_blob, koban, buhin, comment, phase, user_id=user_id)
 
     if queued:
         # キューあり → まとめ保存を確認
