@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import types
 import importlib
@@ -19,6 +20,12 @@ def main():
     importlib.invalidate_caches()
     cli = importlib.import_module("gdxpkg.cli")
     cli.main()
+
+    # RAG インデックスを最新化（manifest.json 更新）
+    rag_script = os.path.join(HERE, "run_rag_index.py")
+    if os.path.exists(rag_script):
+        print("[run_gdx] run_rag_index.py を実行します...")
+        subprocess.run([sys.executable, rag_script], check=False)
 
 if __name__ == "__main__":
     main()
