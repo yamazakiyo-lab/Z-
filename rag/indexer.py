@@ -516,6 +516,10 @@ class PhotoIndexer:
             print("[DELETE] 削除対象なし")
 
         # ── マニフェスト更新 ────────────────────────────────────────────────
-        save_manifest(new_manifest)
-        print(f"[MANIFEST] 更新完了: {len(new_manifest)} 件")
+        # Z:ドライブ未接続などでスキャン結果が空の場合は既存を保護
+        if new_manifest:
+            save_manifest(new_manifest)
+            print(f"[MANIFEST] 更新完了: {len(new_manifest)} 件")
+        else:
+            print(f"[MANIFEST] スキャン結果が0件のため更新をスキップしました（既存 {len(prev_manifest)} 件を保持）", file=sys.stderr)
         print("[DONE] インデックス更新完了")
