@@ -63,6 +63,23 @@ try {
     } else {
         $null
     }
+    # ── リアルタイム Y ドライブログ同期ジョブ開始 ──────────────────────
+    $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\logs'
+    if ((Get-PSDrive Y -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'Y:\' -PathType Container -ErrorAction SilentlyContinue)) {
+        if (-not (Test-Path -LiteralPath $yLogDir)) { New-Item -ItemType Directory -Path $yLogDir -Force | Out-Null }
+        
+        $syncLogJob = Start-Job -ScriptBlock {
+            param($logdir, $yLogDir)
+            while ($true) {
+                Get-ChildItem -LiteralPath $logdir -Filter "dailyrun_*.txt" -ErrorAction SilentlyContinue |
+                    Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
+                Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
+                    Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
+                Start-Sleep -Seconds 30
+            }
+        } -ArgumentList $logdir, $yLogDir
+    }
+
     Push-Location $pw
     try {
         # ── [1] GDX処理実行 ──────────────────────────────────────────────
@@ -323,7 +340,16 @@ try {
         try { $lockStream.Dispose() } catch {}
     }
     Stop-Transcript
-    # Y: ドライブにもコピー（ラップトップから確認できるよう）
+    
+    # ── リアルタイム同期ジョブ停止 ────────────────────────────────────
+    if ($syncLogJob) {
+        try {
+            Stop-Job -Job $syncLogJob -ErrorAction SilentlyContinue
+            Remove-Job -Job $syncLogJob -Force -ErrorAction SilentlyContinue
+        } catch {}
+    }
+    
+    # Y: ドライブにもコピー（完了確認用）
     $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\logs'
     if ((Get-PSDrive Y -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'Y:\' -PathType Container -ErrorAction SilentlyContinue)) {
         if (-not (Test-Path -LiteralPath $yLogDir)) {
