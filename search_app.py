@@ -235,18 +235,16 @@ div[data-testid="stTextInput"] input:focus {
     border-color: #44CC77 !important;
     box-shadow: 0 0 0 2px rgba(33,161,89,0.25) !important;
 }
-/* モバイルでも段組みを維持 */
-@media (max-width: 768px) {
-    [data-testid="stHorizontalBlock"] {
-        flex-direction: row !important;
-        flex-wrap: wrap !important;
-        align-items: flex-start !important;
-    }
-    [data-testid="column"] {
-        flex: 1 1 0 !important;
-        min-width: 0 !important;
-        width: auto !important;
-    }
+/* モバイルでも段組みを維持（Streamlitのクラス名で上書き） */
+.stHorizontalBlock {
+    flex-direction: row !important;
+    flex-wrap: wrap !important;
+    align-items: flex-start !important;
+}
+.stHorizontalBlock > .stColumn {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+    width: auto !important;
 }
 </style>
 """, unsafe_allow_html=True)
