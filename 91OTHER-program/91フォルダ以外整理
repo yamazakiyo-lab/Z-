@@ -646,6 +646,34 @@ class GeneralOrganizer:
                 total += sum(1 for f in files if Path(f).suffix.lower() in media_ext)
         return total
 
+    _CONFORM_RE = re.compile(r"^(\d{3})_(\d{6})$")
+
+    def _is_folder_conformant(self, files: List[Path]) -> bool:
+        """フォルダが処理済み（連番・日付形式、圧縮済み、未変換なし）なら True。
+
+        stat とファイル名の正規表現のみで判定し、画像は開かない。
+        条件を1つでも満たさなければ False（従来のフル処理に回す）。
+        """
+        seqs = []
+        for p in files:
+            m = self._CONFORM_RE.match(p.stem)
+            if not m:
+                return False
+            ext = p.suffix.lower()
+            # 未変換の png/heic/heif が残っていれば要処理
+            if ext in self.cfg.photo_ext and ext not in {".jpg", ".jpeg"}:
+                return False
+            # jpg は圧縮上限以内であること（stat のみ）
+            if ext in {".jpg", ".jpeg"}:
+                try:
+                    if p.stat().st_size / 1024 > self.cfg.max_kb:
+                        return False
+                except OSError:
+                    return False
+            seqs.append(int(m.group(1)))
+        # 連番が 1..N で欠番・重複なし
+        return sorted(seqs) == list(range(1, len(files) + 1))
+
     def _process_one_folder(self, folder: Path):
         try:
             files = [
@@ -656,6 +684,12 @@ class GeneralOrganizer:
             self.log.warn(f"[GENERAL] iterdir失敗: {folder} ({e})")
             return
         if not files:
+            return
+        # ── 処理済みフォルダはスキップ（リネーム・EXIF読みを行わない） ──
+        if self._is_folder_conformant(files):
+            self.stats["SKIP_folder_conformant"] = self.stats.get("SKIP_folder_conformant", 0) + 1
+            for p in files:
+                self.prog.tick(current=p.name)
             return
         tmp_prefix = f"__TMP__{int(time.time()*1000)}__"
         tmp_paths: List[Path] = []
