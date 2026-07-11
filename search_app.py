@@ -153,6 +153,8 @@ def do_search(
     phases: List[str],
     media_types: List[str],
     top: int = 50,
+    client_name_q: str = "",
+    billing_name_q: str = "",
 ) -> List[dict]:
     """AI Search にクエリを投げて結果を返す。"""
     filters: List[str] = []
@@ -168,6 +170,14 @@ def do_search(
     _norm_wno = _normalize_workno_query(query) if query.strip() else None
     if _norm_wno:
         filters.append(f"workno eq '{_norm_wno}'")
+
+    # 納入先・請求先フィルタ（部分一致）
+    if client_name_q.strip():
+        safe_cn = client_name_q.strip().replace("'", "''")
+        filters.append(f"search.ismatch('{safe_cn}', 'client_name')")
+    if billing_name_q.strip():
+        safe_bn = billing_name_q.strip().replace("'", "''")
+        filters.append(f"search.ismatch('{safe_bn}', 'billing_name')")
 
     filter_expr = " and ".join(filters) if filters else None
     # 工番パターン（例: 3970-00）の場合はフィルタのみで検索。
@@ -185,6 +195,7 @@ def do_search(
             search_mode="all",   # スペース区切りはAND検索（全語一致）
             select=[
                 "id", "file_path", "file_name", "workno", "workno_name",
+                "client_name", "billing_name",
                 "phase", "media_type", "capture_date", "capture_date_raw",
                 "folder_path", "content_text",
             ],
@@ -239,6 +250,18 @@ div[data-testid="stTextInput"] input:focus {
     with col_btn:
         search_clicked = st.button("検索", use_container_width=True, type="primary")
 
+    col_cn, col_bn = st.columns(2)
+    with col_cn:
+        client_name_q = st.text_input(
+            label="納入先名（工事注文者名称・部分一致）",
+            placeholder="例: 高千穂工業",
+        )
+    with col_bn:
+        billing_name_q = st.text_input(
+            label="請求先名（工事請求先名称・部分一致）",
+            placeholder="例: 株式会社",
+        )
+
     # ── フィルタ行（メイン画面） ─────────────────────────────────────────────
     fc1, fc2, fc3, _sp, fc4, fc5, fc6, fc7, _sp2, fc8 = st.columns(
         [1, 1, 1.3, 0.3, 1, 1, 1, 1, 0.3, 1.5]
@@ -279,15 +302,21 @@ div[data-testid="stTextInput"] input:focus {
     if show_video:   active.append("🎬 動画")
     if show_shirei:  active.append("📄 指令書PDF")
     if phases_val:   active.append("フェーズ: " + "/".join(phases_val))
+    if client_name_q.strip():
+        active.append(f"納入先: {client_name_q.strip()}")
+    if billing_name_q.strip():
+        active.append(f"請求先: {billing_name_q.strip()}")
     if active:
         st.info("🔍 絞り込み中: " + " ｜ ".join(active))
 
 
     # ── 検索実行 ──────────────────────────────────────────────────────────────
-    if query or search_clicked:
+    if query or search_clicked or client_name_q.strip() or billing_name_q.strip():
         with st.spinner("検索中..."):
             results = do_search(
-                client, query, phases_val, media_val or [], top=int(top_n)
+                client, query, phases_val, media_val or [], top=int(top_n),
+                client_name_q=client_name_q,
+                billing_name_q=billing_name_q,
             )
 
         if not results:
@@ -372,6 +401,10 @@ def _render_result(doc: dict) -> None:
             st.markdown(
                 f"{phase_badge} {phase} ｜ 工番: `{workno}` ｜ {workno_name}"
             )
+            client_name = doc.get("client_name", "")
+            billing_name = doc.get("billing_name", "")
+            if client_name or billing_name:
+                st.caption(f"📌 納入先: {client_name or '－'} ｜ 請求先: {billing_name or '－'}")
             if display_date:
                 st.caption(f"撮影日: {display_date}")
             if content_text:

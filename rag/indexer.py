@@ -137,6 +137,84 @@ def _make_id(file_path: str) -> str:
     return hashlib.sha256(file_path.encode("utf-8")).hexdigest()
 
 
+# ── 工事一覧表 CSV 読み込み（納入先・請求先） ──────────────────────────────────────
+def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
+    """工事一覧表.csv を読み込み {workno: {"client_name": ..., "billing_name": ...}} を返す。
+
+    工事注文者名称・工事請求先名称 列がない場合や読み込み失敗時は空辞書を返す（非致命的）。
+    """
+    import csv as _csv
+    import io as _io
+
+    if not csv_path.exists():
+        print(f"[CSV] 工事一覧表.csv が見つかりません: {csv_path}", file=sys.stderr)
+        return {}
+
+    text: Optional[str] = None
+    for enc in ("shift_jis", "cp932", "utf-8-sig", "utf-8"):
+        try:
+            text = csv_path.read_text(encoding=enc)
+            break
+        except (UnicodeDecodeError, UnicodeError):
+            continue
+
+    if not text:
+        print(f"[CSV] エンコーディング検出失敗: {csv_path}", file=sys.stderr)
+        return {}
+
+    try:
+        rows = list(_csv.DictReader(_io.StringIO(text)))
+    except Exception as e:
+        print(f"[CSV] CSV 解析エラー: {e}", file=sys.stderr)
+        return {}
+
+    if not rows:
+        return {}
+
+    headers = list(rows[0].keys())
+
+    # 工番列（プロジェクトコード優先）
+    code_col: Optional[str] = next(
+        (h for h in headers if "プロジェクトコード" in h), None
+    ) or next((h for h in headers if "工番" in h or "コード" in h), None)
+
+    # 納入先列（工事注文者名称）
+    client_col: Optional[str] = next(
+        (h for h in headers if "工事注文者名称" in h or "注文者名称" in h), None
+    )
+
+    # 請求先列（工事請求先名称）
+    billing_col: Optional[str] = next(
+        (h for h in headers if "工事請求先名称" in h or "請求先名称" in h), None
+    )
+
+    if not code_col:
+        print("[CSV] 工番列が見つかりません", file=sys.stderr)
+        return {}
+
+    if not client_col and not billing_col:
+        print("[CSV] 工事注文者名称・工事請求先名称 列なし（FMP再エクスポートが必要）", file=sys.stderr)
+        return {}
+
+    result: Dict[str, Dict[str, str]] = {}
+    for row in rows:
+        code_raw = (row.get(code_col) or "").strip()
+        workno = _normalize_workno(code_raw)
+        if not workno:
+            continue
+        result[workno] = {
+            "client_name": (row.get(client_col) or "").strip() if client_col else "",
+            "billing_name": (row.get(billing_col) or "").strip() if billing_col else "",
+        }
+
+    print(
+        f"[CSV] 工事マスタ読み込み: {len(result)} 件"
+        f" (納入先={'あり' if client_col else 'なし'},"
+        f" 請求先={'あり' if billing_col else 'なし'})"
+    )
+    return result
+
+
 # ── LWExtraction ファイル名からコメント抽出 ──────────────────────────────────
 # lw_blob_sync.py が生成するファイル名: YYYYMMDD_HHMMSS[_部品][_コメント]
 _LD_FNAME_RE = re.compile(r"^\d{8}_\d{6}(?:_(.+))?$")
@@ -400,6 +478,14 @@ def _build_index_definition() -> SearchIndex:
             name="content_text",
             type=SearchFieldDataType.String,
         ),
+        SearchableField(
+            name="client_name",
+            type=SearchFieldDataType.String,
+        ),
+        SearchableField(
+            name="billing_name",
+            type=SearchFieldDataType.String,
+        ),
     ]
     return SearchIndex(name=SEARCH_INDEX_NAME, fields=fields)
 
@@ -414,14 +500,14 @@ class PhotoIndexer:
 
     # ── インデックス初期化 ─────────────────────────────────────────────────────
     def ensure_index(self) -> None:
-        """インデックスが無ければ作成する（既存なら何もしない）。"""
+        """インデックスを作成または更新する（新フィールドの追加に対応）。"""
         existing = [idx.name for idx in self.index_client.list_indexes()]
-        if SEARCH_INDEX_NAME in existing:
-            print(f"[INDEX] 既存インデックスを使用: {SEARCH_INDEX_NAME}")
-            return
-        print(f"[INDEX] インデックスを新規作成: {SEARCH_INDEX_NAME}")
-        self.index_client.create_index(_build_index_definition())
-        print("[INDEX] 作成完了")
+        if SEARCH_INDEX_NAME not in existing:
+            print(f"[INDEX] インデックスを新規作成: {SEARCH_INDEX_NAME}")
+        else:
+            print(f"[INDEX] インデックスを更新（新フィールド追加対応）: {SEARCH_INDEX_NAME}")
+        self.index_client.create_or_update_index(_build_index_definition())
+        print("[INDEX] 完了")
 
     # ── バッチ upsert ──────────────────────────────────────────────────────────
     def _upload_batch(self, docs: List[Dict]) -> int:
@@ -465,6 +551,10 @@ class PhotoIndexer:
         print(f"[START] 指令書スキャン: {root_271}")
         self.ensure_index()
 
+        # ── 工事マスタ CSV 読み込み（納入先・請求先） ──────────────────────────
+        csv_path = root / "_GDExtraction" / "工事一覧表.csv"
+        workno_csv = _load_workno_csv(csv_path)
+
         # ── 前回マニフェスト読み込み ────────────────────────────────────────
         prev_manifest = load_manifest()
         print(f"[MANIFEST] 前回登録件数: {len(prev_manifest)}")
@@ -486,6 +576,10 @@ class PhotoIndexer:
             ld_comment = doc.get("content_text", "")  # scan_media_files が設定済みの場合
             parts = [p for p in [ld_comment, ai_desc] if p]
             doc["content_text"] = " ".join(parts)
+            # 工事マスタ CSV から納入先・請求先を補完
+            csv_info = workno_csv.get(doc.get("workno", ""), {})
+            doc["client_name"] = csv_info.get("client_name", "")
+            doc["billing_name"] = csv_info.get("billing_name", "")
             new_manifest[doc["id"]] = doc["file_path"]
             batch.append(doc)
             total_scanned += 1
