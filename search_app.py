@@ -251,21 +251,18 @@ div[data-testid="stTextInput"] input:focus {
     st.divider()
 
     # ── 検索フォーム ──────────────────────────────────────────────────────────
-    col_left, col_right = st.columns([3, 2])
-    with col_left:
-        query = st.text_input(
-            label="キーワード（工番・作業・コメント等）",
-            placeholder="スペース区切りでAND検索",
-        )
-    with col_right:
-        client_name_q = st.text_input(
-            label="納入先名（部分一致可）",
-            placeholder="例: 高千穂工業",
-        )
-        billing_name_q = st.text_input(
-            label="請求先名（部分一致可）",
-            placeholder="例: 株式会社",
-        )
+    query = st.text_input(
+        label="キーワード（工番・作業・コメント等）",
+        placeholder="スペース区切りでAND検索",
+    )
+    client_name_q = st.text_input(
+        label="納入先名（部分一致可）",
+        placeholder="例: 高千穂工業",
+    )
+    billing_name_q = st.text_input(
+        label="請求先名（部分一致可）",
+        placeholder="例: 株式会社",
+    )
 
     # ── フィルタ行（メイン画面） ─────────────────────────────────────────────
     col_media, col_phase = st.columns([3, 4])
@@ -281,9 +278,7 @@ div[data-testid="stTextInput"] input:focus {
         show_b3 = st.checkbox("🟨 B3 出荷以降")
         show_b4 = st.checkbox("🟥 B4 整理前")
 
-    _, col_top = st.columns([5, 2])
-    with col_top:
-        top_n = st.number_input("表示件数", min_value=10, max_value=200, value=50, step=10)
+    top_n = st.number_input("表示件数", min_value=10, max_value=200, value=50, step=10)
 
     # 種別フィルタ組み立て（未選択 = すべて表示）
     media_val: List[str] = []
