@@ -64,6 +64,25 @@ try {
         }
     }
 
+    # ── ネットワークドライブ前処理（タスクスケジューラ/SYSTEM実行対策） ──
+    # 非対話セッションではユーザーのドライブマッピングが存在しないため、UNCから再マップする
+    $driveMap = @{ 'Z' = '\\192.168.2.252\共有'; 'Y' = '\\192.168.2.252\本社共有$' }
+    foreach ($d in @($driveMap.Keys)) {
+        if (-not (Test-Path -LiteralPath "${d}:\" -ErrorAction SilentlyContinue)) {
+            Write-Host "[DRIVE] ${d}: が未接続のため net use で再マップします -> $($driveMap[$d])"
+            net use "${d}:" "$($driveMap[$d])" /persistent:no 2>&1 | ForEach-Object { Write-Host "  $_" }
+            if (Test-Path -LiteralPath "${d}:\" -ErrorAction SilentlyContinue) {
+                Write-Host "[DRIVE] ✓ ${d}: マップ成功"
+            } else {
+                Write-Warning "[DRIVE] ✗ ${d}: のマップに失敗しました（実行ユーザーの認証情報を確認）"
+            }
+        }
+    }
+    if (-not (Test-Path -LiteralPath 'Z:\' -ErrorAction SilentlyContinue)) {
+        Write-Warning "[DRIVE] Z: にアクセスできないため処理を中止します（空振り実行の防止）"
+        exit 2
+    }
+
     $launcher = 'py'
     $script = Join-Path $pw 'run_gdx.py'
     $gdxProjectDir = Get-ChildItem -LiteralPath $pw -Directory |
