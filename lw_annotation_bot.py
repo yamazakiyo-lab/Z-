@@ -36,6 +36,7 @@ import json
 import logging
 import io
 import os
+import re
 import random
 import sys
 import time
@@ -289,7 +290,10 @@ def _save_comments(comments: dict) -> None:
 
 # ── 未アノテーション写真検索 ──────────────────────────────────────────────────
 def _find_unannotated_docs(state: dict) -> list[tuple[str, str]]:
-    """comments.json にも pending にも記録がない画像ファイルのリストを返す。"""
+    """comments.json にも pending にも記録がない画像ファイルのリストを返す。
+    対象フェーズ: B2（着手中）・B3（完了）のみ。
+    B1（着手前）はコメント不要、B4 は振り分け先のため除外。
+    """
     manifest   = _load_manifest()
     comments   = _load_comments()
     pending    = state.get("pending", {})
@@ -299,6 +303,10 @@ def _find_unannotated_docs(state: dict) -> list[tuple[str, str]]:
         if doc_id in comments or doc_id in pending_ids:
             continue
         if Path(fp).suffix.lower() not in MEDIA_SUPPORTED_EXT:
+            continue
+        # B2・B3 のみ対象（B1: 着手前は不要、B4: 振り分け先のため除外）
+        m = re.search(r'_(B[1-4])', fp)
+        if m and m.group(1) not in {'B2', 'B3'}:
             continue
         result.append((doc_id, fp))
     return result
