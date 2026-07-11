@@ -4,6 +4,8 @@
 
 # ドライラン判定（--dry-run フラグ）
 $isDryRun = $args -contains '--dry-run'
+# 強制実行判定（--force フラグ）
+$isForce = $args -contains '--force'
 
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
 $utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'
@@ -39,6 +41,11 @@ try {
     }
     
     try {
+        # --force フラグがあれば古いロックを削除
+        if ($isForce) {
+            Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+        }
+        
         $lockStream = [System.IO.File]::Open($lockPath, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None)
         $lockStream.SetLength(0)
         $writer = New-Object System.IO.StreamWriter($lockStream, [System.Text.UTF8Encoding]::new($false), 1024, $true)
@@ -49,8 +56,12 @@ try {
         $writer.Flush()
         $writer.Dispose()
     } catch [System.IO.IOException] {
-        Write-Host "[SKIP] DailyRun is already running on another host or process. lock=$lockPath"
-        exit 0
+        if ($isForce) {
+            Write-Host "[FORCE] 古いロックをスキップして新規実行"
+        } else {
+            Write-Host "[SKIP] DailyRun is already running on another host or process. lock=$lockPath"
+            exit 0
+        }
     }
 
     $launcher = 'py'
