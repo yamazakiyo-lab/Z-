@@ -78,6 +78,12 @@ try {
     $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\logs'
     if ((Get-PSDrive Y -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'Y:\' -PathType Container -ErrorAction SilentlyContinue)) {
         if (-not (Test-Path -LiteralPath $yLogDir)) { New-Item -ItemType Directory -Path $yLogDir -Force | Out-Null }
+        # Start-Job は別プロセスで Y: マップドドライブにアクセスできないため UNC パスに変換
+        $yDrive = Get-PSDrive Y -ErrorAction SilentlyContinue
+        $yLogDirUNC = if ($yDrive -and $yDrive.DisplayRoot) {
+            $rel = $yLogDir.Substring(2).TrimStart('\')
+            Join-Path $yDrive.DisplayRoot $rel
+        } else { $yLogDir }
         
         $syncLogJob = Start-Job -ScriptBlock {
             param($logdir, $yLogDir)
@@ -98,7 +104,7 @@ try {
                 }
                 Start-Sleep -Seconds 30
             }
-        } -ArgumentList $logdir, $yLogDir
+        } -ArgumentList $logdir, $yLogDirUNC
     }
 
     Push-Location $pw
