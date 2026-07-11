@@ -171,13 +171,13 @@ def do_search(
     if _norm_wno:
         filters.append(f"workno eq '{_norm_wno}'")
 
-    # 納入先・請求先フィルタ（部分一致）
+    # 納入先・請求先フィルタ（フレーズ一致: full Lucene でダブルクォート指定）
     if client_name_q.strip():
-        safe_cn = client_name_q.strip().replace("'", "''")
-        filters.append(f"search.ismatch('{safe_cn}', 'client_name')")
+        safe_cn = client_name_q.strip().replace("'", "''").replace('"', '')
+        filters.append(f"""search.ismatch('"{safe_cn}"', 'client_name', 'full', 'any')""")
     if billing_name_q.strip():
-        safe_bn = billing_name_q.strip().replace("'", "''")
-        filters.append(f"search.ismatch('{safe_bn}', 'billing_name')")
+        safe_bn = billing_name_q.strip().replace("'", "''").replace('"', '')
+        filters.append(f"""search.ismatch('"{safe_bn}"', 'billing_name', 'full', 'any')""")
 
     filter_expr = " and ".join(filters) if filters else None
     # 工番パターン（例: 3970-00）の場合はフィルタのみで検索。
@@ -235,13 +235,13 @@ div[data-testid="stTextInput"] input:focus {
     border-color: #44CC77 !important;
     box-shadow: 0 0 0 2px rgba(33,161,89,0.25) !important;
 }
-/* モバイルでも段組みを維持（Streamlitのクラス名で上書き） */
-.stHorizontalBlock {
+/* フィルタ行（子が2つのstHorizontalBlock）だけ段組みを維持 */
+.stHorizontalBlock:has(> .stColumn:last-child:nth-child(2)) {
     flex-direction: row !important;
     flex-wrap: wrap !important;
     align-items: flex-start !important;
 }
-.stHorizontalBlock > .stColumn {
+.stHorizontalBlock:has(> .stColumn:last-child:nth-child(2)) > .stColumn {
     flex: 1 1 0% !important;
     min-width: 0 !important;
     width: auto !important;
