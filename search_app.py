@@ -240,47 +240,37 @@ div[data-testid="stTextInput"] input:focus {
     st.divider()
 
     # ── 検索フォーム ──────────────────────────────────────────────────────────
-    col_q, col_btn = st.columns([5, 1])
-    with col_q:
+    col_left, col_right = st.columns([3, 2])
+    with col_left:
         query = st.text_input(
-            label="キーワード（作業・部品・コメント等）",
-            placeholder="",
+            label="キーワード（工番・作業・コメント等）",
+            placeholder="スペース区切りでAND検索",
         )
-    with col_btn:
-        st.write("")  # ラベル分の余白を合わせる
-        search_clicked = st.button("検索", use_container_width=True, type="primary")
-
-    col_cn, col_bn = st.columns(2)
-    with col_cn:
+    with col_right:
         client_name_q = st.text_input(
             label="納入先名（部分一致可）",
             placeholder="例: 高千穂工業",
         )
-    with col_bn:
         billing_name_q = st.text_input(
             label="請求先名（部分一致可）",
             placeholder="例: 株式会社",
         )
 
     # ── フィルタ行（メイン画面） ─────────────────────────────────────────────
-    fc1, fc2, fc3, _sp, fc4, fc5, fc6, fc7, _sp2, fc8 = st.columns(
-        [1, 1, 1.3, 0.3, 1, 1, 1, 1, 0.3, 1.5]
-    )
-    with fc1:
-        show_photo = st.checkbox("📷 写真")
-    with fc2:
-        show_video = st.checkbox("🎬 動画")
-    with fc3:
+    col_media, col_phase, col_top = st.columns([3, 4, 2])
+    with col_media:
+        st.caption("種別")
+        show_photo  = st.checkbox("📷 写真")
+        show_video  = st.checkbox("🎬 動画")
         show_shirei = st.checkbox("📄 指令書PDF")
-    with fc4:
-        show_b1 = st.checkbox("🟦 B1 着手前")
-    with fc5:
-        show_b2 = st.checkbox("🟩 B2 着手中")
-    with fc6:
-        show_b3 = st.checkbox("🟨 B3 出荷以降")
-    with fc7:
-        show_b4 = st.checkbox("🟥 B4 整理前")
-    with fc8:
+    with col_phase:
+        st.caption("フェーズ")
+        fp1, fp2, fp3, fp4 = st.columns(4)
+        with fp1: show_b1 = st.checkbox("🟦 B1")
+        with fp2: show_b2 = st.checkbox("🟩 B2")
+        with fp3: show_b3 = st.checkbox("🟨 B3")
+        with fp4: show_b4 = st.checkbox("🟥 B4")
+    with col_top:
         top_n = st.number_input("表示件数", min_value=10, max_value=200, value=50, step=10)
 
     # 種別フィルタ組み立て（未選択 = すべて表示）
@@ -309,6 +299,8 @@ div[data-testid="stTextInput"] input:focus {
     if active:
         st.info("🔍 絞り込み中: " + " ｜ ".join(active))
 
+    # ── 検索ボタン ────────────────────────────────────────────────────────────
+    search_clicked = st.button("🔍 検索", use_container_width=True, type="primary")
 
     # ── 検索実行 ──────────────────────────────────────────────────────────────
     if query or search_clicked or client_name_q.strip() or billing_name_q.strip():
