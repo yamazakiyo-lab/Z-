@@ -344,7 +344,15 @@ try {
         if (-not $isDryRun) {
             $gdxOverall = if ($results.GDX -eq 'PASS' -and $results.AzCopy -ne 'FAIL') { 'PASS' } else { 'FAIL' }
             $statusMsg = "GDX=$($results.GDX), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
-            & $launcher -3 (Join-Path $pw 'write_task_status.py') --task gdx --status $gdxOverall --message $statusMsg
+            # SYSTEM ユーザーでは 'py' が PATH にないため $ragPython を使用
+            $statusPython = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
+            Write-Host "[STATUS] タスクステータスを Blob に書き込み中..."
+            & $statusPython (Join-Path $pw 'write_task_status.py') --task gdx --status $gdxOverall --message $statusMsg
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "[STATUS] ✓ Blob 書き込み完了"
+            } else {
+                Write-Warning "[STATUS] ✗ Blob 書き込み失敗 (code $LASTEXITCODE)"
+            }
         }
     } finally {
         Pop-Location
