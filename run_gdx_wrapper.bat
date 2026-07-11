@@ -7,5 +7,5 @@ git stash
 git pull origin master
 git stash pop
 
-REM PowerShell スクリプト実行
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run_gdx_logged.ps1"
+REM PowerShell スクリプト実行（--force で古いロックをクリア）
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run_gdx_logged.ps1" -force
