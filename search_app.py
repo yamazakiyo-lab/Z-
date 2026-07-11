@@ -257,19 +257,22 @@ div[data-testid="stTextInput"] input:focus {
         )
 
     # ── フィルタ行（メイン画面） ─────────────────────────────────────────────
-    col_media, col_phase, col_top = st.columns([3, 4, 2])
+    col_media, col_phase = st.columns([3, 4])
     with col_media:
         st.caption("種別")
-        show_photo  = st.checkbox("📷 写真")
-        show_video  = st.checkbox("🎬 動画")
-        show_shirei = st.checkbox("📄 指令書PDF")
+        lc1, lc2, lc3 = st.columns(3)
+        with lc1: show_photo  = st.checkbox("📷 写真")
+        with lc2: show_video  = st.checkbox("🎬 動画")
+        with lc3: show_shirei = st.checkbox("📄 指令書PDF")
     with col_phase:
         st.caption("フェーズ")
-        fp1, fp2, fp3, fp4 = st.columns(4)
-        with fp1: show_b1 = st.checkbox("🟦 B1")
-        with fp2: show_b2 = st.checkbox("🟩 B2")
-        with fp3: show_b3 = st.checkbox("🟨 B3")
-        with fp4: show_b4 = st.checkbox("🟥 B4")
+        rc1, rc2, rc3, rc4 = st.columns(4)
+        with rc1: show_b1 = st.checkbox("🟦 B1 着手前")
+        with rc2: show_b2 = st.checkbox("🟩 B2 着手中")
+        with rc3: show_b3 = st.checkbox("🟨 B3 出荷以降")
+        with rc4: show_b4 = st.checkbox("🟥 B4 整理前")
+
+    _, col_top = st.columns([5, 2])
     with col_top:
         top_n = st.number_input("表示件数", min_value=10, max_value=200, value=50, step=10)
 
