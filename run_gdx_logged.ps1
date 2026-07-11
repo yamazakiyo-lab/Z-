@@ -82,10 +82,18 @@ try {
         $syncLogJob = Start-Job -ScriptBlock {
             param($logdir, $yLogDir)
             while ($true) {
-                Get-ChildItem -LiteralPath $logdir -Filter "dailyrun_*.txt" -ErrorAction SilentlyContinue |
-                    Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
-                Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
-                    Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
+                try {
+                    Get-ChildItem -LiteralPath $logdir -Filter "dailyrun_*.txt" -ErrorAction SilentlyContinue | ForEach-Object {
+                        $content = [System.IO.File]::ReadAllText($_.FullName, [System.Text.UTF8Encoding]::new($false))
+                        [System.IO.File]::WriteAllText((Join-Path $yLogDir $_.Name), $content, [System.Text.UTF8Encoding]::new($false))
+                    }
+                    Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue | ForEach-Object {
+                        $content = [System.IO.File]::ReadAllText($_.FullName, [System.Text.UTF8Encoding]::new($false))
+                        [System.IO.File]::WriteAllText((Join-Path $yLogDir $_.Name), $content, [System.Text.UTF8Encoding]::new($false))
+                    }
+                } catch {
+                    # ネットワークエラーはスキップ、処理は続行
+                }
                 Start-Sleep -Seconds 30
             }
         } -ArgumentList $logdir, $yLogDir

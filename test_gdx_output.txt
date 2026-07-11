@@ -1,0 +1,2 @@
+﻿トランスクリプトが開始されました。出力ファイル: C:\Users\user\tseg_vscode\Zフォルダ整理\logs\dailyrun_20260711_152352_KEIRI-PC.txt
+トランスクリプトが停止されました。出力ファイル: C:\Users\user\tseg_vscode\Zフォルダ整理\logs\dailyrun_20260711_152352_KEIRI-PC.txt
