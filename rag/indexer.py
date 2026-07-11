@@ -173,10 +173,14 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
 
     headers = list(rows[0].keys())
 
-    # 工番列（プロジェクトコード優先）
-    code_col: Optional[str] = next(
-        (h for h in headers if "プロジェクトコード" in h), None
-    ) or next((h for h in headers if "工番" in h or "コード" in h), None)
+    # 工番列（優先順: 工事番号 > プロジェクトコード > 工番/コード含む列）
+    code_col: Optional[str] = (
+        next((h for h in headers if h == "工事番号"), None)
+        or next((h for h in headers if "工事番号" in h), None)
+        or next((h for h in headers if "プロジェクトコード" in h), None)
+        or next((h for h in headers if "工番" in h), None)
+        or next((h for h in headers if "コード" in h), None)
+    )
 
     # 納入先列（工事注文者名称）
     client_col: Optional[str] = next(
@@ -199,7 +203,16 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
     result: Dict[str, Dict[str, str]] = {}
     for row in rows:
         code_raw = (row.get(code_col) or "").strip()
+        # 通常の正規化を試みる（例: "00000001-00" → "1-00"）
         workno = _normalize_workno(code_raw)
+        if not workno:
+            # サフィックスなし（例: "00000001"）の場合は -00 を補完
+            m2 = re.match(r'^([A-Za-z]*)(\d+)$', code_raw)
+            if m2:
+                prefix = m2.group(1).upper()
+                digits = m2.group(2)
+                left = digits.lstrip("0") or "0"
+                workno = f"{prefix}{left}-00" if prefix else f"{left}-00"
         if not workno:
             continue
         result[workno] = {
