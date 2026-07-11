@@ -77,6 +77,10 @@ try {
     # Python 出力バッファリング無効化（Start-Transcript リアルタイム出力のため必須）
     $env:PYTHONUNBUFFERED = '1'
     $env:PYTHONUTF8 = '1'
+    # 文字化け対策: Python(UTF-8)出力を PowerShell 側も UTF-8 で受ける
+    $env:PYTHONIOENCODING = 'utf-8'
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     # ── リアルタイム Y ドライブログ同期ジョブ開始 ──────────────────────
     $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\logs'
     if ((Get-PSDrive Y -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'Y:\' -PathType Container -ErrorAction SilentlyContinue)) {
@@ -100,10 +104,10 @@ try {
                             try { $src.CopyTo($dst) } finally { $src.Dispose(); $dst.Dispose() }
                         } catch {}
                     }
-                    # photo_video_91_*.log はルートディレクトリに作成される
-                    Get-ChildItem -LiteralPath $rootDir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
+                    # photo_video_*.log (91/general とも) はルートディレクトリに作成される
+                    Get-ChildItem -LiteralPath $rootDir -Filter "photo_video_*.log" -ErrorAction SilentlyContinue |
                         Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
-                    Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
+                    Get-ChildItem -LiteralPath $logdir -Filter "photo_video_*.log" -ErrorAction SilentlyContinue |
                         Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
                 } catch {
                     # ネットワークエラーはスキップ、処理は続行
@@ -117,17 +121,18 @@ try {
     try {
         # ── [1] GDX処理実行 ──────────────────────────────────────────────
         Write-Host "[GDX] GDXパイプライン開始"
+        # パイプで1行ずつ受けて Write-Host することで Transcript にリアルタイムに落とす
         if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
             if ($isDryRun) {
-                & $venvPython '-u' $script --dry-run
+                & $venvPython '-u' $script --dry-run 2>&1 | ForEach-Object { Write-Host "$_" }
             } else {
-                & $venvPython '-u' $script
+                & $venvPython '-u' $script 2>&1 | ForEach-Object { Write-Host "$_" }
             }
         } else {
             if ($isDryRun) {
-                & $launcher -3 '-u' $script --dry-run
+                & $launcher -3 '-u' $script --dry-run 2>&1 | ForEach-Object { Write-Host "$_" }
             } else {
-                & $launcher -3 '-u' $script
+                & $launcher -3 '-u' $script 2>&1 | ForEach-Object { Write-Host "$_" }
             }
         }
         if ($LASTEXITCODE -eq 0) {
@@ -146,7 +151,7 @@ try {
                 Write-Host "[OTHER] [DRY-RUN] 実行スキップ"
                 $results.OTHER = 'SKIP'
             } else {
-                $otherTimeout = 1800  # 30分
+                $otherTimeout = 1800  # 無出力がこの秒数続いたらハング判定（進捗出力がある限り切らない）
                 $otherStartTime = Get-Date
                 try {
                     $isVenv = ($venvPython -and (Test-Path -LiteralPath $venvPython))
@@ -156,6 +161,8 @@ try {
                         param($exe, $script, $useVenv)
                         $env:PYTHONUNBUFFERED = '1'
                         $env:PYTHONUTF8 = '1'
+                        $env:PYTHONIOENCODING = 'utf-8'
+                        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
                         if ($useVenv) {
                             & $exe '-u' $script 2>&1
                         } else {
@@ -163,15 +170,19 @@ try {
                         }
                         "___EXITCODE___:$LASTEXITCODE"
                     } -ArgumentList $otherExe, $otherScript, $isVenv
+                    # 無出力監視方式: 出力が続く限りタイマーをリセット（正常進行中は切らない）
+                    $lastOutputTime = Get-Date
                     do {
                         Start-Sleep -Seconds 5
-                        Receive-Job -Id $otherJob.Id -ErrorAction SilentlyContinue | ForEach-Object {
+                        $chunk = @(Receive-Job -Id $otherJob.Id -ErrorAction SilentlyContinue)
+                        if ($chunk.Count -gt 0) { $lastOutputTime = Get-Date }
+                        $chunk | ForEach-Object {
                             if ($_ -notmatch '^___EXITCODE___:') { Write-Host $_ }
                         }
-                        if (((Get-Date) - $otherStartTime).TotalSeconds -gt $otherTimeout) {
+                        if (((Get-Date) - $lastOutputTime).TotalSeconds -gt $otherTimeout) {
                             Stop-Job $otherJob
                             $results.OTHER = 'TIMEOUT'
-                            Write-Warning "[OTHER] ⏱ 91OTHER処理がタイムアウト（30分以上）しました。"
+                            Write-Warning "[OTHER] ⏱ 91OTHER処理が無出力${otherTimeout}秒でタイムアウト（ハング判定）しました。"
                             break
                         }
                     } until ((Get-Job -Id $otherJob.Id).State -in 'Completed','Failed','Stopped')
@@ -418,11 +429,24 @@ try {
         }
         # dailyrun_*.txt をコピー
         try { Copy-Item -LiteralPath $log -Destination $yLogDir -Force } catch {}
-        # photo_video_91_*.log もコピー（ルートと logs 両方から）
+        # photo_video_*.log (91/general) もコピー（ルートと logs 両方から）
         foreach ($searchDir in @($pw, $logdir)) {
-            Get-ChildItem -LiteralPath $searchDir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue | ForEach-Object {
+            Get-ChildItem -LiteralPath $searchDir -Filter "photo_video_*.log" -ErrorAction SilentlyContinue | ForEach-Object {
                 try { Copy-Item -LiteralPath $_.FullName -Destination $yLogDir -Force } catch {}
             }
+        }
+    }
+
+    # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
+    $logRetentionDays = 7
+    $cutoff = (Get-Date).AddDays(-$logRetentionDays)
+    $logPatterns = @('dailyrun_*.txt', 'photo_video_*.log')
+    $cleanupDirs = @($yLogDir, $logdir, $pw) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
+    foreach ($dir in $cleanupDirs) {
+        foreach ($pattern in $logPatterns) {
+            Get-ChildItem -LiteralPath $dir -Filter $pattern -File -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -lt $cutoff } |
+                ForEach-Object { try { Remove-Item -LiteralPath $_.FullName -Force } catch {} }
         }
     }
 }
