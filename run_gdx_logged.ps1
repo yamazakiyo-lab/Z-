@@ -13,8 +13,9 @@ $pw = $PSScriptRoot
 if (-not (Test-Path $pw)) { New-Item -ItemType Directory -Path $pw | Out-Null }
 $logdir = Join-Path $pw 'logs'
 if (-not (Test-Path $logdir)) { New-Item -ItemType Directory -Path $logdir | Out-Null }
-$runtimeBase = if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { Join-Path $env:USERPROFILE 'AppData\Local' }
-$runtimeRoot = Join-Path $runtimeBase 'tseg_vscode_runtime\gdx'
+# SYSTEM ユーザー（タスクスケジューラ）はマップドドライブにアクセスできないため
+# C:\ProgramData を使用（SYSTEM・全ユーザー共通でアクセス可能）
+$runtimeRoot = 'C:\ProgramData\tseg_vscode_runtime\gdx'
 if (-not (Test-Path $runtimeRoot)) { New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null }
 $env:GDX_RUNTIME_ROOT = $runtimeRoot
 
