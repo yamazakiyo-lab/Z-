@@ -83,9 +83,14 @@ try {
             param($logdir, $yLogDir)
             while ($true) {
                 try {
-                    # Copy-Item をそのまま使用（エンコーディング変換不要、UTF-16 LE のまま保持）
-                    Get-ChildItem -LiteralPath $logdir -Filter "dailyrun_*.txt" -ErrorAction SilentlyContinue |
-                        Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
+                    # FileShare.ReadWrite で Transcript ロック中でも読み取り可能
+                    Get-ChildItem -LiteralPath $logdir -Filter "dailyrun_*.txt" -ErrorAction SilentlyContinue | ForEach-Object {
+                        try {
+                            $src = [System.IO.File]::Open($_.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                            $dst = [System.IO.File]::Open((Join-Path $yLogDir $_.Name), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::Read)
+                            try { $src.CopyTo($dst) } finally { $src.Dispose(); $dst.Dispose() }
+                        } catch {}
+                    }
                     Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
                         Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
                 } catch {
