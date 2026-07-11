@@ -243,22 +243,22 @@ div[data-testid="stTextInput"] input:focus {
     col_q, col_btn = st.columns([5, 1])
     with col_q:
         query = st.text_input(
-            label="検索キーワード",
+            label="キーワード（作業・部品・コメント等）",
             placeholder="",
-            label_visibility="collapsed",
         )
     with col_btn:
+        st.write("")  # ラベル分の余白を合わせる
         search_clicked = st.button("検索", use_container_width=True, type="primary")
 
     col_cn, col_bn = st.columns(2)
     with col_cn:
         client_name_q = st.text_input(
-            label="納入先名（工事注文者名称・部分一致）",
+            label="納入先名（部分一致可）",
             placeholder="例: 高千穂工業",
         )
     with col_bn:
         billing_name_q = st.text_input(
-            label="請求先名（工事請求先名称・部分一致）",
+            label="請求先名（部分一致可）",
             placeholder="例: 株式会社",
         )
 
