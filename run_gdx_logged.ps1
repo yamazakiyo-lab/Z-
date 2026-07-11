@@ -83,14 +83,11 @@ try {
             param($logdir, $yLogDir)
             while ($true) {
                 try {
-                    Get-ChildItem -LiteralPath $logdir -Filter "dailyrun_*.txt" -ErrorAction SilentlyContinue | ForEach-Object {
-                        $content = [System.IO.File]::ReadAllText($_.FullName, [System.Text.UTF8Encoding]::new($false))
-                        [System.IO.File]::WriteAllText((Join-Path $yLogDir $_.Name), $content, [System.Text.UTF8Encoding]::new($false))
-                    }
-                    Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue | ForEach-Object {
-                        $content = [System.IO.File]::ReadAllText($_.FullName, [System.Text.UTF8Encoding]::new($false))
-                        [System.IO.File]::WriteAllText((Join-Path $yLogDir $_.Name), $content, [System.Text.UTF8Encoding]::new($false))
-                    }
+                    # Copy-Item をそのまま使用（エンコーディング変換不要、UTF-16 LE のまま保持）
+                    Get-ChildItem -LiteralPath $logdir -Filter "dailyrun_*.txt" -ErrorAction SilentlyContinue |
+                        Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
+                    Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
+                        Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
                 } catch {
                     # ネットワークエラーはスキップ、処理は続行
                 }
