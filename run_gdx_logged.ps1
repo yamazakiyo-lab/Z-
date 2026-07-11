@@ -74,6 +74,9 @@ try {
     } else {
         $null
     }
+    # Python 出力バッファリング無効化（Start-Transcript リアルタイム出力のため必須）
+    $env:PYTHONUNBUFFERED = '1'
+    $env:PYTHONUTF8 = '1'
     # ── リアルタイム Y ドライブログ同期ジョブ開始 ──────────────────────
     $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\logs'
     if ((Get-PSDrive Y -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'Y:\' -PathType Container -ErrorAction SilentlyContinue)) {
@@ -113,15 +116,15 @@ try {
         Write-Host "[GDX] GDXパイプライン開始"
         if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
             if ($isDryRun) {
-                & $venvPython $script --dry-run
+                & $venvPython '-u' $script --dry-run
             } else {
-                & $venvPython $script
+                & $venvPython '-u' $script
             }
         } else {
             if ($isDryRun) {
-                & $launcher -3 $script --dry-run
+                & $launcher -3 '-u' $script --dry-run
             } else {
-                & $launcher -3 $script
+                & $launcher -3 '-u' $script
             }
         }
         if ($LASTEXITCODE -eq 0) {
@@ -143,26 +146,46 @@ try {
                 $otherTimeout = 1800  # 30分
                 $otherStartTime = Get-Date
                 try {
-                    if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
-                        $proc = Start-Process -FilePath $venvPython -ArgumentList $otherScript -PassThru -NoNewWindow
-                    } else {
-                        $proc = Start-Process -FilePath $launcher -ArgumentList @('-3', $otherScript) -PassThru -NoNewWindow
-                    }
-                    if ($proc.WaitForExit($otherTimeout * 1000)) {
-                        # 完了
-                        if ($proc.ExitCode -eq 0) {
+                    $isVenv = ($venvPython -and (Test-Path -LiteralPath $venvPython))
+                    $otherExe = if ($isVenv) { $venvPython } else { $launcher }
+                    # Start-Job で実行し Receive-Job で 5 秒ごとにトランスクリプトへ転送
+                    $otherJob = Start-Job -ScriptBlock {
+                        param($exe, $script, $useVenv)
+                        $env:PYTHONUNBUFFERED = '1'
+                        $env:PYTHONUTF8 = '1'
+                        if ($useVenv) {
+                            & $exe '-u' $script 2>&1
+                        } else {
+                            & $exe '-3' '-u' $script 2>&1
+                        }
+                        "___EXITCODE___:$LASTEXITCODE"
+                    } -ArgumentList $otherExe, $otherScript, $isVenv
+                    do {
+                        Start-Sleep -Seconds 5
+                        Receive-Job -Id $otherJob.Id -ErrorAction SilentlyContinue | ForEach-Object {
+                            if ($_ -notmatch '^___EXITCODE___:') { Write-Host $_ }
+                        }
+                        if (((Get-Date) - $otherStartTime).TotalSeconds -gt $otherTimeout) {
+                            Stop-Job $otherJob
+                            $results.OTHER = 'TIMEOUT'
+                            Write-Warning "[OTHER] ⏱ 91OTHER処理がタイムアウト（30分以上）しました。"
+                            break
+                        }
+                    } until ((Get-Job -Id $otherJob.Id).State -in 'Completed','Failed','Stopped')
+                    if (-not $results.OTHER) {
+                        $remaining = @(Receive-Job -Id $otherJob.Id -ErrorAction SilentlyContinue)
+                        $remaining | Where-Object { $_ -notmatch '^___EXITCODE___:' } | ForEach-Object { Write-Host $_ }
+                        $exitLine = $remaining | Where-Object { $_ -match '^___EXITCODE___:' } | Select-Object -Last 1
+                        $exitCode = if ($exitLine -match ':(\d+)$') { [int]$Matches[1] } else { 1 }
+                        if ($exitCode -eq 0) {
                             $results.OTHER = 'PASS'
                             Write-Host "[OTHER] ✓ 91OTHER処理完了"
                         } else {
                             $results.OTHER = 'FAIL'
-                            Write-Warning "[OTHER] ✗ run_91other.py がエラーで終了しました (code $($proc.ExitCode))。以降のステップは続行します。"
+                            Write-Warning "[OTHER] ✗ run_91other.py がエラーで終了しました (code $exitCode)。以降のステップは続行します。"
                         }
-                    } else {
-                        # タイムアウト
-                        Write-Warning "[OTHER] ⏱ 91OTHER処理がタイムアウト（30分以上）しました。プロセスを強制終了します。"
-                        $proc.Kill()
-                        $results.OTHER = 'TIMEOUT'
                     }
+                    Remove-Job $otherJob -Force -ErrorAction SilentlyContinue
                 } catch {
                     Write-Warning "[OTHER] ✗ 予期しないエラーが発生しました: $_"
                     $results.OTHER = 'ERROR'
