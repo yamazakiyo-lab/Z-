@@ -324,12 +324,18 @@ try {
     }
     Stop-Transcript
     # Y: ドライブにもコピー（ラップトップから確認できるよう）
-    $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\gdx_logs'
+    $yLogDir = 'Y:\管理本部\情報管理課\tseg_vscode\Zフォルダ整理\logs'
     if ((Get-PSDrive Y -ErrorAction SilentlyContinue) -or (Test-Path -LiteralPath 'Y:\' -PathType Container -ErrorAction SilentlyContinue)) {
         if (-not (Test-Path -LiteralPath $yLogDir)) {
             New-Item -ItemType Directory -Path $yLogDir -Force | Out-Null
         }
+        # dailyrun_*.txt をコピー
         try { Copy-Item -LiteralPath $log -Destination $yLogDir -Force } catch {}
+        # photo_video_91_*.log もコピー（GDX パイプライン内で生成）
+        $photoVideoLogs = Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue
+        foreach ($logFile in $photoVideoLogs) {
+            try { Copy-Item -LiteralPath $logFile.FullName -Destination $yLogDir -Force } catch {}
+        }
     }
 }
 
