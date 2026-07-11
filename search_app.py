@@ -271,17 +271,15 @@ div[data-testid="stTextInput"] input:focus {
     col_media, col_phase = st.columns([3, 4])
     with col_media:
         st.caption("種別")
-        lc1, lc2, lc3 = st.columns(3)
-        with lc1: show_photo  = st.checkbox("📷 写真")
-        with lc2: show_video  = st.checkbox("🎬 動画")
-        with lc3: show_shirei = st.checkbox("📄 指令書PDF")
+        show_photo  = st.checkbox("📷 写真")
+        show_video  = st.checkbox("🎬 動画")
+        show_shirei = st.checkbox("📄 指令書PDF")
     with col_phase:
         st.caption("フェーズ")
-        rc1, rc2, rc3, rc4 = st.columns(4)
-        with rc1: show_b1 = st.checkbox("🟦 B1 着手前")
-        with rc2: show_b2 = st.checkbox("🟩 B2 着手中")
-        with rc3: show_b3 = st.checkbox("🟨 B3 出荷以降")
-        with rc4: show_b4 = st.checkbox("🟥 B4 整理前")
+        show_b1 = st.checkbox("🟦 B1 着手前")
+        show_b2 = st.checkbox("🟩 B2 着手中")
+        show_b3 = st.checkbox("🟨 B3 出荷以降")
+        show_b4 = st.checkbox("🟥 B4 整理前")
 
     _, col_top = st.columns([5, 2])
     with col_top:
