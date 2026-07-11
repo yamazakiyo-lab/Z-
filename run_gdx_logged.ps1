@@ -89,7 +89,7 @@ try {
         } else { $yLogDir }
         
         $syncLogJob = Start-Job -ScriptBlock {
-            param($logdir, $yLogDir)
+            param($logdir, $yLogDir, $rootDir)
             while ($true) {
                 try {
                     # FileShare.ReadWrite で Transcript ロック中でも読み取り可能
@@ -100,6 +100,9 @@ try {
                             try { $src.CopyTo($dst) } finally { $src.Dispose(); $dst.Dispose() }
                         } catch {}
                     }
+                    # photo_video_91_*.log はルートディレクトリに作成される
+                    Get-ChildItem -LiteralPath $rootDir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
+                        Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
                     Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue |
                         Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
                 } catch {
@@ -107,7 +110,7 @@ try {
                 }
                 Start-Sleep -Seconds 30
             }
-        } -ArgumentList $logdir, $yLogDirUNC
+        } -ArgumentList $logdir, $yLogDirUNC, $pw
     }
 
     Push-Location $pw
@@ -415,10 +418,11 @@ try {
         }
         # dailyrun_*.txt をコピー
         try { Copy-Item -LiteralPath $log -Destination $yLogDir -Force } catch {}
-        # photo_video_91_*.log もコピー（GDX パイプライン内で生成）
-        $photoVideoLogs = Get-ChildItem -LiteralPath $logdir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue
-        foreach ($logFile in $photoVideoLogs) {
-            try { Copy-Item -LiteralPath $logFile.FullName -Destination $yLogDir -Force } catch {}
+        # photo_video_91_*.log もコピー（ルートと logs 両方から）
+        foreach ($searchDir in @($pw, $logdir)) {
+            Get-ChildItem -LiteralPath $searchDir -Filter "photo_video_91_*.log" -ErrorAction SilentlyContinue | ForEach-Object {
+                try { Copy-Item -LiteralPath $_.FullName -Destination $yLogDir -Force } catch {}
+            }
         }
     }
 }
