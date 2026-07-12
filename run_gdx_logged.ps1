@@ -69,12 +69,18 @@ try {
     $driveMap = @{ 'Z' = '\\192.168.2.252\共有'; 'Y' = '\\192.168.2.252\本社共有$' }
     foreach ($d in @($driveMap.Keys)) {
         if (-not (Test-Path -LiteralPath "${d}:\" -ErrorAction SilentlyContinue)) {
-            Write-Host "[DRIVE] ${d}: が未接続のため net use で再マップします -> $($driveMap[$d])"
-            net use "${d}:" "$($driveMap[$d])" /persistent:no 2>&1 | ForEach-Object { Write-Host "  $_" }
+            Write-Host "[DRIVE] ${d}: が未接続のため再マップします -> $($driveMap[$d])"
+            # net use は認証失敗時に入力待ちで無限ブロックするため使わない（260713のハング原因）。
+            # New-SmbMapping は失敗時に即エラーを返す。
+            try {
+                New-SmbMapping -LocalPath "${d}:" -RemotePath $driveMap[$d] -Persistent $false -ErrorAction Stop | Out-Null
+            } catch {
+                Write-Warning "[DRIVE] ✗ ${d}: のマップに失敗: $($_.Exception.Message)"
+            }
             if (Test-Path -LiteralPath "${d}:\" -ErrorAction SilentlyContinue) {
                 Write-Host "[DRIVE] ✓ ${d}: マップ成功"
             } else {
-                Write-Warning "[DRIVE] ✗ ${d}: のマップに失敗しました（実行ユーザーの認証情報を確認）"
+                Write-Warning "[DRIVE] ✗ ${d}: が利用できません（実行ユーザーの認証情報を確認）"
             }
         }
     }
