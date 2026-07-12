@@ -172,13 +172,13 @@ def _read_csv_master(master_path: Path) -> Dict[str, str]:
                     return i
         return None
 
-    code_i = find_col_exact(["プロジェクトコード", "工番", "コード"])
+    code_i = find_col_exact(["工事番号", "プロジェクトコード", "工番", "コード"])
     if code_i is None:
-        code_i = find_col_contains(["プロジェクトコード", "工番", "コード"])
+        code_i = find_col_contains(["工事番号", "プロジェクトコード", "工番", "コード"])
 
-    name_i = find_col_exact(["プロジェクト名", "工事名", "案件名", "名称", "名"])
+    name_i = find_col_exact(["工事名称", "工事件名", "プロジェクト名", "工事名", "案件名", "名称", "名"])
     if name_i is None:
-        name_i = find_col_contains(["プロジェクト名", "工事名", "案件名", "名称"])
+        name_i = find_col_contains(["工事名称", "工事件名", "プロジェクト名", "工事名", "案件名", "名称"])
 
     if code_i is None or name_i is None:
         code_i, name_i = 0, 1
@@ -190,6 +190,14 @@ def _read_csv_master(master_path: Path) -> Dict[str, str]:
         code_raw = (r[code_i] or "").strip()
         name = (r[name_i] or "").strip()
         key = normalize_workno(code_raw)
+        if not key:
+            # サフィックスなし形式 (例: "00000001") → "-00" を補完
+            m2 = re.match(r'^([A-Za-z]*)(\d+)$', code_raw)
+            if m2:
+                prefix = m2.group(1).upper()
+                digits = m2.group(2)
+                left = digits.lstrip("0") or "0"
+                key = f"{prefix}{left}-00" if prefix else f"{left}-00"
         if not key or not name:
             continue
         out[key] = name
