@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -22,6 +23,19 @@ MAX_IMAGE_BYTES: int = 4 * 1024 * 1024
 # run_rag_describe.py --re-describe を実行すると旧バージョン分が全件再生成される。
 PROMPT_VERSION: str = "v2"
 
+# ── V3 設定（RAG_DESCRIBE_V3=1 で有効化。既定は従来動作＝V2） ─────────────────
+V3_ENABLED: bool = os.getenv("RAG_DESCRIBE_V3", "0") == "1"
+if V3_ENABLED:
+    PROMPT_VERSION = "v3"
+# モデル・画質・出力長は .env で切替可能（A/Bテスト・コスト調整用）
+DESCRIBE_DEPLOYMENT: str = os.getenv("OPENAI_DESCRIBE_DEPLOYMENT", "")
+DESCRIBE_IMAGE_DETAIL: str = os.getenv(
+    "DESCRIBE_IMAGE_DETAIL", "low" if V3_ENABLED else "high"
+)
+DESCRIBE_MAX_TOKENS: int = int(os.getenv(
+    "DESCRIBE_MAX_TOKENS", "150" if V3_ENABLED else "300"
+))
+
 _DESCRIBE_PROMPT_BASE = (
     "この写真は機械・設備の工事または整備に関するものです。"
     "次の5点を含む説明を日本語・150文字以内で答えてください。"
@@ -34,8 +48,14 @@ _DESCRIBE_PROMPT_BASE = (
 )
 
 
-def _build_prompt(job_number: str = "", lw_comment: str = "") -> str:
+def _build_prompt(job_number: str = "", lw_comment: str = "", few_shot=None) -> str:
     parts = []
+    if few_shot:
+        examples = "".join(f"・{t}\n" for t in few_shot[:3])
+        parts.append(
+            "以下はTSEG現場担当者による同種写真の説明例です。"
+            "専門用語・部品名の語彙を参考にしてください。\n" + examples
+        )
     if job_number:
         parts.append(f"工番: {job_number}。")
     if lw_comment:
@@ -73,7 +93,7 @@ def _image_to_base64(path: Path) -> Optional[str]:
         return None
 
 
-def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "", lw_comment: str = "") -> str:
+def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "", lw_comment: str = "", few_shot=None, deployment: str = "", detail: str = "", max_tokens: int = 0) -> str:
     ext = image_path.suffix.lower()
     if ext not in VISION_SUPPORTED_EXT:
         return ""
@@ -105,7 +125,7 @@ def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "", 
     for attempt in range(retries + 1):
         try:
             response = client.chat.completions.create(
-                model=OPENAI_GPT4O_DEPLOYMENT,
+                model=deployment or DESCRIBE_DEPLOYMENT or OPENAI_GPT4O_DEPLOYMENT,
                 messages=[
                     {
                         "role": "user",
@@ -114,14 +134,14 @@ def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "", 
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/{mime};base64,{b64}",
-                                    "detail": "high",
+                                    "detail": detail or DESCRIBE_IMAGE_DETAIL,
                                 },
                             },
-                            {"type": "text", "text": _build_prompt(job_number, lw_comment)},
+                            {"type": "text", "text": _build_prompt(job_number, lw_comment, few_shot)},
                         ],
                     }
                 ],
-                max_tokens=300,
+                max_tokens=max_tokens or DESCRIBE_MAX_TOKENS,
                 temperature=0,
             )
             return response.choices[0].message.content.strip()

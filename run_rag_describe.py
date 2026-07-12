@@ -67,6 +67,43 @@ def _save_comments(comments: dict) -> None:
         print(f"[WARN] comments.json 保存失敗: {e}", file=sys.stderr)
 
 
+def _phase_of(fp: str) -> str:
+    """パスから B1〜B4 フェーズを検出する。"""
+    for n in "1234":
+        if f"_B{n}" in fp:
+            return f"B{n}"
+    return ""
+
+
+def _build_few_shot_pool(manifest: dict, comments: dict) -> list:
+    """アノテーション済み写真から few-shot 候補 (工番, フェーズ, コメント) を作る。"""
+    pool = []
+    for cid, centry in comments.items():
+        c = (centry or {}).get("comment", "")
+        if not c or c in ("なし", ""):
+            continue
+        cfp = manifest.get(cid, "")
+        if not cfp:
+            continue
+        pool.append((_extract_job_number(cfp), _phase_of(cfp), c))
+    return pool
+
+
+def _select_few_shot(pool: list, job_number: str, phase: str, k: int = 3) -> list:
+    """優先順: ①同工番 ②同フェーズ ③全体からランダム。最大 k 件。"""
+    import random
+    same_wn = [c for wn, ph, c in pool if wn and wn == job_number]
+    out = same_wn[:k]
+    if len(out) < k:
+        same_ph = [c for wn, ph, c in pool if ph and ph == phase and c not in out]
+        out += same_ph[: k - len(out)]
+    if len(out) < k:
+        rest = [c for _wn, _ph, c in pool if c not in out]
+        random.shuffle(rest)
+        out += rest[: k - len(out)]
+    return out
+
+
 def _find_borrowed_comment(image_path: Path, manifest: dict, comments: dict) -> str:
     """同じフォルダ内に comments.json 記録済みファイルがあればコメントを借用する。"""
     folder = image_path.parent
@@ -263,6 +300,12 @@ def main() -> None:
     # merge 成功後に削除するサイドカー .json のパスを記録
     sidecar_pending: list = []
 
+    # ── V3: アノテーション優先 + few-shot（RAG_DESCRIBE_V3=1 のときのみ） ──
+    from rag.describer import V3_ENABLED as _V3
+    few_shot_pool = _build_few_shot_pool(manifest, comments) if _V3 else []
+    if _V3:
+        print(f"[V3] few-shot候補: {len(few_shot_pool)} 件（アノテーション由来）")
+
     for i, (doc_id, fp) in enumerate(targets, 1):
         image_path = Path(fp)
 
@@ -319,7 +362,21 @@ def main() -> None:
         print(f"{label} ...", end=" ", flush=True)
         start = time.time()
 
-        content = describe_image(image_path, job_number=job_number, lw_comment=lw_comment)
+        # V3: 本人のアノテーション（comments.json 直接 or サイドカー）があれば GPT を呼ばずに採用
+        v3_annotation = ""
+        if _V3:
+            _entry = comments.get(doc_id) or {}
+            _c = _entry.get("comment", "")
+            if _c and _c not in ("なし", ""):
+                v3_annotation = _c
+            elif lw_comment and comment_source == "sidecar":
+                v3_annotation = lw_comment
+        if v3_annotation:
+            content = v3_annotation
+            print("[annotation採用] ", end="", flush=True)
+        else:
+            few_shot = _select_few_shot(few_shot_pool, job_number, _phase_of(fp)) if _V3 else None
+            content = describe_image(image_path, job_number=job_number, lw_comment=lw_comment, few_shot=few_shot)
         elapsed = time.time() - start
 
         if content:
