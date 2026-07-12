@@ -404,12 +404,51 @@ class Organizer91:
         if recovered or skipped:
             self.log.info(f"[91] stale TMP回収 summary: recovered={recovered}, skipped={skipped}")
 
+    _CONFORM_SEQ_RE = re.compile(r"^(\d{3})_(\d{6})$")
+
+    def _is_folder_conformant(self, files: List[Path], prefix: Optional[str]) -> bool:
+        """フォルダが整理済み（prefix_連番_日付、圧縮済み、未変換なし）なら True。
+
+        stat とファイル名判定のみで画像は開かない（処理済みフォルダの高速スキップ用）。
+        条件を1つでも満たさなければ False（従来のフル処理に回す）。
+        """
+        seqs = []
+        pfx = f"{prefix}_" if prefix else ""
+        for p in files:
+            stem = p.stem
+            if pfx:
+                if not stem.startswith(pfx):
+                    return False
+                stem = stem[len(pfx):]
+            m = self._CONFORM_SEQ_RE.match(stem)
+            if not m:
+                return False
+            ext = p.suffix.lower()
+            # 未変換の png/heic/heif が残っていれば要処理
+            if ext in self.cfg.photo_ext and ext not in {".jpg", ".jpeg"}:
+                return False
+            # jpg は圧縮上限以内であること（stat のみ）
+            if ext in {".jpg", ".jpeg"}:
+                try:
+                    if p.stat().st_size / 1024 > self.cfg.max_kb:
+                        return False
+                except OSError:
+                    return False
+            seqs.append(int(m.group(1)))
+        # 連番が 1..N で欠番・重複なし
+        return sorted(seqs) == list(range(1, len(files) + 1))
+
     def _rename_media_to_seq_date(self, folder: Path, prefix: Optional[str]):
         try:
             files = [p for p in folder.iterdir() if p.is_file() and self.ops.is_media(p)]
         except Exception:
             return
         if not files:
+            return
+
+        # ── 整理済みフォルダはスキップ（TMPリネーム・EXIF読みを行わない） ──
+        if self._is_folder_conformant(files, prefix):
+            self.log.info(f"rename不要（整理済み）: {folder} / media={len(files)}")
             return
 
         self.log.info(f"rename開始: {folder} / media={len(files)}")

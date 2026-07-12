@@ -43,7 +43,7 @@ from .config import (
     UPLOAD_BATCH_SIZE,
     ensure_search_credentials,
 )
-from .describer import load_descriptions
+from .describer import load_descriptions, save_descriptions
 
 # ── メディア定義 ───────────────────────────────────────────────────────────────
 PHOTO_EXT: frozenset = frozenset({".jpg", ".jpeg", ".png", ".heic", ".heif"})
@@ -135,6 +135,29 @@ def _parse_capture_date(filename: str) -> Tuple[Optional[datetime], Optional[str
 def _make_id(file_path: str) -> str:
     """ファイルパスの SHA256 ハッシュ（16進）を ID として返す。"""
     return hashlib.sha256(file_path.encode("utf-8")).hexdigest()
+
+
+def _rename_key_from_path(path_str: str) -> Optional[Tuple[str, str, str, str]]:
+    """リネーム追跡用のキー (工番, フェーズ, 撮影日YYMMDD, 拡張子) を旧パスから作る。
+
+    連番リネームでは (工番フォルダ, Bフェーズ, EXIF由来の撮影日, 拡張子) は不変のため、
+    これをキーに旧エントリと新エントリを突き合わせる。キーを作れない場合は None。
+    """
+    p = Path(path_str)
+    ext = p.suffix.lower()
+    _dt, raw = _parse_capture_date(p.name)
+    if not raw:
+        return None
+    workno = ""
+    for part in p.parts:
+        w, _ = _parse_a_folder(part)
+        if w:
+            workno = w
+            break
+    if not workno:
+        return None
+    phase = _detect_phase(p) or ""
+    return (workno, phase, raw, ext)
 
 
 # ── 工事一覧表 CSV 読み込み（納入先・請求先） ──────────────────────────────────────
@@ -577,13 +600,58 @@ class PhotoIndexer:
         described_count = sum(1 for v in descriptions.values() if v)
         print(f"[DESCRIPTIONS] 説明文あり: {described_count} 件")
 
-        # ── ファイルスキャン & バッチ upsert ───────────────────────────────
-        new_manifest: Dict[str, str] = {}
+        # ── ファイルスキャン（全件収集） ────────────────────────────────────
+        docs_all: List[Dict] = list(
+            itertools.chain(scan_media_files(root), scan_shirei_files(root_271))
+        )
+        new_manifest: Dict[str, str] = {d["id"]: d["file_path"] for d in docs_all}
+
+        # ── リネーム追跡: 孤児エントリの説明文を新エントリへ引き継ぐ ────────
+        # (工番, フェーズ, 撮影日, 拡張子) が一致し件数も一致するグループのみ、
+        # ファイル名順の対応で引き継ぐ（曖昧な場合は引き継がず再describeに回す）
+        migrated = 0
+        if docs_all and prev_manifest:
+            stale_by_key: Dict[Tuple[str, str, str, str], List[Tuple[str, str]]] = {}
+            for old_id, old_path in prev_manifest.items():
+                if old_id in new_manifest:
+                    continue
+                if not descriptions.get(old_id):
+                    continue
+                key = _rename_key_from_path(old_path)
+                if key:
+                    stale_by_key.setdefault(key, []).append((Path(old_path).name, old_id))
+            pending_by_key: Dict[Tuple[str, str, str, str], List[Tuple[str, str]]] = {}
+            for d in docs_all:
+                if d["id"] in prev_manifest or descriptions.get(d["id"]):
+                    continue
+                if d.get("media_type") not in ("photo", "video"):
+                    continue
+                key = (
+                    d.get("workno", ""),
+                    d.get("phase", ""),
+                    d.get("capture_date_raw", ""),
+                    d.get("extension", ""),
+                )
+                if key[0] and key[2]:
+                    pending_by_key.setdefault(key, []).append((d["file_name"], d["id"]))
+            for key, olds in stale_by_key.items():
+                news = pending_by_key.get(key)
+                if not news or len(news) != len(olds):
+                    continue
+                for (_ofn, oid), (_nfn, nid) in zip(sorted(olds), sorted(news)):
+                    descriptions[nid] = descriptions[oid]
+                    descriptions.pop(oid, None)
+                    migrated += 1
+            if migrated:
+                save_descriptions(descriptions)
+                print(f"[MIGRATE] リネーム追跡: 説明文 {migrated} 件を引き継ぎました（再describe回避）")
+
+        # ── バッチ upsert ──────────────────────────────────────────────────
         batch: List[Dict] = []
         total_scanned = 0
         total_uploaded = 0
 
-        for doc in itertools.chain(scan_media_files(root), scan_shirei_files(root_271)):
+        for doc in docs_all:
             # 説明文（AI生成）と LWExtraction コメントを結合して content_text に設定
             ai_desc = descriptions.get(doc["id"], "")
             ld_comment = doc.get("content_text", "")  # scan_media_files が設定済みの場合
@@ -614,11 +682,19 @@ class PhotoIndexer:
             for doc_id in prev_manifest
             if doc_id not in new_manifest
         ]
-        if stale_ids:
+        if not docs_all:
+            # Z:未接続などの空スキャン時はインデックスを保護（マニフェスト保護と同じ基準）
+            print(
+                f"[DELETE] スキャン結果が0件のため削除をスキップしました（インデックス {len(prev_manifest)} 件を保護）",
+                file=sys.stderr,
+            )
+        elif stale_ids:
             deleted = self._delete_by_ids(stale_ids)
             print(f"[DELETE] 孤立ドキュメント削除: {deleted} 件")
-            for doc_id in stale_ids:
+            for doc_id in stale_ids[:20]:
                 print(f"         削除: {prev_manifest[doc_id]}")
+            if len(stale_ids) > 20:
+                print(f"         ...他 {len(stale_ids) - 20} 件（全リストはmanifest差分で確認可）")
         else:
             print("[DELETE] 削除対象なし")
 

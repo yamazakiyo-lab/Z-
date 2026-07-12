@@ -34,6 +34,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -97,6 +98,44 @@ def _strip_version(value: str, version: str) -> str:
     """説明文からバージョン接頭辞を除去して返す（AI Search 送信用）。"""
     prefix = f"{version}|"
     return value[len(prefix):] if value.startswith(prefix) else value
+
+
+_LOCK_PATH = Path(__file__).parent / ".runtime" / "describe.lock"
+_LOCK_STALE_HOURS = 12  # これより古いロックは残骸とみなして上書き
+
+
+def _acquire_describe_lock() -> bool:
+    """多重起動ガード。取得成功で True。既に実行中なら False。
+
+    昨晩、describe が2プロセス並走して Azure OpenAI コストが二重発生したため追加。
+    プロセス異常終了でロックが残った場合は _LOCK_STALE_HOURS 経過後に自動で奪取する。
+    """
+    import time as _time
+    try:
+        _LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+        if _LOCK_PATH.exists():
+            age_h = (_time.time() - _LOCK_PATH.stat().st_mtime) / 3600
+            if age_h < _LOCK_STALE_HOURS:
+                print(
+                    f"[SKIP] describe は既に実行中です（lock={_LOCK_PATH}, {age_h:.1f}h前）。"
+                    "多重起動を防止するため終了します。",
+                    file=sys.stderr,
+                )
+                return False
+            print(f"[LOCK] {age_h:.1f}h前の古いロックを奪取します", file=sys.stderr)
+            _LOCK_PATH.unlink(missing_ok=True)
+        _LOCK_PATH.write_text(f"pid={os.getpid()}\nstarted={_time.strftime('%F %T')}\n", encoding="utf-8")
+        return True
+    except OSError as e:
+        print(f"[WARN] ロック処理に失敗しましたが続行します: {e}", file=sys.stderr)
+        return True
+
+
+def _release_describe_lock() -> None:
+    try:
+        _LOCK_PATH.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def main() -> None:
@@ -164,6 +203,12 @@ def main() -> None:
 
     if args.status:
         return
+
+    # ── 多重起動ガード（--status のみの場合は不要） ─────────────────────────────
+    if not _acquire_describe_lock():
+        return
+    import atexit
+    atexit.register(_release_describe_lock)
 
     # ── 処理対象を抽出 ────────────────────────────────────────────────────────
     if args.re_describe:
