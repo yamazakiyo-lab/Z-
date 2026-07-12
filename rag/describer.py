@@ -36,6 +36,10 @@ DESCRIBE_MAX_TOKENS: int = int(os.getenv(
     "DESCRIBE_MAX_TOKENS", "150" if V3_ENABLED else "300"
 ))
 
+# 新しいAPIバージョン(2024-10以降)は max_tokens ではなく max_completion_tokens を使う。
+# gpt-5系デプロイは新バージョン+max_completion_tokens が必須。
+_USE_NEW_TOKENS_PARAM: bool = OPENAI_API_VERSION >= "2024-10"
+
 _DESCRIBE_PROMPT_BASE = (
     "この写真は機械・設備の工事または整備に関するものです。"
     "次の5点を含む説明を日本語・150文字以内で答えてください。"
@@ -124,9 +128,10 @@ def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "", 
 
     for attempt in range(retries + 1):
         try:
-            response = client.chat.completions.create(
-                model=deployment or DESCRIBE_DEPLOYMENT or OPENAI_GPT4O_DEPLOYMENT,
-                messages=[
+            dep = deployment or DESCRIBE_DEPLOYMENT or OPENAI_GPT4O_DEPLOYMENT
+            kwargs = {
+                "model": dep,
+                "messages": [
                     {
                         "role": "user",
                         "content": [
@@ -141,9 +146,16 @@ def describe_image(image_path: Path, *, retries: int = 2, job_number: str = "", 
                         ],
                     }
                 ],
-                max_tokens=max_tokens or DESCRIBE_MAX_TOKENS,
-                temperature=0,
-            )
+            }
+            token_limit = max_tokens or DESCRIBE_MAX_TOKENS
+            if _USE_NEW_TOKENS_PARAM:
+                kwargs["max_completion_tokens"] = token_limit
+            else:
+                kwargs["max_tokens"] = token_limit
+            # gpt-5系は temperature 指定不可(既定値のみ)
+            if not dep.lower().startswith("gpt-5"):
+                kwargs["temperature"] = 0
+            response = client.chat.completions.create(**kwargs)
             return response.choices[0].message.content.strip()
 
         except Exception as e:
