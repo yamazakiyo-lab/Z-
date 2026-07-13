@@ -91,9 +91,15 @@ def save_state(synced: set[str]) -> None:
 # ── ユーティリティ ────────────────────────────────────────────────────────────
 
 def safe_name(s: str) -> str:
-    """Windows ファイル名に使えない文字を除去する。"""
+    """Windows ファイル名に使えない文字・制御文字（改行・タブ等）を除去する。
+
+    260713: LINE WORKSのコメントに改行が含まれるとファイル保存が
+    [Errno 22] Invalid argument で失敗するため、制御文字は空白に置換して
+    連続空白を1つにまとめる。
+    """
     invalid = r'\/:*?"<>|'
-    return "".join(c for c in s if c not in invalid).strip()
+    s = "".join((" " if ord(c) < 32 else c) for c in s if c not in invalid)
+    return " ".join(s.split()).strip()
 
 
 def resolve_ext(blob_name: str, content_type: str) -> str:
