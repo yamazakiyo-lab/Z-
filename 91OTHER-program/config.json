@@ -1,7 +1,13 @@
 {
     "base_dir": "Z:\\takachiho",
-    "excluded_dirs": ["Z:\\takachiho\\91"],
-    "exclude_names": ["91"],
+    "excluded_dirs": [
+        "Z:\\takachiho\\91",
+        "Z:\\takachiho\\2to9_業務別フォルダ\\91_工番別実績写真・動画",
+        "Z:\\takachiho\\2to9_業務別フォルダ\\25_リビルト・中古機\\252_整備資料",
+        "Z:\\takachiho\\2to9_業務別フォルダ\\92_PO LIST",
+        "Z:\\takachiho\\2to9_業務別フォルダ\\97_技術資料\\978_CADデータ図庫\\9781_工事工番"
+    ],
+    "exclude_names": ["91", "91_工番別実績写真・動画"],
     "photo_ext": [".jpg", ".jpeg", ".png", ".heic", ".heif"],
     "video_ext": [".mp4", ".mov", ".avi", ".mkv", ".wmv", ".flv", ".webm", ".m4v"],
     "junk_files": [],
