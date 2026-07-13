@@ -134,6 +134,9 @@ try {
                         Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
                     Get-ChildItem -LiteralPath $logdir -Filter "photo_video_*.log" -ErrorAction SilentlyContinue |
                         Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
+                    # LW系ログ(lw_morning_run_*等)もノートからの監視用に同期
+                    Get-ChildItem -LiteralPath $logdir -Filter "lw_*.txt" -ErrorAction SilentlyContinue |
+                        Copy-Item -Destination $yLogDir -Force -ErrorAction SilentlyContinue
                 } catch {
                     # ネットワークエラーはスキップ、処理は続行
                 }
@@ -465,7 +468,7 @@ try {
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)
-    $logPatterns = @('dailyrun_*.txt', 'photo_video_*.log')
+    $logPatterns = @('dailyrun_*.txt', 'photo_video_*.log', 'lw_*.txt')
     $cleanupDirs = @($yLogDir, $logdir, $pw) | Where-Object { $_ -and (Test-Path -LiteralPath $_) }
     foreach ($dir in $cleanupDirs) {
         foreach ($pattern in $logPatterns) {
