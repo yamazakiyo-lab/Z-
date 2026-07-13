@@ -36,18 +36,14 @@ SEARCH_API_KEY: str = os.getenv("AZURE_SEARCH_API_KEY", "").strip()
 SEARCH_INDEX_NAME: str = os.getenv("AZURE_SEARCH_INDEX_NAME", "photo-index")
 
 # ── スキャン対象ルート ─────────────────────────────────────────────────────────
+# NOTE: .env から読む場合、日本語パスの文字化け問題がある
+#       そのため常にハードコーディングされたデフォルト値を使用
 TARGET_91_ROOT: Path = Path(
-    os.getenv(
-        "TARGET_91_ROOT",
-        r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画",
-    )
+    r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画"
 )
 
 TARGET_271_ROOT: Path = Path(
-    os.getenv(
-        "TARGET_271_ROOT",
-        r"Z:\takachiho\2to9_業務別フォルダ\27_サービス・出張工事\271_修理工事指令書",
-    )
+    r"Z:\takachiho\2to9_業務別フォルダ\27_サービス・出張工事\271_修理工事指令書"
 )
 
 # ── マニフェスト（削除検知用） ─────────────────────────────────────────────────
