@@ -682,10 +682,22 @@ class PhotoIndexer:
             for doc_id in prev_manifest
             if doc_id not in new_manifest
         ]
+        # 大量消失保護: スキャン件数が前回の半分未満なら削除・マニフェスト更新を行わない。
+        # (260713: Z:は生きていたが91スキャンが0件・PDFのみ1,997件となり、
+        #  「空スキャン保護」をすり抜けて写真・動画13,600件がインデックスから全削除された事故の再発防止)
+        mass_shrink = bool(
+            prev_manifest and len(new_manifest) < len(prev_manifest) * 0.5
+        )
         if not docs_all:
             # Z:未接続などの空スキャン時はインデックスを保護（マニフェスト保護と同じ基準）
             print(
                 f"[DELETE] スキャン結果が0件のため削除をスキップしました（インデックス {len(prev_manifest)} 件を保護）",
+                file=sys.stderr,
+            )
+        elif mass_shrink:
+            print(
+                f"[DELETE] スキャン件数が前回の半分未満のため削除をスキップしました"
+                f"（今回 {len(new_manifest)} 件 / 前回 {len(prev_manifest)} 件。大量消失保護）",
                 file=sys.stderr,
             )
         elif stale_ids:
@@ -699,10 +711,12 @@ class PhotoIndexer:
             print("[DELETE] 削除対象なし")
 
         # ── マニフェスト更新 ────────────────────────────────────────────────
-        # Z:ドライブ未接続などでスキャン結果が空の場合は既存を保護
-        if new_manifest:
+        # 空スキャン・大量消失時は既存を保護
+        if new_manifest and not mass_shrink:
             save_manifest(new_manifest)
             print(f"[MANIFEST] 更新完了: {len(new_manifest)} 件")
+        elif mass_shrink:
+            print(f"[MANIFEST] 大量消失保護のため更新をスキップしました（既存 {len(prev_manifest)} 件を保持）", file=sys.stderr)
         else:
             print(f"[MANIFEST] スキャン結果が0件のため更新をスキップしました（既存 {len(prev_manifest)} 件を保持）", file=sys.stderr)
         print("[DONE] インデックス更新完了")
