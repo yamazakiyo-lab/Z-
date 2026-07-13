@@ -663,10 +663,12 @@ class GeneralOrganizer:
             # 未変換の png/heic/heif が残っていれば要処理
             if ext in self.cfg.photo_ext and ext not in {".jpg", ".jpeg"}:
                 return False
-            # jpg は圧縮上限以内であること（stat のみ）
+            # jpg は圧縮上限の2倍以内であること（stat のみ）。
+            # 圧縮はベストエフォートで max_kb を僅かに超えて安定するファイルがあるため、
+            # 2倍までは「圧縮済み」とみなす（未圧縮のカメラ生JPGは通常2〜8MBで判別可能）
             if ext in {".jpg", ".jpeg"}:
                 try:
-                    if p.stat().st_size / 1024 > self.cfg.max_kb:
+                    if p.stat().st_size / 1024 > self.cfg.max_kb * 2:
                         return False
                 except OSError:
                     return False
