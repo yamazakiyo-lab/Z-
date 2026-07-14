@@ -782,7 +782,10 @@ def _send_annotation_request(
     msg += "（部品名・シーン・何をしているかなど、5文字以上）\n"
     msg += "わからない場合はわかりそうな人に聞いてみましょう。\n"
     msg += "それでもわからない場合は「？」を入力してください。"
-    _send_text(user_id, msg)
+    if not _send_text(user_id, msg):
+        # 依頼本文が送れなければこのユーザーへの依頼は不成立。
+        # (260714: 認証失敗でもTrueを返し「送信完了」と誤報告していたバグの修正)
+        return False
 
     # pending 更新
     state.setdefault("pending", {})[user_id] = {
@@ -1093,10 +1096,16 @@ def cmd_morning_greeting() -> None:
         "今日も良い1日でありますように。\n"
         "今日の作業中の作業写真投稿のご協力をお願いします！📸"
     )
+    ok = 0
     for user_id in users:
-        _send_text(user_id, msg)
+        if _send_text(user_id, msg):
+            ok += 1
         time.sleep(0.3)
-    logger.info(f"朝の挨拶送信完了: {len(users)} 名")
+    failed = len(users) - ok
+    if failed:
+        logger.error(f"朝の挨拶送信: 成功 {ok} 名 / 失敗 {failed} 名")
+        sys.exit(1)
+    logger.info(f"朝の挨拶送信完了: {ok} 名")
 
 
 # ── コマンド: 夕方リマインダー ────────────────────────────────────────────────
@@ -1115,10 +1124,16 @@ def cmd_evening_reminder() -> None:
         "今日の作業写真投稿はやりましたか？📷\n"
         "お疲れ様でした！"
     )
+    ok = 0
     for user_id in users:
-        _send_text(user_id, msg)
+        if _send_text(user_id, msg):
+            ok += 1
         time.sleep(0.3)
-    logger.info(f"夕方リマインダー送信完了: {len(users)} 名")
+    failed = len(users) - ok
+    if failed:
+        logger.error(f"夕方リマインダー送信: 成功 {ok} 名 / 失敗 {failed} 名")
+        sys.exit(1)
+    logger.info(f"夕方リマインダー送信完了: {ok} 名")
 
 
 # ── 写真投稿ランキング集計 ────────────────────────────────────────────────────
