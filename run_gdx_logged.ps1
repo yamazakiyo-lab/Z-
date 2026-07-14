@@ -200,12 +200,15 @@ try {
                     } -ArgumentList $otherExe, $otherScript, $isVenv
                     # 無出力監視方式: 出力が続く限りタイマーをリセット（正常進行中は切らない）
                     $lastOutputTime = Get-Date
+                    $otherExit = $null
                     do {
                         Start-Sleep -Seconds 5
                         $chunk = @(Receive-Job -Id $otherJob.Id -ErrorAction SilentlyContinue)
                         if ($chunk.Count -gt 0) { $lastOutputTime = Get-Date }
                         $chunk | ForEach-Object {
-                            if ($_ -notmatch '^___EXITCODE___:') { Write-Host $_ }
+                            # 終了コード行はポーリング中に届くことがあるため、捨てずに記録する(260715修正)
+                            if ($_ -match '^___EXITCODE___:(\d+)') { $otherExit = [int]$Matches[1] }
+                            else { Write-Host $_ }
                         }
                         if (((Get-Date) - $lastOutputTime).TotalSeconds -gt $otherTimeout) {
                             Stop-Job $otherJob
@@ -214,11 +217,16 @@ try {
                             break
                         }
                     } until ((Get-Job -Id $otherJob.Id).State -in 'Completed','Failed','Stopped')
-                    if (-not $results.OTHER) {
+                    # 初期値'UNKNOWN'はtruthyのため -not では判定できない(260715修正:
+                    # 完走してもUNKNOWN表示のままだったバグの本体)
+                    if ($results.OTHER -eq 'UNKNOWN') {
                         $remaining = @(Receive-Job -Id $otherJob.Id -ErrorAction SilentlyContinue)
-                        $remaining | Where-Object { $_ -notmatch '^___EXITCODE___:' } | ForEach-Object { Write-Host $_ }
-                        $exitLine = $remaining | Where-Object { $_ -match '^___EXITCODE___:' } | Select-Object -Last 1
-                        $exitCode = if ($exitLine -match ':(\d+)$') { [int]$Matches[1] } else { 1 }
+                        $remaining | ForEach-Object {
+                            if ($_ -match '^___EXITCODE___:(\d+)') { $otherExit = [int]$Matches[1] }
+                            else { Write-Host $_ }
+                        }
+                        if ($null -eq $otherExit) { $otherExit = 1 }
+                        $exitCode = $otherExit
                         if ($exitCode -eq 0) {
                             $results.OTHER = 'PASS'
                             Write-Host "[OTHER] ✓ 91OTHER処理完了"
