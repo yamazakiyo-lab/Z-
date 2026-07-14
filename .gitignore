@@ -68,3 +68,4 @@ run_gdx_wrapper.bat
 .env.backup
 
 lw_private.key
+lw_blob_sync_state.json
