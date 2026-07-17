@@ -62,7 +62,10 @@ BLOB_CONTAINER: str   = os.environ.get("LW_BLOB_CONTAINER", "lw-raw")
 BLOB_SAS_TOKEN: str   = os.environ.get("AZURE_BLOB_SAS_TOKEN", "")
 LW_RECEIVER_BASE_URL: str = os.environ.get(
     "LW_RECEIVER_BASE_URL",
-    "https://tseg-lw-receiver.azurewebsites.net",
+    # 260717修正: Azureの既定ドメインがランダム文字列付きに変わり、旧短縮ドメイン
+    # (tseg-lw-receiver.azurewebsites.net)はDNS解決できず動画リンクが全て404だった。
+    # 正しい既定ドメインに更新。将来変わる場合は .env の LW_RECEIVER_BASE_URL で上書きする。
+    "https://tseg-lw-receiver-bqanh0c7aufgffdt.japanwest-01.azurewebsites.net",
 ).rstrip("/")
 PHOTOS_CONTAINER: str = os.environ.get("AZURE_PHOTOS_CONTAINER", "photos")
 THUMB_MAX_PX: int = 1000
