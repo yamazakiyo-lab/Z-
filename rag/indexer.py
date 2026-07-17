@@ -196,14 +196,30 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
 
     headers = list(rows[0].keys())
 
-    # 工番列（優先順: 工事番号 > プロジェクトコード > 工番/コード含む列）
-    code_col: Optional[str] = (
-        next((h for h in headers if h == "工事番号"), None)
-        or next((h for h in headers if "工事番号" in h), None)
-        or next((h for h in headers if "プロジェクトコード" in h), None)
-        or next((h for h in headers if "工番" in h), None)
-        or next((h for h in headers if "コード" in h), None)
-    )
+    # 工番列（優先順: 「工事番号＋枝番」列を最優先）
+    # 260717修正: 基番のみの「工事番号」列(例:00003967)を使うと、枝番違いで納入先が
+    # 異なる工番(3967-00=大成, 3967-02=トータス技実 等)が全て同じキーに潰れ、
+    # 最後の行で上書きされて誤った納入先が付く問題があった。
+    # CSVには枝番付きの「工事番号＋枝番」列(例:00003967-00)が存在するのでこれを最優先で使う。
+    def _find_code_col():
+        # 「番号」と「枝番」の両方を含む列（＝や+の全角半角に依存しない）
+        for h in headers:
+            if "番号" in h and "枝番" in h:
+                return h
+        # フォールバック（従来の挙動）
+        for cond in (
+            lambda h: h == "工事番号",
+            lambda h: "工事番号" in h,
+            lambda h: "プロジェクトコード" in h,
+            lambda h: "工番" in h,
+            lambda h: "コード" in h,
+        ):
+            m = next((h for h in headers if cond(h)), None)
+            if m:
+                return m
+        return None
+
+    code_col: Optional[str] = _find_code_col()
 
     # 納入先列（工事注文者名称）
     client_col: Optional[str] = next(
