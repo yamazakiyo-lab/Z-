@@ -4,6 +4,12 @@
 
 name: Build and deploy Python app to Azure Web App - tseg-lw-receiver
 
+# デプロイの二重実行(App Serviceの 409 Conflict)を防ぐため直列化する。
+# 同グループの実行が進行中は後発を待たせる(進行中は止めない)。
+concurrency:
+  group: deploy-lw-receiver
+  cancel-in-progress: false
+
 on:
   push:
     branches:
