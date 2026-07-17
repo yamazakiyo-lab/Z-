@@ -212,6 +212,12 @@ def do_search(
 def main() -> None:
     client = _get_search_client()
 
+    # 工番検索ページからの遷移: 指定工番をキーワード欄に入れて自動検索する。
+    # （工番はAI Search由来の正規化済み文字列なので、既存の workno eq フィルタで完全一致する）
+    _jumped_wno = st.session_state.pop("jump_workno", None)
+    if _jumped_wno:
+        st.session_state["main_query"] = _jumped_wno
+
     # ヘッダー
     if _LOGO_B64:
         st.markdown(
@@ -254,7 +260,10 @@ div[data-testid="stTextInput"] input:focus {
     query = st.text_input(
         label="キーワード（工番・作業・コメント等）",
         placeholder="スペース区切りでAND検索",
+        key="main_query",
     )
+    if _jumped_wno:
+        st.success(f"工番 `{_jumped_wno}` の写真を表示しています。（工番検索から遷移）")
     client_name_q = st.text_input(
         label="納入先名（部分一致可）",
         placeholder="例: 高千穂工業",
