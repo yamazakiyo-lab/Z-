@@ -386,10 +386,25 @@ def _render_result(doc: dict) -> None:
                 except Exception:
                     st.markdown(f"## {icon}")
             elif media_type == "video" and file_path:
-                video_url = _to_blob_url(file_path)
-                if video_url:
-                    st.video(video_url)
-                else:
+                # 写真と同様にローカルフォールバックを付与(ローカル起動でもZ:から再生可能)
+                video_url = _to_blob_url(file_path) or file_path
+                # ブラウザで再生できる形式はインライン表示を試みる
+                _vext = file_name.lower().rsplit(".", 1)[-1] if "." in file_name else ""
+                _web_playable = _vext in {"mp4", "webm", "mov", "m4v"}
+                if _web_playable:
+                    try:
+                        st.video(video_url)
+                    except Exception:
+                        pass
+                # 形式を問わず「開く/ダウンロード」リンクを出す。
+                # (.avi/.mts/.m2ts やコーデック非対応の .mov でも、別タブ表示やDLで視聴可能)
+                if str(video_url).startswith("http"):
+                    safe_v = _html.escape(video_url)
+                    st.markdown(
+                        f'<a href="{safe_v}" target="_blank">🎬 動画を開く / ダウンロード</a>',
+                        unsafe_allow_html=True,
+                    )
+                elif not _web_playable:
                     st.markdown(f"## {icon}")
             elif media_type == "shirei" and file_path:
                 pdf_url = _to_blob_url_271(file_path)
