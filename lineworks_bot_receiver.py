@@ -87,6 +87,7 @@ DOWNLOADABLE_TYPES = {"image", "video", "file"}
 
 # 会話ステート定数
 STATE_WAITING_KOBAN        = "waiting_koban"
+STATE_WAITING_KOBAN_CONFIRM = "waiting_koban_confirm"  # マスタ未登録工番の新規確認 Y/修正 待ち
 STATE_WAITING_BUHIN        = "waiting_buhin"
 STATE_WAITING_COMMENT      = "waiting_comment"
 STATE_WAITING_PHASE        = "waiting_phase"         # フェーズ（B1/B2/B3）待ち
@@ -104,6 +105,65 @@ PHASE_MAP = {
 # Blob 上の annotation_state.json パス
 ANNOTATION_STATE_BLOB = "annotation_state.json"
 GDX_ANNOTATION_PREFIX = "gdx_annotations/"
+
+# 工番マスタ(export_workno_master.py が日次で lw-raw に出力)
+WORKNO_MASTER_BLOB = "workno_master.json"
+UNKNOWN_KOBAN = "工番未取得"  # 工番不明時に保存する値
+_workno_master_cache: dict = {}
+_workno_master_loaded = False
+_KOBAN_RE = __import__("re").compile(r"^([A-Za-z]{0,4})(\d+)(?:[-_](\d{1,2}))?$")
+
+
+def _normalize_koban(text: str):
+    """投稿された工番文字列を正規化してマスタキー候補を返す。
+
+    戻り値: (正規化キー or None, 工番の形をしているか)
+    例:
+      '4026-02'  -> ('4026-02', True)
+      'IS080064' -> ('IS080064-00', True)   # 枝番省略は -00 補完
+      'ty080221' -> ('TY080221-00', True)   # 小文字は大文字化
+      '角ネジ...\n...' -> (None, False)      # 工番の形をしていない
+    """
+    if not text:
+        return None, False
+    # 先頭行のみ・全角空白/空白除去・全角英数を半角化
+    first = text.strip().splitlines()[0].strip() if text.strip().splitlines() else ""
+    first = first.translate(str.maketrans(
+        "０１２３４５６７８９－ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ",
+        "0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    )).replace(" ", "").replace("　", "").upper()
+    m = _KOBAN_RE.match(first)
+    if not m:
+        return None, False
+    prefix, digits, suffix = m.group(1), m.group(2), m.group(3)
+    # プレフィックスありは数字部のゼロを保持(IS080064-00)、
+    # プレフィックスなしは先頭ゼロを削る(00003967->3967)。マスタキーの形式に合わせる。
+    num = digits if prefix else (digits.lstrip("0") or "0")
+    suf = suffix.zfill(2) if suffix else "00"
+    key = f"{prefix}{num}-{suf}"
+    return key, True
+
+
+def _load_workno_master() -> dict:
+    """工番マスタを Blob から読み込み(キャッシュ)。{workno: {client, billing}} の worknos 部分を返す。"""
+    global _workno_master_cache, _workno_master_loaded
+    if _workno_master_loaded:
+        return _workno_master_cache
+    client = _get_blob_client()
+    if client is None:
+        _workno_master_loaded = True
+        return {}
+    try:
+        container = client.get_container_client(BLOB_CONTAINER)
+        data = container.download_blob(WORKNO_MASTER_BLOB).readall()
+        payload = json.loads(data.decode("utf-8"))
+        _workno_master_cache = payload.get("worknos", {})
+        logger.info(f"工番マスタ読み込み: {len(_workno_master_cache)} 件")
+    except Exception as e:
+        logger.warning(f"工番マスタ読み込み失敗(照合なしで続行): {e}")
+        _workno_master_cache = {}
+    _workno_master_loaded = True
+    return _workno_master_cache
 
 # ── ロガー設定 ────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -698,14 +758,54 @@ async def lineworks_callback(request: Request) -> Response:
             ch = state_data.get("channel_id", channel_id)
 
             # キャンセルコマンド（写真アップロードフロー中のみ）
-            _upload_states = {STATE_WAITING_KOBAN, STATE_WAITING_BUHIN, STATE_WAITING_COMMENT, STATE_WAITING_PHASE, STATE_WAITING_BATCH}
+            _upload_states = {STATE_WAITING_KOBAN, STATE_WAITING_KOBAN_CONFIRM, STATE_WAITING_BUHIN, STATE_WAITING_COMMENT, STATE_WAITING_PHASE, STATE_WAITING_BATCH}
             if state in _upload_states and text.strip().lower() in {"x", "ｘ", "キャンセル", "中止", "cancel"}:
                 _conv.pop(user_id, None)
                 _send_text(ch, user_id, "入力を中止しました。")
             elif state == STATE_WAITING_KOBAN:
-                state_data["koban"] = text
-                state_data["state"] = STATE_WAITING_BUHIN
-                _send_text(ch, user_id, "どの部分ですか？")
+                key, looks_like = _normalize_koban(text)
+                master = _load_workno_master()
+                if key and key in master:
+                    # マスタ一致: 工事名・納入先を見せて確認(打ち間違いなら本人が気づく)
+                    info = master[key]
+                    client_name = info.get("client", "")
+                    state_data["koban"] = key
+                    state_data["state"] = STATE_WAITING_BUHIN
+                    detail = f"（納入先: {client_name}）" if client_name else ""
+                    _send_text(ch, user_id, f"工番 {key} {detail}ですね。\nどの部分ですか？")
+                elif looks_like:
+                    # 工番の形はあるがマスタ未登録 → 新規工番として確認(取り立て工番対応)
+                    state_data["koban"] = key
+                    state_data["state"] = STATE_WAITING_KOBAN_CONFIRM
+                    _send_text(ch, user_id,
+                        f"工番 {key} はマスタに未登録です。\n"
+                        f"新規工番として進めますか？\n"
+                        f"Y → このまま進む　修正 → 工番を入力し直す"
+                    )
+                else:
+                    # 工番の形をしていない(説明文など) → 不明受付を案内
+                    _send_text(ch, user_id,
+                        "工番が読み取れませんでした。\n"
+                        "工番を入力してください（例: 4031-00）。\n"
+                        "工番が分からない場合は「不明」と入力してください。"
+                    )
+                    # ステートは STATE_WAITING_KOBAN のまま維持 → 再入力を待つ
+                    # ただし「不明」なら未取得として先へ
+                    if text.strip() in {"不明", "ふめい", "未取得", "わからない", "分からない"}:
+                        state_data["koban"] = UNKNOWN_KOBAN
+                        state_data["state"] = STATE_WAITING_BUHIN
+                        _send_text(ch, user_id, "工番未取得として記録します。\nどの部分ですか？")
+
+            elif state == STATE_WAITING_KOBAN_CONFIRM:
+                ans = text.strip().upper()
+                if ans in {"Y", "ＹＥＳ", "YES", "はい"}:
+                    state_data["state"] = STATE_WAITING_BUHIN
+                    _send_text(ch, user_id, f"新規工番 {state_data.get('koban','')} で進めます。\nどの部分ですか？")
+                elif text.strip() in {"修正", "しゅうせい", "N", "n"}:
+                    state_data["state"] = STATE_WAITING_KOBAN
+                    _send_text(ch, user_id, "工番を入力し直してください。（中止する場合は「X」）")
+                else:
+                    _send_text(ch, user_id, "「Y」（このまま進む）または「修正」（入力し直す）で答えてください。")
 
             elif state == STATE_WAITING_BUHIN:
                 state_data["buhin"] = text
