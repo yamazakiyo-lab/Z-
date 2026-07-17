@@ -108,7 +108,6 @@ GDX_ANNOTATION_PREFIX = "gdx_annotations/"
 
 # 工番マスタ(export_workno_master.py が日次で lw-raw に出力)
 WORKNO_MASTER_BLOB = "workno_master.json"
-UNKNOWN_KOBAN = "工番未取得"  # 工番不明時に保存する値
 _workno_master_cache: dict = {}
 _workno_master_loaded = False
 _KOBAN_RE = __import__("re").compile(r"^([A-Za-z]{0,4})(\d+)(?:[-_](\d{1,2}))?$")
@@ -783,18 +782,13 @@ async def lineworks_callback(request: Request) -> Response:
                         f"Y → このまま進む　修正 → 工番を入力し直す"
                     )
                 else:
-                    # 工番の形をしていない(説明文など) → 不明受付を案内
+                    # 工番の形をしていない(説明文など) → 必ず有効な工番の再入力を求める(C-2方針)
+                    # ステートは STATE_WAITING_KOBAN のまま維持 → 工番が入るまで先に進めない
                     _send_text(ch, user_id,
                         "工番が読み取れませんでした。\n"
-                        "工番を入力してください（例: 4031-00）。\n"
-                        "工番が分からない場合は「不明」と入力してください。"
+                        "工番を入力してください（例: 4031-00、IS080064）。\n"
+                        "中止する場合は「X」。"
                     )
-                    # ステートは STATE_WAITING_KOBAN のまま維持 → 再入力を待つ
-                    # ただし「不明」なら未取得として先へ
-                    if text.strip() in {"不明", "ふめい", "未取得", "わからない", "分からない"}:
-                        state_data["koban"] = UNKNOWN_KOBAN
-                        state_data["state"] = STATE_WAITING_BUHIN
-                        _send_text(ch, user_id, "工番未取得として記録します。\nどの部分ですか？")
 
             elif state == STATE_WAITING_KOBAN_CONFIRM:
                 ans = text.strip().upper()
