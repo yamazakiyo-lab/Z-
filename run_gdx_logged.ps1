@@ -403,6 +403,21 @@ try {
             Write-Warning "[BOT] lw_annotation_bot.py が見つかりません。スキップします。"
         }
 
+        # ── 工番マスタを Blob にエクスポート(受信Botの工番チェック用) ──────
+        if (-not $isDryRun) {
+            $exportScript = Join-Path $pw 'export_workno_master.py'
+            if (Test-Path -LiteralPath $exportScript) {
+                Write-Host "[MASTER] 工番マスタを Blob にエクスポート中..."
+                $exportPython = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
+                & $exportPython $exportScript 2>&1 | ForEach-Object { Write-Host $_ }
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "[MASTER] ✓ 工番マスタ エクスポート完了"
+                } else {
+                    Write-Warning "[MASTER] ✗ 工番マスタ エクスポート失敗 (code $LASTEXITCODE)"
+                }
+            }
+        }
+
         # ── AzCopyフラグ判定 ─────────────────────────────────────────
         if ($isDryRun) {
             $results.AzCopy = 'SKIP'
