@@ -66,6 +66,19 @@ sync_log.txt
 # KEIRI-PC local configuration
 run_gdx_wrapper.bat
 .env.backup
+.env.backup_*
 
 lw_private.key
 lw_blob_sync_state.json
+
+# 実行時データ・バックアップ・使い捨てスクリプト(260717追加)
+rag/comments.json
+rag/content_cache.json
+descriptions_backup_*.json
+ab_test_describe_*.md
+lw_logs/
+generate_sas_token.ps1
+update_sas_token.ps1
+update_token_fix.ps1
+photo_video_*.log
+dailyrun_*.txt
