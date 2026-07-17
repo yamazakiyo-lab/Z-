@@ -10,6 +10,7 @@ on:
       - master
     paths:
       - 'search_app.py'
+      - 'pages/**'
       - 'requirements.txt'
       - '.streamlit/**'
       - 'rag/**'
