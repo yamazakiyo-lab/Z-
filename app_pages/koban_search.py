@@ -1,26 +1,18 @@
-"""工番検索ページ（Streamlit マルチページ）。
+"""工番検索ページ。
 
-工事名・納入先・工番の一部から工番を探し、見つけた工番で写真検索へ飛べる。
+工事名・納入先・工番の一部から工番を探し、見つけた工番で FMP SEARCH へ飛べる。
 データ源は写真検索と同じ Azure AI Search インデックス。
 そのため一覧に出る工番は必ず写真があり、「写真を見る」で空振りしない。
 （※撮影がまだ無い新規工番は出ない。それは写真検索しても空なので実害なし）
 
-起動は写真検索と同じ:
-    streamlit run search_app.py
-    → サイドバーに「工番検索」ページが自動で増える。
+総合検索APPの1メニュー。search_app.py の st.navigation から呼ばれる。
+※ set_page_config はナビ入口(search_app.py)で一度だけ設定するため、ここでは呼ばない。
 """
 from __future__ import annotations
 
 from typing import Dict
 
 import streamlit as st
-
-# ── ページ設定（各ページで1回だけ呼ぶ） ─────────────────────────────────────────
-st.set_page_config(
-    page_title="工番検索 | TSEG FMP SEARCH",
-    page_icon="🔎",
-    layout="wide",
-)
 
 
 # ── AI Search クライアント（写真検索と同じ資格情報を利用） ───────────────────────
@@ -159,6 +151,6 @@ for wno, row in hits:
     with c4:
         st.caption(f"{row.get('count', 0)} 件")
         if st.button("📷 写真を見る", key=f"jump_{wno}", use_container_width=True):
-            # 写真検索ページへ工番を渡して遷移 → あちらで自動検索
+            # FMP SEARCH ページへ工番を渡して遷移 → あちらで自動検索
             st.session_state["jump_workno"] = wno
-            st.switch_page("search_app.py")
+            st.switch_page("app_pages/fmp_search.py")
