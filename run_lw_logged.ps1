@@ -55,11 +55,7 @@ try {
     try {
         $scriptArgs = @($script)
         if ($DryRun) { $scriptArgs += '--dry-run' }
-        if ($python -eq 'py') {
-            & $python -3 $scriptArgs
-        } else {
-            & $python $scriptArgs
-        }
+        & $python $scriptArgs
         if ($LASTEXITCODE -ne 0) {
             throw "lw_blob_sync.py exited with code $LASTEXITCODE"
         }
@@ -72,16 +68,12 @@ try {
         Write-Host "[LW] --sync-annotations 開始"
         $annotArgs = @($annotScript, '--sync-annotations')
         if ($DryRun) { $annotArgs += '--dry-run' }
-        if ($annotPython -eq 'py') {
-            & $annotPython -3 $annotArgs
-        } else {
-            & $annotPython $annotArgs
-        }
+        & $annotPython $annotArgs
         Write-Host "[LW] --sync-annotations 完了"
 
         # タスクステータスを Blob に書く
         if (-not $DryRun) {
-            & $python -3 (Join-Path $pw 'write_task_status.py') --task lw --status PASS
+            & $python (Join-Path $pw 'write_task_status.py') --task lw --status PASS
         }
     } finally {
         Pop-Location
@@ -90,7 +82,7 @@ try {
     Write-Error $_
     if (-not $DryRun) {
         $python2 = if (Test-Path -LiteralPath (Join-Path $pw '91GDX・252WORKNO-program\venv\Scripts\python.exe')) { Join-Path $pw '91GDX・252WORKNO-program\venv\Scripts\python.exe' } else { 'py' }
-        & $python2 -3 (Join-Path $pw 'write_task_status.py') --task lw --status FAIL --message "$_"
+        & $python2 (Join-Path $pw 'write_task_status.py') --task lw --status FAIL --message "$_"
     }
 } finally {
     if ($lockStream) {
