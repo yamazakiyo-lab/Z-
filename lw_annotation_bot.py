@@ -1251,6 +1251,91 @@ def cmd_holiday_reminder() -> None:
 
 
 # ── メイン ────────────────────────────────────────────────────────────────────
+# ── コマンド: 検索アプリ 未利用者への週次通知（月曜8:00）─────────────────────
+def _fetch_user_emails_from_api() -> dict:
+    """LINE WORKS Directory API から {userId: email(小文字)} を取得する。"""
+    try:
+        token = _get_access_token()
+        emails = {}
+        url = "https://www.worksapis.com/v1.0/users?count=100"
+        while url:
+            resp = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            for user in data.get("users", []):
+                uid = user.get("userId") or user.get("id")
+                em = (user.get("email") or "").strip().lower()
+                if uid and em:
+                    emails[uid] = em
+            nc = data.get("responseMetaData", {}).get("nextCursor")
+            url = f"https://www.worksapis.com/v1.0/users?count=100&cursor={nc}" if nc else None
+        logger.info(f"LWメール取得: {len(emails)} 件")
+        return emails
+    except Exception as e:
+        logger.error(f"LWメール取得失敗: {e}")
+        return {}
+
+
+def _load_app_usage(days: int = 7) -> set:
+    """app_usage.json(Blob)から、過去 days 日に検索アプリを利用したメール(小文字)集合を返す。"""
+    from datetime import timedelta
+
+    container = _get_blob_container()
+    if container is None:
+        return set()
+    try:
+        data = json.loads(container.download_blob("app_usage.json").readall())
+    except Exception:
+        logger.warning("app_usage.json が未作成（まだ利用記録がありません）")
+        return set()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    used = set()
+    for upn, d in data.items():
+        if isinstance(d, str) and d >= cutoff:  # ISO日付は辞書順比較でOK
+            used.add(upn.strip().lower())
+    return used
+
+
+def cmd_app_usage_reminder() -> None:
+    """先週 検索アプリにログインしていないLW登録ユーザーへ通知する（月曜8:00）。"""
+    state = _load_annotation_state()
+    users = state.get("users", [])
+    if not users:
+        logger.warning("登録ユーザーがいません。")
+        return
+    used = _load_app_usage(7)
+    names = _load_user_names()
+    emails = _fetch_user_emails_from_api()
+    logger.info(f"先週の検索アプリ利用者: {len(used)} 名")
+
+    notified = 0
+    unmatched = 0
+    for user_id in users:
+        name = names.get(user_id, "")
+        email = emails.get(user_id, "")
+        if not email:
+            unmatched += 1
+            logger.warning(f"メール未取得のためスキップ: {user_id} ({name})")
+            continue
+        if email in used:
+            continue  # 先週 利用あり → 通知不要
+        prefix = f"{name}さん、" if name else ""
+        msg = (
+            f"{prefix}先週の検索アプリの利用がありませんでした。\n"
+            "是非、ログインして活用してくださいね。\n"
+            "お困りの際は上長に相談してください！"
+        )
+        if _send_text(user_id, msg):
+            notified += 1
+            logger.info(f"未利用通知: {name} <{email}>")
+        time.sleep(0.3)
+    logger.info(f"検索アプリ未利用通知: 送信 {notified} 名 / メール未突合 {unmatched} 名")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="LINE WORKS 学習協力 Bot")
     parser.add_argument("--send", action="store_true", help="未アノテーション写真を送信（土日・休暇日はスキップ）")
@@ -1273,6 +1358,8 @@ def main() -> None:
                         help="会社稼働日の朝の挨拶を送信（8:05 スケジュール用）")
     parser.add_argument("--evening-reminder", action="store_true",
                         help="会社稼働日の夕方リマインダーを送信（16:55 スケジュール用）")
+    parser.add_argument("--app-usage-reminder", action="store_true",
+                        help="先週 検索アプリを使っていないユーザーへ通知（月曜8:00 スケジュール用）")
     parser.add_argument("--dry-run", action="store_true",
                         help="ドライランモード（送信せず確認のみ）")
     args = parser.parse_args()
@@ -1292,6 +1379,8 @@ def main() -> None:
         cmd_morning_greeting()
     elif args.evening_reminder:
         cmd_evening_reminder()
+    elif args.app_usage_reminder:
+        cmd_app_usage_reminder()
     elif args.sync_annotations:
         cmd_sync_annotations()
     elif args.rebuild_comments:
