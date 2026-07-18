@@ -1300,28 +1300,92 @@ def _load_app_usage(days: int = 7) -> set:
     return used
 
 
+def _norm_name(s: str) -> str:
+    """氏名を突合用に正規化(空白・全角空白を除去)。"""
+    return "".join((s or "").split())
+
+
+def _graph_token() -> str:
+    """Microsoft Graph の client-credentials トークンを取得(GRAPH_* 環境変数)。"""
+    import os as _os
+
+    tid = _os.environ.get("GRAPH_TENANT_ID", "")
+    cid = _os.environ.get("GRAPH_CLIENT_ID", "")
+    cs = _os.environ.get("GRAPH_CLIENT_SECRET", "")
+    if not (tid and cid and cs):
+        logger.error("GRAPH_TENANT_ID / GRAPH_CLIENT_ID / GRAPH_CLIENT_SECRET が未設定です")
+        return ""
+    try:
+        r = requests.post(
+            f"https://login.microsoftonline.com/{tid}/oauth2/v2.0/token",
+            data={
+                "client_id": cid, "client_secret": cs,
+                "scope": "https://graph.microsoft.com/.default",
+                "grant_type": "client_credentials",
+            }, timeout=30,
+        )
+        if r.status_code == 200:
+            return r.json()["access_token"]
+        logger.error(f"Graphトークン取得失敗: {r.status_code} {r.text[:200]}")
+    except Exception as e:
+        logger.error(f"Graphトークン例外: {e}")
+    return ""
+
+
+def _load_entra_name_upn() -> dict:
+    """Entra(Graph)から {正規化表示名: UPN(小文字)} を返す。Directory.Read.All を使用。"""
+    token = _graph_token()
+    if not token:
+        return {}
+    out: dict = {}
+    url = ("https://graph.microsoft.com/v1.0/users"
+           "?$select=displayName,userPrincipalName,accountEnabled&$top=999")
+    try:
+        while url:
+            r = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=60)
+            if r.status_code != 200:
+                logger.error(f"Entraユーザー取得失敗: {r.status_code} {r.text[:200]}")
+                break
+            b = r.json()
+            for u in b.get("value", []):
+                dn = _norm_name(u.get("displayName"))
+                upn = (u.get("userPrincipalName") or "").strip().lower()
+                if dn and upn:
+                    out[dn] = upn
+            url = b.get("@odata.nextLink")
+    except Exception as e:
+        logger.error(f"Entraユーザー取得例外: {e}")
+    return out
+
+
 def cmd_app_usage_reminder() -> None:
-    """先週 検索アプリにログインしていないLW登録ユーザーへ通知する（月曜8:00）。"""
+    """先週 検索アプリにログインしていないLW登録ユーザーへ通知する（月曜8:00）。
+
+    突合は「氏名」で行う: LWの苗字名前 ↔ Entra表示名(空白除去で一致) ↔ UPN ↔ app_usage。
+    """
     state = _load_annotation_state()
     users = state.get("users", [])
     if not users:
         logger.warning("登録ユーザーがいません。")
         return
-    used = _load_app_usage(7)
-    names = _load_user_names()
-    emails = _fetch_user_emails_from_api()
-    logger.info(f"先週の検索アプリ利用者: {len(used)} 名")
+    used = _load_app_usage(7)             # 先週使った UPN(小文字) の集合
+    names = _load_user_names()            # {lw_user_id: 苗字名前}
+    entra = _load_entra_name_upn()        # {正規化氏名: EntraUPN}
+    if not entra:
+        logger.error("Entraユーザーを取得できませんでした(GRAPH_* を確認)。中止します。")
+        return
+    logger.info(f"先週の検索アプリ利用者: {len(used)} 名 / Entra照合対象: {len(entra)} 名")
 
     notified = 0
     unmatched = 0
     for user_id in users:
         name = names.get(user_id, "")
-        email = emails.get(user_id, "")
-        if not email:
+        upn = entra.get(_norm_name(name), "")
+        if not upn:
             unmatched += 1
-            logger.warning(f"メール未取得のためスキップ: {user_id} ({name})")
+            logger.warning(f"Entra照合できず(氏名不一致): {user_id} ({name})")
             continue
-        if email in used:
+        if upn in used:
             continue  # 先週 利用あり → 通知不要
         prefix = f"{name}さん、" if name else ""
         msg = (
@@ -1331,9 +1395,9 @@ def cmd_app_usage_reminder() -> None:
         )
         if _send_text(user_id, msg):
             notified += 1
-            logger.info(f"未利用通知: {name} <{email}>")
+            logger.info(f"未利用通知: {name} <{upn}>")
         time.sleep(0.3)
-    logger.info(f"検索アプリ未利用通知: 送信 {notified} 名 / メール未突合 {unmatched} 名")
+    logger.info(f"検索アプリ未利用通知: 送信 {notified} 名 / Entra未照合 {unmatched} 名")
 
 
 def main() -> None:
