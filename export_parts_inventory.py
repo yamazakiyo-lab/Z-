@@ -101,7 +101,10 @@ def parse_inventory(xlsx_path: str) -> list[dict]:
 
             tana, model, spec = g(0), g(1), g(2)
             maker, supplier = g(3), g(4)
-            qty, price = g(5), g(6)
+            qty = g(5)
+            # 原価(仕入単価=g(6))は表示しない。見積単価(g(8))を採用し、小数は整数へ丸める。
+            _pv = row[8] if 8 < len(row) else None
+            price = str(int(round(_pv))) if isinstance(_pv, (int, float)) else _num(_pv)
             # 型式も用途も空 → 空行/区切り行としてスキップ
             if not model and not spec:
                 continue
@@ -116,7 +119,7 @@ def parse_inventory(xlsx_path: str) -> list[dict]:
                 "maker": maker,     # メーカー / 客先
                 "supplier": supplier,  # 仕入先
                 "qty": qty,         # 数量
-                "price": price,     # 仕入単価
+                "quote": price,     # 見積単価（原価=仕入単価は載せない。キーは quote）
             })
     return items
 

@@ -128,18 +128,14 @@ st.divider()
 for cl, info in hits:
     worknos = info["worknos"]
     with st.expander(f"🏢 {cl} 　（工番 {len(worknos)} 件 / 写真 {info['total']} 件）"):
-        h1, h2, h3, h4 = st.columns([2, 4, 1, 2])
-        h1.markdown("**工番**")
-        h2.markdown("**工事名**")
-        h3.markdown("**枚数**")
-        h4.markdown("**写真へ**")
         for wno, wk in sorted(worknos.items()):
-            c1, c2, c3, c4 = st.columns([2, 4, 1, 2])
-            c1.markdown(f"`{wno}`")
-            c2.write(wk.get("name") or "－")
-            c3.caption(f"{wk.get('count', 0)}")
-            with c4:
+            col_info, col_btn = st.columns([5, 2])
+            with col_info:
+                st.markdown(f"**`{wno}`** 　{wk.get('name') or '－'}")
+                st.caption(f"写真 {wk.get('count', 0)} 枚")
+            with col_btn:
                 if st.button("📷 写真を見る", key=f"nj_{cl}_{wno}", use_container_width=True):
                     # FMP SEARCH へ工番を渡して遷移 → あちらで自動検索
                     st.session_state["jump_workno"] = wno
                     st.switch_page("app_pages/fmp_search.py")
+            st.divider()

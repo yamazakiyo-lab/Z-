@@ -175,6 +175,38 @@ def do_search(
         return []
 
 
+# ── 完成/未成マスタ（Blobの workno_master.json）を読む ─────────────────────────
+@st.cache_data(show_spinner=False, ttl=600)
+def _load_kanryo_map() -> dict:
+    """workno_master.json (Blob) から {workno: "完成"/"未成"} を読む。
+
+    AZURE_BLOB_CONNECTION_STRING 未設定・読み込み失敗・kanryo未収録なら空dict
+    （＝完成/未成フィルタは非表示になり従来どおりの挙動）。
+    """
+    import json
+    import os
+
+    conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+    container_name = os.getenv("LW_BLOB_CONTAINER", "lw-raw")
+    if not conn:
+        return {}
+    try:
+        from azure.storage.blob import BlobServiceClient
+
+        svc = BlobServiceClient.from_connection_string(conn)
+        cont = svc.get_container_client(container_name)
+        data = cont.download_blob("workno_master.json").readall()
+        payload = json.loads(data)
+        worknos = payload.get("worknos", {})
+        return {
+            w: (info.get("kanryo") or "")
+            for w, info in worknos.items()
+            if (info.get("kanryo") or "")
+        }
+    except Exception:
+        return {}
+
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 def main() -> None:
     client = _get_search_client()
@@ -188,10 +220,10 @@ def main() -> None:
     # ヘッダー
     if _LOGO_B64:
         st.markdown(
-            '<h1 style="display:flex;align-items:flex-end;gap:12px;line-height:1;padding-bottom:0">'
-            '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="64">'
-            'FMP SEARCH'
-            '</h1>',
+            '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px 0">'
+            '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="58" style="flex:0 0 auto">'
+            '<span style="font-size:2rem;font-weight:700;line-height:1.25">FMP SEARCH</span>'
+            '</div>',
             unsafe_allow_html=True,
         )
     else:
@@ -254,6 +286,16 @@ div[data-testid="stTextInput"] input:focus {
         show_b3 = st.checkbox("🟨 B3 出荷以降")
         show_b4 = st.checkbox("🟥 B4 整理前")
 
+    # 状態(完成/未成)フィルタ（マスタに完成/未成データがある時だけ表示）
+    kanryo_map = _load_kanryo_map()
+    kanryo_choice = "すべて"
+    if kanryo_map:
+        st.caption("状態")
+        kanryo_choice = st.radio(
+            "状態で絞り込み", ["すべて", "完成", "未成"],
+            horizontal=True, index=0, key="fmp_kanryo", label_visibility="collapsed",
+        )
+
     top_n = st.number_input("表示件数", min_value=10, max_value=200, value=50, step=10)
 
     # 種別フィルタ組み立て（未選択 = すべて表示）
@@ -293,6 +335,10 @@ div[data-testid="stTextInput"] input:focus {
                 client_name_q=client_name_q,
                 billing_name_q=billing_name_q,
             )
+
+        # 状態(完成/未成)で絞り込み
+        if kanryo_map and kanryo_choice != "すべて":
+            results = [r for r in results if kanryo_map.get(r.get("workno", "")) == kanryo_choice]
 
         if not results:
             st.info("該当するファイルが見つかりませんでした。")

@@ -121,7 +121,7 @@ rows = [
         "メーカー": it.get("maker", ""),
         "仕入先": it.get("supplier", ""),
         "数量": it.get("qty", ""),
-        "単価": it.get("price", ""),
+        "見積単価": it.get("quote", ""),
     }
     for it in shown
 ]
@@ -129,7 +129,7 @@ rows = [
 try:
     import pandas as pd
     df = pd.DataFrame(rows, columns=[
-        "カテゴリ", "棚番", "型式/品名", "用途・仕様", "メーカー", "仕入先", "数量", "単価",
+        "カテゴリ", "棚番", "型式/品名", "用途・仕様", "メーカー", "仕入先", "数量", "見積単価",
     ])
     st.dataframe(df, use_container_width=True, hide_index=True)
 except Exception:

@@ -21,10 +21,10 @@ if _LOGO_PATH.exists():
 
 if _LOGO_B64:
     st.markdown(
-        '<h1 style="display:flex;align-items:flex-end;gap:12px;line-height:1;padding-bottom:0">'
-        '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="64">'
-        'TSEG 総合検索'
-        '</h1>',
+        '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px 0">'
+        '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="58" style="flex:0 0 auto">'
+        '<span style="font-size:2rem;font-weight:700;line-height:1.25">TSEG 総合検索</span>'
+        '</div>',
         unsafe_allow_html=True,
     )
 else:
