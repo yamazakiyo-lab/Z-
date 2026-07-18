@@ -1,107 +1,100 @@
-"""マニュアルページ — 利用者マニュアル / 運用マニュアル(PDF)を閲覧・ダウンロードする。
+"""マニュアルページ — アプリ内でそのまま読めるマニュアル。
 
-PDFの実体:
-  static/TSEG_WORKS_利用者マニュアル.pdf          … アプリの使い方（現場・事務の利用者向け）
-  static/共有フォルダ整理プログラム_運用マニュアル.pdf … 裏で動く自動処理の仕様（管理者向け）
+PDFビューアに頼らず、本文を Markdown でアプリ内に描画する（スマホでも確実に読め、
+読み終わったら「ホームに戻る」で戻れる）。PDFは印刷・保存したい人向けに残す。
 
-.docx を更新したら PDF を作り直して static/ に置き、push すれば自動デプロイで最新になる。
+  static/user_manual.md / user_manual.pdf … アプリの使い方（利用者向け）
+  static/ops_manual.md  / ops_manual.pdf  … 裏で動く自動処理の仕組み（管理者向け）
+
+.docx を更新したら `python build_manual_md.py` で .md を作り直し、PDFも差し替えて push する。
 
 TSEG WORKS の1メニュー。search_app.py の st.navigation から呼ばれる。
 """
 from __future__ import annotations
 
-import base64
+import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote
 
 import streamlit as st
 
 _STATIC = Path(__file__).resolve().parent.parent / "static"
-# 静的配信(/app/static/...)で確実に開けるよう、実体のファイル名は半角英数にしている。
-# （日本語ファイル名はURLエンコードの相性で開けないことがあるため）
-USER_PDF = _STATIC / "user_manual.pdf"
-OPS_PDF = _STATIC / "ops_manual.pdf"
 
 st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
 
 st.title("📖 マニュアル")
-st.caption("アプリの使い方と、裏で動いている自動処理の仕組みをまとめています。")
+st.caption("章をタップすると開きます。アプリの中でそのまま読めます。")
 st.divider()
 
 
-def _render(pdf_path: Path, description: str, dl_name: str) -> None:
-    """PDF1件分のダウンロード・プレビューを描画する。"""
-    if not pdf_path.exists():
+def _updated(path: Path) -> str:
+    try:
+        jst = timezone(timedelta(hours=9))
+        return datetime.fromtimestamp(path.stat().st_mtime, tz=jst).strftime("%Y-%m-%d")
+    except Exception:
+        return ""
+
+
+def _render(md_path: Path, pdf_path: Path, dl_name: str, description: str) -> None:
+    """マニュアル1件分：説明・章ごとの折りたたみ本文・PDFダウンロードを描画。"""
+    st.write(description)
+
+    if not md_path.exists():
         st.warning(
-            f"ファイルが見つかりません: `static/{pdf_path.name}`\n\n"
-            "PDFを配置して再デプロイしてください。"
+            f"本文ファイルが見つかりません: `static/{md_path.name}`\n\n"
+            "`python build_manual_md.py` を実行して生成し、push してください。"
         )
         return
 
-    data = pdf_path.read_bytes()
-    st.write(description)
+    upd = _updated(md_path)
+    if upd:
+        st.caption(f"更新日: {upd}")
 
-    try:
-        jst = timezone(timedelta(hours=9))
-        updated = datetime.fromtimestamp(pdf_path.stat().st_mtime, tz=jst).strftime("%Y-%m-%d")
-        st.info(f"更新日: {updated}　／　サイズ: {len(data)/1024:.0f} KB")
-    except Exception:
-        pass
+    md = md_path.read_text(encoding="utf-8")
 
-    # 新しいタブで開く（タブを閉じればアプリに戻れる＝アプリごと閉じなくてよい）
-    url = "/app/static/" + quote(pdf_path.name)
-    st.markdown(
-        f'<a href="{url}" target="_blank" rel="noopener" '
-        'style="display:block;text-align:center;padding:0.7rem 1rem;margin-bottom:10px;'
-        'border:2px solid #21A159;border-radius:10px;color:#21A159;'
-        'text-decoration:none;font-weight:700;font-size:1.1rem;line-height:1.6">'
-        '🔎 新しいタブで開く'
-        '<br><span style="font-size:0.9rem;font-weight:400">（読み終わったらタブを閉じるとアプリに戻れます）</span>'
-        '</a>',
-        unsafe_allow_html=True,
-    )
+    # 「## 」＝章。章ごとに折りたたむ（畳んだ状態が目次代わりになる）
+    parts = re.split(r"^## ", md, flags=re.M)
+    intro = parts[0].strip()
+    if intro:
+        st.markdown(intro)
 
-    st.download_button(
-        "📥 端末に保存（ダウンロード）",
-        data=data,
-        file_name=dl_name,
-        mime="application/pdf",
-        use_container_width=True,
-        key=f"dl_{pdf_path.stem}",
-    )
+    for chunk in parts[1:]:
+        head, _, body = chunk.partition("\n")
+        with st.expander(head.strip(), expanded=False):
+            st.markdown(body.strip() or "（内容なし）")
 
-    with st.expander("この画面でプレビューする（PC向け）", expanded=False):
-        b64 = base64.b64encode(data).decode()
-        st.markdown(
-            f'<iframe src="data:application/pdf;base64,{b64}" '
-            'width="100%" height="800" style="border:1px solid #ddd;border-radius:8px"></iframe>',
-            unsafe_allow_html=True,
+    # PDFは印刷・保存したい人向けの補助
+    if pdf_path.exists():
+        st.divider()
+        st.download_button(
+            "📥 PDFで保存・印刷する",
+            data=pdf_path.read_bytes(),
+            file_name=dl_name,
+            mime="application/pdf",
+            use_container_width=True,
+            key=f"dl_{pdf_path.stem}",
         )
-        st.caption("表示されない場合は、上の「ダウンロード」からPDFを開いてください。")
 
 
 tab_user, tab_ops = st.tabs(["📖 利用者マニュアル", "⚙️ 運用マニュアル（仕組み）"])
 
 with tab_user:
     _render(
-        USER_PDF,
-        "TSEG WORKS の使い方です。各検索メニューの操作方法、絞り込み、写真・動画の見かたなどを説明しています。",
+        _STATIC / "user_manual.md",
+        _STATIC / "user_manual.pdf",
         "TSEG_WORKS_利用者マニュアル.pdf",
+        "TSEG WORKS の使い方です。各検索メニューの操作方法、絞り込み、写真・動画の見かたを説明しています。",
     )
 
 with tab_ops:
     _render(
-        OPS_PDF,
-        "毎晩自動で動いている「共有フォルダ整理プログラム」の仕組みです。"
-        "写真・動画がどう取り込まれ、工番ごとにどう整理・命名・圧縮され、検索できるようになるかを説明しています。"
-        "通知・監視の自動化（未利用通知／利用レポート／タスク点検／ログ掃除）も記載しています。",
+        _STATIC / "ops_manual.md",
+        _STATIC / "ops_manual.pdf",
         "共有フォルダ整理プログラム_運用マニュアル.pdf",
+        "毎晩自動で動いている「共有フォルダ整理プログラム」の仕組みです。"
+        "写真・動画がどう取り込まれ、工番ごとに整理・命名・圧縮されて検索できるようになるか、"
+        "通知・監視の自動化（未利用通知／利用レポート／タスク点検／ログ掃除）まで記載しています。",
     )
 
 st.divider()
-st.caption(
-    "スマートフォンでは、ダウンロード後にPDFビューアで開くと読みやすいです。"
-    "ブラウザの「ホーム画面に追加」をしておくと、TSEG WORKS をアプリのように起動できます。"
-)
 st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
