@@ -29,6 +29,7 @@
 """
 from __future__ import annotations
 
+import argparse
 import csv
 import io
 import json
@@ -137,7 +138,56 @@ def get_search_used() -> set[str]:
     return {u.lower() for u, d in data.items() if isinstance(d, str) and d >= cutoff}
 
 
+def _norm(s: str) -> str:
+    return "".join((s or "").split())
+
+
+# レポート要約の既定の送信先（氏名）。環境変数 LW_REPORT_RECIPIENT_NAMES
+# （カンマ区切りの氏名）で上書き可能。
+DEFAULT_REPORT_RECIPIENTS = ["山嵜喜隆", "小山智樹", "昆哲郎", "松尾崇", "松﨑誠一", "山嵜絵里"]
+
+
+def notify_lw(summary: str, dry_run: bool) -> None:
+    """レポート要約を LW BOT で複数の受信者へ送信する。
+
+    受信者は氏名で指定し、lw_user_names.json を逆引きして userId を特定する。
+    既定は DEFAULT_REPORT_RECIPIENTS。環境変数で上書き可:
+      LW_REPORT_RECIPIENT_NAMES … カンマ区切りの氏名
+    """
+    try:
+        import lw_annotation_bot as bot
+    except Exception as e:
+        print(f"[WARN] LW通知スキップ(botモジュール読込失敗): {e}")
+        return
+    env_names = os.environ.get("LW_REPORT_RECIPIENT_NAMES", "").strip()
+    targets = [n.strip() for n in env_names.split(",") if n.strip()] or DEFAULT_REPORT_RECIPIENTS
+    try:
+        names = bot._load_user_names()  # {userId: 氏名}
+    except Exception as e:
+        print(f"[WARN] LW通知スキップ(氏名一覧の取得失敗): {e}")
+        return
+    name_to_uid = {_norm(nm): uid for uid, nm in names.items()}
+    if dry_run:
+        bot.DRY_RUN = True
+    sent = 0
+    for target in targets:
+        uid = name_to_uid.get(_norm(target))
+        if not uid:
+            print(f"[WARN] LW通知先が見つかりません(氏名不一致): {target}")
+            continue
+        ok = bot._send_text(uid, summary)
+        if ok:
+            sent += 1
+        print(f"[LW] {target} へ送信{'(DRY-RUN)' if dry_run else ''}: {'OK' if ok else 'NG'} → {uid}")
+    print(f"[LW] レポート要約 送信 {sent}/{len(targets)} 名")
+
+
 def main() -> None:
+    ap = argparse.ArgumentParser(description="検索アプリ+Teams 利用レポート")
+    ap.add_argument("--no-lw", action="store_true", help="LW通知を送らない(CSVのみ)")
+    ap.add_argument("--dry-run", action="store_true", help="LW通知をドライラン(実送信しない)")
+    args = ap.parse_args()
+
     token = get_token()
     print(f"集計期間: 直近 {DAYS} 日\n")
 
@@ -163,9 +213,6 @@ def main() -> None:
 
     today = datetime.now().strftime("%Y%m%d")
     out_path = Path(__file__).with_name(f"usage_report_{today}.csv")
-    both_no: list[str] = []
-    teams_no: list[str] = []
-    search_no: list[str] = []
 
     def _kind(upn: str) -> str:
         """UPNのローカル部から種別を判定。共有端末(スマホ/タブレット)か個人か。"""
@@ -174,6 +221,13 @@ def main() -> None:
             if pat in local:
                 return "共有端末"
         return "個人"
+
+    # カテゴリ別・種別別の未利用「氏名」を集める（誰が使っていないか分かるように）
+    teams_no_ind: list[str] = []
+    teams_no_sh: list[str] = []
+    search_no_ind: list[str] = []
+    search_no_sh: list[str] = []
+    both_no: list[str] = []
 
     with out_path.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
@@ -186,24 +240,47 @@ def main() -> None:
             s_ok = upn in search_used
             t_ok = upn in teams_active
             both_x = (not s_ok) and (not t_ok)
-            tag = f"[{kind}] {name} <{upn}>"
-            if not s_ok:
-                search_no.append(tag)
             if not t_ok:
-                teams_no.append(tag)
+                (teams_no_ind if kind == "個人" else teams_no_sh).append(name)
+            if not s_ok:
+                (search_no_ind if kind == "個人" else search_no_sh).append(name)
             if both_x:
-                both_no.append(tag)
+                both_no.append(f"[{kind}] {name}")
             w.writerow([kind, name, upn, "○" if s_ok else "×", "○" if t_ok else "×",
                         "★" if both_x else ""])
 
+    def _join(names: list[str], cap: int = 40) -> str:
+        if not names:
+            return "なし"
+        if len(names) <= cap:
+            return "、".join(names)
+        return "、".join(names[:cap]) + f" …他{len(names) - cap}名"
+
     print("===== サマリー =====")
-    print(f"検索アプリ 未利用: {len(search_no)} 名 / Teams 未利用: {len(teams_no)} 名")
+    print(f"Teams 未活動: 個人 {len(teams_no_ind)} 名 / 共有端末 {len(teams_no_sh)} 台")
+    print(f"検索アプリ 未利用: 個人 {len(search_no_ind)} 名 / 共有端末 {len(search_no_sh)} 台")
     print(f"どちらも未利用: {len(both_no)} 件")
     print(f"[CSV] {out_path.name}  （種別列で 個人/共有端末 を区別）")
-    if teams_no:
-        print("\n--- Teams 未利用(直近{}日 活動なし) ---".format(DAYS))
-        for line in teams_no:
-            print("  ", line)
+
+    # ── LW通知用の要約（氏名入り） ─────────────────────────────────────
+    d = f"{today[:4]}/{today[4:6]}/{today[6:]}"
+    summary = (
+        f"📊検索アプリ＋Teams 利用状況（直近{DAYS}日 / {d}時点）\n\n"
+        f"【Teams 未活動】個人{len(teams_no_ind)}名・共有端末{len(teams_no_sh)}台\n"
+        f"　個人: {_join(teams_no_ind)}\n"
+        f"　共有端末: {_join(teams_no_sh)}\n\n"
+        f"【検索アプリ 未利用】個人{len(search_no_ind)}名・共有端末{len(search_no_sh)}台\n"
+        f"　個人: {_join(search_no_ind)}\n"
+        f"　共有端末: {_join(search_no_sh)}\n\n"
+        f"※検索アプリは記録開始直後はデータが少なく全員が未利用に見えます。数週で正確になります。\n"
+        f"詳細CSV: {out_path.name}"
+    )
+    print("\n----- LW送信要約プレビュー -----\n" + summary + "\n")
+
+    if args.no_lw:
+        print("[LW] --no-lw 指定のため通知は送信しません。")
+    else:
+        notify_lw(summary, dry_run=args.dry_run)
 
 
 if __name__ == "__main__":
