@@ -158,9 +158,9 @@ try {
             }
         } else {
             if ($isDryRun) {
-                & $launcher -3 '-u' $script --dry-run 2>&1 | ForEach-Object { Write-Host "$_" }
+                & $launcher '-u' $script --dry-run 2>&1 | ForEach-Object { Write-Host "$_" }
             } else {
-                & $launcher -3 '-u' $script 2>&1 | ForEach-Object { Write-Host "$_" }
+                & $launcher '-u' $script 2>&1 | ForEach-Object { Write-Host "$_" }
             }
         }
         if ($LASTEXITCODE -eq 0) {
@@ -194,7 +194,7 @@ try {
                         if ($useVenv) {
                             & $exe '-u' $script 2>&1
                         } else {
-                            & $exe '-3' '-u' $script 2>&1
+                            & $exe '-u' $script 2>&1
                         }
                         "___EXITCODE___:$LASTEXITCODE"
                     } -ArgumentList $otherExe, $otherScript, $isVenv
@@ -339,7 +339,7 @@ try {
             Push-Location $pw
             try {
                 if ($lwPython -eq 'py') {
-                    & $lwPython -3 $lwScript
+                    & $lwPython $lwScript
                 } else {
                     & $lwPython $lwScript
                 }
@@ -362,7 +362,7 @@ try {
             Push-Location $pw
             try {
                 if ($lwPython -eq 'py') {
-                    & $lwPython -3 $ldSortScript
+                    & $lwPython $ldSortScript
                 } else {
                     & $lwPython $ldSortScript
                 }
@@ -385,7 +385,7 @@ try {
             Push-Location $pw
             try {
                 if ($lwPython -eq 'py') {
-                    & $lwPython -3 $annBotScript --sync-annotations
+                    & $lwPython $annBotScript --sync-annotations
                 } else {
                     & $lwPython $annBotScript --sync-annotations
                 }
