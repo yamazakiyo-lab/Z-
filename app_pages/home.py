@@ -40,6 +40,10 @@ st.markdown(
 <style>
 div.stButton > button {
     white-space: pre-line;      /* ラベルの改行をそのまま表示 */
+    /* Streamlitのボタンは内部がflex中央寄せのため、左寄せを明示する */
+    display: flex;
+    justify-content: flex-start;
+    align-items: flex-start;
     text-align: left;
     font-size: 1.18rem;
     font-weight: 700;
@@ -48,6 +52,14 @@ div.stButton > button {
     margin-bottom: 10px;
     border: 2px solid #21A159;
     border-radius: 12px;
+}
+/* ラベル内側(p/div/span)まで左寄せを徹底する */
+div.stButton > button p,
+div.stButton > button div,
+div.stButton > button span {
+    text-align: left !important;
+    width: 100%;
+    margin: 0;
 }
 div.stButton > button:hover {
     background: rgba(33,161,89,0.14);
