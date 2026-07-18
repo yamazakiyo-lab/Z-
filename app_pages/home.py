@@ -50,6 +50,11 @@ st.page_link(
     label="納入先検索 ― 納入先(会社名)からその取引先の工番・写真を探す",
     icon="🏢",
 )
+st.page_link(
+    "app_pages/zaiko_search.py",
+    label="部品在庫検索 ― 貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す",
+    icon="📦",
+)
 
 st.divider()
-st.caption("※ メニューは順次追加予定（部品在庫検索 など）。左のサイドバーからも移動できます。")
+st.caption("※ 左のサイドバーからも各メニューに移動できます。")
