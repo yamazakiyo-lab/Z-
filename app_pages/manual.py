@@ -18,8 +18,10 @@ from urllib.parse import quote
 import streamlit as st
 
 _STATIC = Path(__file__).resolve().parent.parent / "static"
-USER_PDF = _STATIC / "TSEG_WORKS_利用者マニュアル.pdf"
-OPS_PDF = _STATIC / "共有フォルダ整理プログラム_運用マニュアル.pdf"
+# 静的配信(/app/static/...)で確実に開けるよう、実体のファイル名は半角英数にしている。
+# （日本語ファイル名はURLエンコードの相性で開けないことがあるため）
+USER_PDF = _STATIC / "user_manual.pdf"
+OPS_PDF = _STATIC / "ops_manual.pdf"
 
 st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
 
@@ -51,10 +53,12 @@ def _render(pdf_path: Path, description: str, dl_name: str) -> None:
     url = "/app/static/" + quote(pdf_path.name)
     st.markdown(
         f'<a href="{url}" target="_blank" rel="noopener" '
-        'style="display:block;text-align:center;padding:0.65rem 1rem;margin-bottom:10px;'
-        'border:2px solid #21A159;border-radius:8px;color:#21A159;'
-        'text-decoration:none;font-weight:700">'
-        '🔎 新しいタブで開く（閉じればアプリに戻れます）</a>',
+        'style="display:block;text-align:center;padding:0.7rem 1rem;margin-bottom:10px;'
+        'border:2px solid #21A159;border-radius:10px;color:#21A159;'
+        'text-decoration:none;font-weight:700;font-size:1.1rem;line-height:1.6">'
+        '🔎 新しいタブで開く'
+        '<br><span style="font-size:0.9rem;font-weight:400">（読み終わったらタブを閉じるとアプリに戻れます）</span>'
+        '</a>',
         unsafe_allow_html=True,
     )
 
