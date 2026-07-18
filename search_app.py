@@ -44,6 +44,59 @@ _components.html(
     height=0,
 )
 
+# ── 利用記録（誰がログインして使ったかを Blob に記録／Premium不要）──────────────
+def _log_app_usage() -> None:
+    """Entra認証ユーザーの利用日を app_usage.json(Blob) に記録する。1セッション1回。
+
+    Easy Auth が付与するヘッダー X-MS-CLIENT-PRINCIPAL-NAME(=UPN/メール)を読み、
+    {upn(小文字): 最終利用日} を更新する。未利用者の週次判定に使う。
+    AZURE_BLOB_CONNECTION_STRING 未設定時などは静かにスキップ。
+    """
+    if st.session_state.get("_usage_logged"):
+        return
+    st.session_state["_usage_logged"] = True
+    try:
+        upn = ""
+        try:
+            hdrs = st.context.headers or {}
+            upn = (hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
+                   or hdrs.get("X-Ms-Client-Principal-Name") or "")
+        except Exception:
+            upn = ""
+        if not upn:
+            return
+        import json
+        import os
+        from datetime import date
+
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        container = os.getenv("LW_BLOB_CONTAINER", "lw-raw")
+        if not conn:
+            return
+        from azure.storage.blob import BlobServiceClient
+
+        svc = BlobServiceClient.from_connection_string(conn)
+        cont = svc.get_container_client(container)
+        today = date.today().isoformat()
+        try:
+            data = json.loads(cont.download_blob("app_usage.json").readall())
+        except Exception:
+            data = {}
+        u = upn.strip().lower()
+        if data.get(u) != today:  # 1日1回だけ書き込み
+            data[u] = today
+            cont.upload_blob(
+                "app_usage.json",
+                json.dumps(data, ensure_ascii=False).encode("utf-8"),
+                overwrite=True,
+                content_type="application/json",
+            )
+    except Exception:
+        pass  # 記録は補助機能なので失敗しても本体に影響させない
+
+
+_log_app_usage()
+
 # ── ナビゲーション定義（メニュー） ───────────────────────────────────────────
 # 今後メニューを増やす場合はここに st.Page を1行足す。
 home = st.Page("app_pages/home.py", title="ホーム", icon="🏠", default=True)
