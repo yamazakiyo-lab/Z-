@@ -180,25 +180,17 @@ if len(hits) > max_rows:
 
 st.divider()
 
-# ── 見出し行 ──
-h1, h2, h3, h4 = st.columns([2, 4, 3, 2])
-h1.markdown("**工番**")
-h2.markdown("**工事名**")
-h3.markdown("**納入先**")
-h4.markdown("**写真へ**")
-
 _KANRYO_BADGE = {"完成": "🟢 完成", "未成": "🔴 未成"}
 for wno, row in hits:
-    c1, c2, c3, c4 = st.columns([2, 4, 3, 2])
-    c1.markdown(f"`{wno}`")
-    _kn = kanryo_map.get(wno)
-    if _kn:
-        c1.caption(_KANRYO_BADGE.get(_kn, _kn))
-    c2.write(row.get("name") or "－")
-    c3.write(row.get("client") or "－")
-    with c4:
-        st.caption(f"{row.get('count', 0)} 件")
+    col_info, col_btn = st.columns([5, 2])
+    with col_info:
+        _kn = kanryo_map.get(wno)
+        badge = f"　{_KANRYO_BADGE.get(_kn, '')}" if _kn else ""
+        st.markdown(f"**`{wno}`**{badge}　{row.get('name') or '－'}")
+        st.caption(f"納入先: {row.get('client') or '－'}　｜　写真 {row.get('count', 0)} 枚")
+    with col_btn:
         if st.button("📷 写真を見る", key=f"jump_{wno}", use_container_width=True):
             # FMP SEARCH ページへ工番を渡して遷移 → あちらで自動検索
             st.session_state["jump_workno"] = wno
             st.switch_page("app_pages/fmp_search.py")
+    st.divider()
