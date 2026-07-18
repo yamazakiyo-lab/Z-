@@ -82,3 +82,15 @@ update_sas_token.ps1
 update_token_fix.ps1
 photo_video_*.log
 dailyrun_*.txt
+
+# 生成レポート・デバッグ出力 (260718追加)
+usage_report_*.csv
+signin_*.csv
+signin_failures_*.csv
+name_match_report.csv
+debug_extract_models_output/
+extract_models_output.txt
+rename_dryrun_*.txt
+rename_apply_*.txt
+_model_crop*.png
+_sample_top.png
