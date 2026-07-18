@@ -53,13 +53,21 @@ div.stButton > button {
     border: 2px solid #21A159;
     border-radius: 12px;
 }
-/* ラベル内側(p/div/span)まで左寄せを徹底する */
+/* ラベル内側(p/div/span)まで左寄せを徹底する。説明文は少し小さめ・細字。 */
 div.stButton > button p,
 div.stButton > button div,
 div.stButton > button span {
     text-align: left !important;
     width: 100%;
     margin: 0;
+    font-size: 1.0rem;
+    font-weight: 400;
+}
+/* 1行目のタイトル(**太字**)を大きく目立たせる */
+div.stButton > button strong {
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: 0.01em;
 }
 div.stButton > button:hover {
     background: rgba(33,161,89,0.14);
@@ -79,14 +87,14 @@ _MENUS = [
     ("📦 部品在庫検索", "貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す", "app_pages/zaiko_search.py"),
 ]
 for _i, (_title, _desc, _page) in enumerate(_MENUS):
-    if st.button(f"{_title}\n{_desc}", key=f"menu_{_i}", use_container_width=True):
+    if st.button(f"**{_title}**\n{_desc}", key=f"menu_{_i}", use_container_width=True):
         st.switch_page(_page)
 
 st.divider()
 st.subheader("使い方")
 
 if st.button(
-    "📖 利用者マニュアル\nTSEG WORKS の使い方・仕組みの資料(PDF)を見る",
+    "**📖 マニュアル**\nTSEG WORKS の使い方と、裏の仕組みの資料を読む",
     key="menu_manual",
     use_container_width=True,
 ):
