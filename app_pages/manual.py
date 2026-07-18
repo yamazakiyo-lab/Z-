@@ -16,6 +16,8 @@ import streamlit as st
 
 PDF_PATH = Path(__file__).resolve().parent.parent / "static" / "TSEG_WORKS_利用者マニュアル.pdf"
 
+st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
+
 st.title("📖 利用者マニュアル")
 st.caption("TSEG WORKS の使い方をまとめたマニュアルです。スマホ・タブレットでも読めます。")
 st.divider()
@@ -59,3 +61,6 @@ with st.expander("この画面でプレビューする（PC向け）", expanded=
         unsafe_allow_html=True,
     )
     st.caption("表示されない場合は、上の「ダウンロード」からPDFを開いてください。")
+
+st.divider()
+st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
