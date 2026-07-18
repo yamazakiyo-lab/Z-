@@ -1,0 +1,37 @@
+# 改行コードの正規化（差分一致ミラーの保険）
+# リポジトリ内はLFで保存し、Windows作業ツリーではCRLFに展開する。
+# これで、どのPC・どのgit設定でもチェックアウト結果のバイト列が揃う。
+* text=auto
+
+# 明示的にテキスト扱い（改行正規化の対象）
+*.py    text
+*.txt   text
+*.md    text
+*.json  text
+*.yml   text
+*.yaml  text
+*.toml  text
+*.csv   text
+*.html  text
+*.css   text
+*.js    text
+
+# Windows用スクリプトはCRLF固定
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+
+# バイナリ（改行変換しない）
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.xlsx  binary
+*.xls   binary
+*.docx  binary
+*.pptx  binary
+*.zip   binary
+*.mp4   binary
+*.mov   binary
