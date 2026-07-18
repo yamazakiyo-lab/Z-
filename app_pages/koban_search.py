@@ -87,6 +87,38 @@ def _match(row: dict, workno: str, kw: str) -> bool:
     return False
 
 
+# ── 完成/未成マスタ（Blobの workno_master.json）を読む ─────────────────────────
+@st.cache_data(show_spinner=False, ttl=600)
+def _load_kanryo_map() -> Dict[str, str]:
+    """workno_master.json (Blob) から {workno: "完成"/"未成"} を読む。
+
+    AZURE_BLOB_CONNECTION_STRING が未設定、または読み込み失敗・kanryo未収録の場合は
+    空dictを返す（＝完成/未成フィルタは自動的に非表示になり、従来どおりの挙動）。
+    """
+    import json
+    import os
+
+    conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+    container_name = os.getenv("LW_BLOB_CONTAINER", "lw-raw")
+    if not conn:
+        return {}
+    try:
+        from azure.storage.blob import BlobServiceClient
+
+        svc = BlobServiceClient.from_connection_string(conn)
+        cont = svc.get_container_client(container_name)
+        data = cont.download_blob("workno_master.json").readall()
+        payload = json.loads(data)
+        worknos = payload.get("worknos", {})
+        return {
+            w: (info.get("kanryo") or "")
+            for w, info in worknos.items()
+            if (info.get("kanryo") or "")
+        }
+    except Exception:
+        return {}
+
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 st.title("🔎 工番検索")
 st.caption("工事名・納入先・工番の一部から工番を探せます。（機械名は工事名に含まれることが多いので工事名検索でヒットします）")
@@ -111,6 +143,14 @@ kw_raw = st.text_input(
 )
 max_rows = st.number_input("最大表示件数", min_value=20, max_value=500, value=100, step=20)
 
+# 完成/未成フィルタ（マスタに完成/未成データがある時だけ表示）
+kanryo_map = _load_kanryo_map()
+kanryo_choice = "すべて"
+if kanryo_map:
+    kanryo_choice = st.radio(
+        "状態で絞り込み", ["すべて", "完成", "未成"], horizontal=True, index=0
+    )
+
 kw = kw_raw.strip().lower()
 
 if not kw:
@@ -124,6 +164,10 @@ hits = [
 ]
 # 工番の昇順で安定表示
 hits.sort(key=lambda x: x[0])
+
+# 完成/未成フィルタ
+if kanryo_map and kanryo_choice != "すべて":
+    hits = [(w, row) for (w, row) in hits if kanryo_map.get(w) == kanryo_choice]
 
 if not hits:
     st.warning(f"「{kw_raw.strip()}」に一致する工番は見つかりませんでした。")
@@ -143,9 +187,13 @@ h2.markdown("**工事名**")
 h3.markdown("**納入先**")
 h4.markdown("**写真へ**")
 
+_KANRYO_BADGE = {"完成": "🟢 完成", "未成": "🔴 未成"}
 for wno, row in hits:
     c1, c2, c3, c4 = st.columns([2, 4, 3, 2])
     c1.markdown(f"`{wno}`")
+    _kn = kanryo_map.get(wno)
+    if _kn:
+        c1.caption(_KANRYO_BADGE.get(_kn, _kn))
     c2.write(row.get("name") or "－")
     c3.write(row.get("client") or "－")
     with c4:

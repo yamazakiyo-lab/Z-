@@ -70,6 +70,7 @@ def main() -> None:
         wn: {
             "client": info.get("client_name", ""),
             "billing": info.get("billing_name", ""),
+            "kanryo": info.get("kanryo", ""),  # 完成/未成（工事完成日で判定）
         }
         for wn, info in workno_csv.items()
     }

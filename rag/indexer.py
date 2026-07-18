@@ -231,6 +231,11 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
         (h for h in headers if "工事請求先名称" in h or "請求先名称" in h), None
     )
 
+    # 完成日列（工事完成日）→ 値が入っていれば「完成」、空なら「未成」
+    kanryo_col: Optional[str] = next(
+        (h for h in headers if "工事完成日" in h or h.strip() == "完成日"), None
+    )
+
     if not code_col:
         print("[CSV] 工番列が見つかりません", file=sys.stderr)
         return {}
@@ -254,9 +259,15 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
                 workno = f"{prefix}{left}-00" if prefix else f"{left}-00"
         if not workno:
             continue
+        # 完成/未成: 工事完成日が入っていれば「完成」、空なら「未成」。列が無ければ空。
+        if kanryo_col:
+            kanryo = "完成" if (row.get(kanryo_col) or "").strip() else "未成"
+        else:
+            kanryo = ""
         result[workno] = {
             "client_name": (row.get(client_col) or "").strip() if client_col else "",
             "billing_name": (row.get(billing_col) or "").strip() if billing_col else "",
+            "kanryo": kanryo,
         }
 
     print(
