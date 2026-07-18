@@ -30,40 +30,55 @@ if _LOGO_B64:
 else:
     st.title("🔍 TSEG WORKS")
 
-st.caption("使いたい検索メニューを選んでください。")
+st.caption("下のメニューをタップして選んでください。")
 st.divider()
+
+# ── メニューをカード風ボタンで表示 ────────────────────────────────────────────
+# ラベル内の改行を活かすため white-space: pre-line を指定（1行目=名称／2行目=説明）
+st.markdown(
+    """
+<style>
+div.stButton > button {
+    white-space: pre-line;      /* ラベルの改行をそのまま表示 */
+    text-align: left;
+    font-size: 1.18rem;
+    font-weight: 700;
+    line-height: 1.65;
+    padding: 16px 20px;
+    margin-bottom: 10px;
+    border: 2px solid #21A159;
+    border-radius: 12px;
+}
+div.stButton > button:hover {
+    background: rgba(33,161,89,0.14);
+    border-color: #44CC77;
+}
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 st.subheader("検索メニュー")
 
-st.page_link(
-    "app_pages/fmp_search.py",
-    label="FMP SEARCH ― 写真・動画・過去の指令書PDFを検索",
-    icon="🔍",
-)
-st.page_link(
-    "app_pages/koban_search.py",
-    label="工番検索 ― 工事名・納入先・工番の一部から工番を探す",
-    icon="🔎",
-)
-st.page_link(
-    "app_pages/nyunyusaki_search.py",
-    label="納入先検索 ― 納入先(会社名)からその取引先の工番・写真を探す",
-    icon="🏢",
-)
-st.page_link(
-    "app_pages/zaiko_search.py",
-    label="部品在庫検索 ― 貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す",
-    icon="📦",
-)
+_MENUS = [
+    ("🔍 FMP SEARCH", "写真・動画・過去の指令書PDFを検索", "app_pages/fmp_search.py"),
+    ("🔎 工番検索", "工事名・納入先・工番の一部から工番を探す", "app_pages/koban_search.py"),
+    ("🏢 納入先検索", "納入先(会社名)からその取引先の工番・写真を探す", "app_pages/nyunyusaki_search.py"),
+    ("📦 部品在庫検索", "貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す", "app_pages/zaiko_search.py"),
+]
+for _i, (_title, _desc, _page) in enumerate(_MENUS):
+    if st.button(f"{_title}\n{_desc}", key=f"menu_{_i}", use_container_width=True):
+        st.switch_page(_page)
 
 st.divider()
 st.subheader("使い方")
 
-st.page_link(
-    "app_pages/manual.py",
-    label="利用者マニュアル ― TSEG WORKS の使い方(PDF)を見る・ダウンロード",
-    icon="📖",
-)
+if st.button(
+    "📖 利用者マニュアル\nTSEG WORKS の使い方・仕組みの資料(PDF)を見る",
+    key="menu_manual",
+    use_container_width=True,
+):
+    st.switch_page("app_pages/manual.py")
 
 st.divider()
-st.caption("※ 左のサイドバーからも各メニューに移動できます。")
+st.caption("※ 左上の「≫」からサイドバーを開くと、どの画面からでもメニューに移動できます。")

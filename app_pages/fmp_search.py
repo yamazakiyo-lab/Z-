@@ -217,6 +217,8 @@ def main() -> None:
     if _jumped_wno:
         st.session_state["main_query"] = _jumped_wno
 
+    st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
+
     # ヘッダー
     if _LOGO_B64:
         st.markdown(

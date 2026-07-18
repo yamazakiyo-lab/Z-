@@ -40,6 +40,8 @@ def _load_parts() -> Tuple[List[dict], str]:
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
+st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
+
 st.title("📦 部品在庫検索")
 st.caption("型式・品名・メーカー・仕入先・棚番から、貯蔵品（寄居・綾瀬）の在庫を探せます。")
 st.markdown("""

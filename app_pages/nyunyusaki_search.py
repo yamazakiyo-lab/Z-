@@ -77,6 +77,8 @@ def _load_client_index() -> Dict[str, dict]:
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────
+st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
+
 st.title("🏢 納入先検索")
 st.caption("納入先（注文者）会社名から、その取引先の工番・写真を探せます。")
 st.markdown("""

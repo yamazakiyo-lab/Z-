@@ -13,6 +13,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 
 import streamlit as st
 
@@ -46,8 +47,19 @@ def _render(pdf_path: Path, description: str, dl_name: str) -> None:
     except Exception:
         pass
 
+    # 新しいタブで開く（タブを閉じればアプリに戻れる＝アプリごと閉じなくてよい）
+    url = "/app/static/" + quote(pdf_path.name)
+    st.markdown(
+        f'<a href="{url}" target="_blank" rel="noopener" '
+        'style="display:block;text-align:center;padding:0.65rem 1rem;margin-bottom:10px;'
+        'border:2px solid #21A159;border-radius:8px;color:#21A159;'
+        'text-decoration:none;font-weight:700">'
+        '🔎 新しいタブで開く（閉じればアプリに戻れます）</a>',
+        unsafe_allow_html=True,
+    )
+
     st.download_button(
-        "📥 ダウンロード（PDF）",
+        "📥 端末に保存（ダウンロード）",
         data=data,
         file_name=dl_name,
         mime="application/pdf",
