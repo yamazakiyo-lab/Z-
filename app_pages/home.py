@@ -45,6 +45,11 @@ st.page_link(
     label="工番検索 ― 工事名・納入先・工番の一部から工番を探す",
     icon="🔎",
 )
+st.page_link(
+    "app_pages/nyunyusaki_search.py",
+    label="納入先検索 ― 納入先(会社名)からその取引先の工番・写真を探す",
+    icon="🏢",
+)
 
 st.divider()
-st.caption("※ メニューは順次追加予定（納入先検索・部品在庫検索 など）。左のサイドバーからも移動できます。")
+st.caption("※ メニューは順次追加予定（部品在庫検索 など）。左のサイドバーからも移動できます。")
