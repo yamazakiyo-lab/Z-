@@ -1094,14 +1094,17 @@ def cmd_morning_greeting() -> None:
     if not users:
         logger.warning("登録ユーザーがいません。")
         return
-    msg = (
+    names = _load_user_names()
+    body = (
         "おはようございます！☀️\n"
         "今日も良い1日でありますように。\n"
         "今日の作業中の作業写真投稿のご協力をお願いします！📸"
     )
     ok = 0
     for user_id in users:
-        if _send_text(user_id, msg):
+        name = names.get(user_id, "")
+        prefix = f"{name}さん、" if name else ""
+        if _send_text(user_id, prefix + body):
             ok += 1
         time.sleep(0.3)
     failed = len(users) - ok
@@ -1123,12 +1126,15 @@ def cmd_evening_reminder() -> None:
     if not users:
         logger.warning("登録ユーザーがいません。")
         return
-    msg = (
-        "今日の作業写真投稿はやりましたか？📷\n"
-        "お疲れ様でした！"
-    )
+    names = _load_user_names()
     ok = 0
     for user_id in users:
+        name = names.get(user_id, "")
+        prefix = f"{name}さん、" if name else ""
+        msg = (
+            "今日の作業写真投稿はやりましたか？📷\n"
+            f"{prefix}お疲れ様でした！"
+        )
         if _send_text(user_id, msg):
             ok += 1
         time.sleep(0.3)
