@@ -1332,6 +1332,34 @@ def _graph_token() -> str:
     return ""
 
 
+def _load_name_upn_overrides() -> tuple:
+    """name_upn_map.json から (手動対応表, 除外セット) を返す。
+
+    手動対応表: {正規化氏名: UPN(小文字)}  … Entra表示名が合わず自動突合できない人用。
+    除外セット: {正規化氏名}              … 事業所・共有端末など通知対象外。
+    ファイルが無ければ ({}, set()) を返す（＝従来どおり自動突合のみ）。
+    """
+    import json as _json
+    import os as _os
+
+    path = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "name_upn_map.json")
+    if not _os.path.exists(path):
+        return {}, set()
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = _json.load(f)
+        omap = {
+            _norm_name(k): (v or "").strip().lower()
+            for k, v in (data.get("map") or {}).items()
+            if v
+        }
+        excl = {_norm_name(x) for x in (data.get("exclude") or [])}
+        return omap, excl
+    except Exception as e:
+        logger.error(f"name_upn_map.json 読込失敗: {e}")
+        return {}, set()
+
+
 def _load_entra_name_upn() -> dict:
     """Entra(Graph)から {正規化表示名: UPN(小文字)} を返す。Directory.Read.All を使用。"""
     token = _graph_token()
@@ -1371,19 +1399,30 @@ def cmd_app_usage_reminder() -> None:
     used = _load_app_usage(7)             # 先週使った UPN(小文字) の集合
     names = _load_user_names()            # {lw_user_id: 苗字名前}
     entra = _load_entra_name_upn()        # {正規化氏名: EntraUPN}
-    if not entra:
-        logger.error("Entraユーザーを取得できませんでした(GRAPH_* を確認)。中止します。")
+    override, exclude = _load_name_upn_overrides()  # 手動対応表 / 除外(事業所等)
+    if not entra and not override:
+        logger.error("Entraユーザーも手動対応表も取得できませんでした(GRAPH_*/name_upn_map.json を確認)。中止します。")
         return
-    logger.info(f"先週の検索アプリ利用者: {len(used)} 名 / Entra照合対象: {len(entra)} 名")
+    logger.info(
+        f"先週の検索アプリ利用者: {len(used)} 名 / "
+        f"Entra照合: {len(entra)} 名 / 手動対応表: {len(override)} 名 / 除外: {len(exclude)} 名"
+    )
 
     notified = 0
     unmatched = 0
+    excluded = 0
     for user_id in users:
         name = names.get(user_id, "")
-        upn = entra.get(_norm_name(name), "")
+        nkey = _norm_name(name)
+        if nkey in exclude:               # 事業所・共有端末は通知しない
+            excluded += 1
+            logger.info(f"除外(通知対象外): {name}")
+            continue
+        # 手動対応表を最優先。無ければEntra表示名の自動突合。
+        upn = override.get(nkey) or entra.get(nkey, "")
         if not upn:
             unmatched += 1
-            logger.warning(f"Entra照合できず(氏名不一致): {user_id} ({name})")
+            logger.warning(f"UPN未特定(要マッピング追記): {user_id} ({name})")
             continue
         if upn in used:
             continue  # 先週 利用あり → 通知不要
@@ -1397,7 +1436,9 @@ def cmd_app_usage_reminder() -> None:
             notified += 1
             logger.info(f"未利用通知: {name} <{upn}>")
         time.sleep(0.3)
-    logger.info(f"検索アプリ未利用通知: 送信 {notified} 名 / Entra未照合 {unmatched} 名")
+    logger.info(
+        f"検索アプリ未利用通知: 送信 {notified} 名 / 除外 {excluded} 名 / UPN未特定 {unmatched} 名"
+    )
 
 
 def main() -> None:
