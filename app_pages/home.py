@@ -23,12 +23,12 @@ if _LOGO_B64:
     st.markdown(
         '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px 0">'
         '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="58" style="flex:0 0 auto">'
-        '<span style="font-size:2rem;font-weight:700;line-height:1.25">TSEG 総合検索</span>'
+        '<span style="font-size:2rem;font-weight:700;line-height:1.25">TSEG WORKS</span>'
         '</div>',
         unsafe_allow_html=True,
     )
 else:
-    st.title("🔍 TSEG 総合検索")
+    st.title("🔍 TSEG WORKS")
 
 st.caption("使いたい検索メニューを選んでください。")
 st.divider()
@@ -54,6 +54,15 @@ st.page_link(
     "app_pages/zaiko_search.py",
     label="部品在庫検索 ― 貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す",
     icon="📦",
+)
+
+st.divider()
+st.subheader("使い方")
+
+st.page_link(
+    "app_pages/manual.py",
+    label="利用者マニュアル ― TSEG WORKS の使い方(PDF)を見る・ダウンロード",
+    icon="📖",
 )
 
 st.divider()

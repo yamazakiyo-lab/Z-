@@ -24,7 +24,7 @@ except Exception:
     _page_icon = "🔍"
 
 st.set_page_config(
-    page_title="TSEG 総合検索",
+    page_title="TSEG WORKS",
     page_icon=_page_icon,
     layout="wide",
 )
@@ -104,6 +104,7 @@ fmp_search = st.Page("app_pages/fmp_search.py", title="FMP SEARCH", icon="🔍")
 koban_search = st.Page("app_pages/koban_search.py", title="工番検索", icon="🔎")
 nyunyusaki_search = st.Page("app_pages/nyunyusaki_search.py", title="納入先検索", icon="🏢")
 zaiko_search = st.Page("app_pages/zaiko_search.py", title="部品在庫検索", icon="📦")
+manual = st.Page("app_pages/manual.py", title="利用者マニュアル", icon="📖")
 
-nav = st.navigation([home, fmp_search, koban_search, nyunyusaki_search, zaiko_search])
+nav = st.navigation([home, fmp_search, koban_search, nyunyusaki_search, zaiko_search, manual])
 nav.run()
