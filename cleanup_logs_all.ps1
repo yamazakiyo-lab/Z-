@@ -41,6 +41,7 @@ $freedKB = 0
 
 function Remove-Old($files) {
     foreach ($f in $files) {
+        if ($f.Name -like '.git*') { continue }   # .gitkeep 等のgit管理placeholderは消さない
         if ($f.LastWriteTime -lt $cut) {
             if ($WhatIf) {
                 Write-Output ("[WHATIF] {0}  ({1:yyyy-MM-dd})" -f $f.FullName, $f.LastWriteTime)
