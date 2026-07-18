@@ -166,31 +166,43 @@ def main() -> None:
     both_no: list[str] = []
     teams_no: list[str] = []
     search_no: list[str] = []
+
+    def _kind(upn: str) -> str:
+        """UPNのローカル部から種別を判定。共有端末(スマホ/タブレット)か個人か。"""
+        local = upn.split("@", 1)[0]
+        for pat in ("-sp", "-tab", "sp0", "tab0"):
+            if pat in local:
+                return "共有端末"
+        return "個人"
+
     with out_path.open("w", encoding="utf-8-sig", newline="") as f:
         w = csv.writer(f)
-        w.writerow(["氏名", "UPN(メール)", "検索アプリ", "Teams", "どちらも未利用"])
-        for u in sorted(members, key=lambda x: x.get("displayName") or ""):
+        w.writerow(["種別", "氏名", "UPN(メール)", "検索アプリ", "Teams", "どちらも未利用"])
+        for u in sorted(members, key=lambda x: (_kind((x.get("userPrincipalName") or "")),
+                                                x.get("displayName") or "")):
             upn = (u.get("userPrincipalName") or "").lower()
             name = u.get("displayName") or ""
+            kind = _kind(upn)
             s_ok = upn in search_used
             t_ok = upn in teams_active
             both_x = (not s_ok) and (not t_ok)
+            tag = f"[{kind}] {name} <{upn}>"
             if not s_ok:
-                search_no.append(f"{name} <{upn}>")
+                search_no.append(tag)
             if not t_ok:
-                teams_no.append(f"{name} <{upn}>")
+                teams_no.append(tag)
             if both_x:
-                both_no.append(f"{name} <{upn}>")
-            w.writerow([name, upn, "○" if s_ok else "×", "○" if t_ok else "×",
+                both_no.append(tag)
+            w.writerow([kind, name, upn, "○" if s_ok else "×", "○" if t_ok else "×",
                         "★" if both_x else ""])
 
     print("===== サマリー =====")
     print(f"検索アプリ 未利用: {len(search_no)} 名 / Teams 未利用: {len(teams_no)} 名")
-    print(f"どちらも未利用: {len(both_no)} 名")
-    print(f"[CSV] {out_path.name}")
-    if both_no:
-        print("\n--- どちらも未利用(先頭20) ---")
-        for line in both_no[:20]:
+    print(f"どちらも未利用: {len(both_no)} 件")
+    print(f"[CSV] {out_path.name}  （種別列で 個人/共有端末 を区別）")
+    if teams_no:
+        print("\n--- Teams 未利用(直近{}日 活動なし) ---".format(DAYS))
+        for line in teams_no:
             print("  ", line)
 
 
