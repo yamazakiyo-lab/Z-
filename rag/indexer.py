@@ -236,6 +236,13 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
         (h for h in headers if "工事完成日" in h or h.strip() == "完成日"), None
     )
 
+    # 工事名列（工事名称）→ Botで枝番を選ばせる時に何の工事か見せるために使う
+    name_col: Optional[str] = next(
+        (h for h in headers if h.strip() == "工事名称"), None
+    ) or next(
+        (h for h in headers if "工事名称" in h or h.strip() == "工事名"), None
+    )
+
     if not code_col:
         print("[CSV] 工番列が見つかりません", file=sys.stderr)
         return {}
@@ -268,6 +275,7 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
             "client_name": (row.get(client_col) or "").strip() if client_col else "",
             "billing_name": (row.get(billing_col) or "").strip() if billing_col else "",
             "kanryo": kanryo,
+            "name": (row.get(name_col) or "").strip() if name_col else "",
         }
 
     print(

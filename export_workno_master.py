@@ -71,6 +71,7 @@ def main() -> None:
             "client": info.get("client_name", ""),
             "billing": info.get("billing_name", ""),
             "kanryo": info.get("kanryo", ""),  # 完成/未成（工事完成日で判定）
+            "name": info.get("name", ""),      # 工事名（Botの枝番選択で表示）
         }
         for wn, info in workno_csv.items()
     }

@@ -87,6 +87,7 @@ DOWNLOADABLE_TYPES = {"image", "video", "file"}
 
 # 会話ステート定数
 STATE_WAITING_KOBAN        = "waiting_koban"
+STATE_WAITING_BRANCH_CHOICE = "waiting_branch_choice"  # 枝番が複数ある工番の選択待ち
 STATE_WAITING_KOBAN_CONFIRM = "waiting_koban_confirm"  # マスタ未登録工番の新規確認 Y/修正 待ち
 STATE_WAITING_BUHIN        = "waiting_buhin"
 STATE_WAITING_COMMENT      = "waiting_comment"
@@ -116,15 +117,18 @@ _KOBAN_RE = __import__("re").compile(r"^([A-Za-z]{0,4})(\d+)(?:[-_](\d{1,2}))?$"
 def _normalize_koban(text: str):
     """投稿された工番文字列を正規化してマスタキー候補を返す。
 
-    戻り値: (正規化キー or None, 工番の形をしているか)
+    戻り値: (正規化キー or None, 工番の形をしているか, 枝番が明示されていたか)
     例:
-      '4026-02'  -> ('4026-02', True)
-      'IS080064' -> ('IS080064-00', True)   # 枝番省略は -00 補完
-      'ty080221' -> ('TY080221-00', True)   # 小文字は大文字化
-      '角ネジ...\n...' -> (None, False)      # 工番の形をしていない
+      '4026-02'  -> ('4026-02', True, True)
+      'IS080064' -> ('IS080064-00', True, False)  # 枝番省略は -00 補完(未明示)
+      'ty080221' -> ('TY080221-00', True, False)  # 小文字は大文字化
+      '角ネジ...\n...' -> (None, False, False)     # 工番の形をしていない
+
+    枝番が未明示のときは、呼び出し側で同じ工番の枝番候補を探して
+    複数あればユーザーに選ばせる（勝手に -00 と決めない）。
     """
     if not text:
-        return None, False
+        return None, False, False
     # 先頭行のみ・全角空白/空白除去・全角英数を半角化
     first = text.strip().splitlines()[0].strip() if text.strip().splitlines() else ""
     first = first.translate(str.maketrans(
@@ -133,14 +137,36 @@ def _normalize_koban(text: str):
     )).replace(" ", "").replace("　", "").upper()
     m = _KOBAN_RE.match(first)
     if not m:
-        return None, False
+        return None, False, False
     prefix, digits, suffix = m.group(1), m.group(2), m.group(3)
     # プレフィックスありは数字部のゼロを保持(IS080064-00)、
     # プレフィックスなしは先頭ゼロを削る(00003967->3967)。マスタキーの形式に合わせる。
     num = digits if prefix else (digits.lstrip("0") or "0")
     suf = suffix.zfill(2) if suffix else "00"
     key = f"{prefix}{num}-{suf}"
-    return key, True
+    return key, True, bool(suffix)
+
+
+def _find_branch_candidates(key: str, master: dict) -> list:
+    """枝番違いの同一工番をマスタから探して昇順で返す。
+
+    例: key='4618-00' → ['4618-00', '4618-01', '4618-02'] （マスタに在るものだけ）
+    枝番が未明示で投稿されたとき、候補が複数あれば本人に選ばせるために使う。
+    """
+    base = key.rsplit("-", 1)[0]
+    return sorted(k for k in master if k.rsplit("-", 1)[0] == base)
+
+
+def _format_branch_choices(cands: list, master: dict) -> str:
+    """枝番候補を「1) 工番 工事名」の形に整形する。"""
+    lines = []
+    for i, wn in enumerate(cands, 1):
+        info = master.get(wn) or {}
+        name = (info.get("name") or "").strip()
+        client = (info.get("client") or "").strip()
+        detail = name or client or ""
+        lines.append(f"{i}) {wn}" + (f"　{detail[:34]}" if detail else ""))
+    return "\n".join(lines)
 
 
 def _load_workno_master() -> dict:
@@ -757,14 +783,35 @@ async def lineworks_callback(request: Request) -> Response:
             ch = state_data.get("channel_id", channel_id)
 
             # キャンセルコマンド（写真アップロードフロー中のみ）
-            _upload_states = {STATE_WAITING_KOBAN, STATE_WAITING_KOBAN_CONFIRM, STATE_WAITING_BUHIN, STATE_WAITING_COMMENT, STATE_WAITING_PHASE, STATE_WAITING_BATCH}
+            _upload_states = {STATE_WAITING_KOBAN, STATE_WAITING_BRANCH_CHOICE, STATE_WAITING_KOBAN_CONFIRM, STATE_WAITING_BUHIN, STATE_WAITING_COMMENT, STATE_WAITING_PHASE, STATE_WAITING_BATCH}
             if state in _upload_states and text.strip().lower() in {"x", "ｘ", "キャンセル", "中止", "cancel"}:
                 _conv.pop(user_id, None)
                 _send_text(ch, user_id, "入力を中止しました。")
             elif state == STATE_WAITING_KOBAN:
-                key, looks_like = _normalize_koban(text)
+                key, looks_like, has_branch = _normalize_koban(text)
                 master = _load_workno_master()
-                if key and key in master:
+
+                # 枝番が未明示 → 同じ工番の枝番候補を探す。
+                # 複数あるなら勝手に -00 と決めず、どれか選んでもらう。
+                asked_branch = False
+                if key and looks_like and not has_branch and master:
+                    cands = _find_branch_candidates(key, master)
+                    if len(cands) > 1:
+                        state_data["branch_cands"] = cands
+                        state_data["state"] = STATE_WAITING_BRANCH_CHOICE
+                        _send_text(ch, user_id,
+                            f"工番 {key.rsplit('-', 1)[0]} には枝番が複数あります。\n"
+                            f"どれですか？番号で答えてください。\n\n"
+                            f"{_format_branch_choices(cands, master)}\n\n"
+                            f"中止する場合は「X」。"
+                        )
+                        asked_branch = True
+                    elif len(cands) == 1:
+                        key = cands[0]   # 候補が1つだけならそれで確定
+
+                if asked_branch:
+                    pass  # 枝番の選択待ち。この先の判定は行わない
+                elif key and key in master:
                     # マスタ一致: 工事名・納入先を見せて確認(打ち間違いなら本人が気づく)
                     info = master[key]
                     client_name = info.get("client", "")
@@ -787,6 +834,37 @@ async def lineworks_callback(request: Request) -> Response:
                     _send_text(ch, user_id,
                         "工番が読み取れませんでした。\n"
                         "工番を入力してください（例: 4031-00、IS080064）。\n"
+                        "中止する場合は「X」。"
+                    )
+
+            elif state == STATE_WAITING_BRANCH_CHOICE:
+                # 「1」「2」… の番号、または工番そのもの（4618-01 等）で選択を受け付ける
+                cands = state_data.get("branch_cands") or []
+                master = _load_workno_master()
+                ans = text.strip().translate(str.maketrans("０１２３４５６７８９－", "0123456789-"))
+                chosen = None
+                if ans.isdigit() and 1 <= int(ans) <= len(cands):
+                    chosen = cands[int(ans) - 1]
+                else:
+                    k2, looks2, _ = _normalize_koban(ans)
+                    if k2 and k2 in cands:
+                        chosen = k2
+                if chosen:
+                    info = master.get(chosen) or {}
+                    name = (info.get("name") or "").strip()
+                    client_name = (info.get("client") or "").strip()
+                    detail = name or (f"納入先: {client_name}" if client_name else "")
+                    state_data["koban"] = chosen
+                    state_data["state"] = STATE_WAITING_BUHIN
+                    state_data.pop("branch_cands", None)
+                    _send_text(ch, user_id,
+                        f"工番 {chosen}" + (f"（{detail[:34]}）" if detail else "") +
+                        "ですね。\nどの部分ですか？"
+                    )
+                else:
+                    _send_text(ch, user_id,
+                        "番号で選んでください。\n\n"
+                        f"{_format_branch_choices(cands, master)}\n\n"
                         "中止する場合は「X」。"
                     )
 
