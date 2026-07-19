@@ -40,6 +40,10 @@ GD_EXTRACTION  = BASE_DEST / "_GDExtraction"
 ANNOTATIONS_ROOT = BASE_DEST / "_annotations"
 
 MASTER_CSV_NAMES = ("工事一覧表.csv", "CSV工番マスタ.csv", "master.csv")
+
+# 工番を特定できず未処理のまま残った工番フォルダがこの数を超えたらLW通知する。
+# （工番不明の投稿が数件残るのは通常運転なので、毎日鳴らないようしきい値を置く）
+SKIP_ALERT_THRESHOLD = 5
 MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".avi"}
 
 MAGIC_MAP = [
@@ -237,6 +241,35 @@ def _find_b_folder(a_folder: Path, b_label: str) -> Path:
 
 # ── メイン処理 ────────────────────────────────────────────────────────────────
 
+def _notify_lw(message: str) -> None:
+    """異常検知時に LINE WORKS で担当者へ通知する（失敗しても本処理は止めない）。
+
+    通知先は環境変数 LD_SORT_NOTIFY_NAMES（カンマ区切りの氏名、既定 '山嵜喜隆'）。
+    """
+    import os
+
+    try:
+        import lw_annotation_bot as bot
+    except Exception as e:
+        logger.warning(f"LW通知スキップ(bot読込失敗): {e}")
+        return
+    try:
+        names = os.environ.get("LD_SORT_NOTIFY_NAMES", "山嵜喜隆")
+        targets = [n.strip() for n in names.split(",") if n.strip()]
+        umap = bot._load_user_names()  # {userId: 氏名}
+        norm = lambda s: "".join((s or "").split())
+        n2u = {norm(v): k for k, v in umap.items()}
+        for t in targets:
+            uid = n2u.get(norm(t))
+            if not uid:
+                logger.warning(f"LW通知先が見つかりません: {t}")
+                continue
+            bot._send_text(uid, message)
+            logger.info(f"LW通知を送信: {t}")
+    except Exception as e:
+        logger.warning(f"LW通知に失敗: {e}")
+
+
 def sort_ld_extraction(dry_run: bool = False) -> None:
     if not LD_EXTRACTION.exists():
         logger.error(f"_LWExtraction が見つかりません: {LD_EXTRACTION}")
@@ -247,6 +280,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
     moved = 0
     skipped = 0
     errors = 0
+    skipped_kobans: set = set()   # 工番を特定できず未処理のまま残ったフォルダ名
 
     for koban_dir in sorted(LD_EXTRACTION.iterdir()):
         if not koban_dir.is_dir():
@@ -299,6 +333,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
             a_folder = _get_or_create_a_folder(workno or koban, koban, master, dry_run)
             if a_folder is None:
                 skipped += 1
+                skipped_kobans.add(koban)
                 continue
 
             # Bフォルダを既存から検索（GDXの {workno}_B4整理前写真・動画 形式も対応）
@@ -373,6 +408,39 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
         f"完了{label}: 移動 {moved} 件 / スキップ {skipped} 件"
         f" / エラー {errors} 件 / 空フォルダ削除 {removed_dirs} 件"
     )
+
+    # ── 異常検知（見逃し防止） ───────────────────────────────────────────────
+    # マスタ0件・移動エラー・未処理の急増 は、静かに写真が溜まり続ける原因になるため
+    # ログに出すだけでなく LINE WORKS で通知する。
+    problems = []
+    if not master:
+        problems.append(
+            "工事一覧表(マスタ)が0件です。CSVの列名・配置を確認してください"
+            "（全件スキップになり写真が溜まり続けます）"
+        )
+    if errors:
+        problems.append(f"移動エラー {errors} 件")
+    if len(skipped_kobans) > SKIP_ALERT_THRESHOLD:
+        sample = "、".join(sorted(skipped_kobans)[:8])
+        problems.append(
+            f"工番を特定できず未処理 {len(skipped_kobans)} 件（{sample} ほか）"
+        )
+
+    if problems:
+        msg = (
+            "⚠️LW写真の振り分けで要確認\n"
+            f"移動 {moved} 件 / スキップ {skipped} 件 / エラー {errors} 件 / "
+            f"マスタ {len(master)} 件\n"
+            + "\n".join("・" + p for p in problems)
+        )
+        logger.error(msg.replace("\n", " | "))
+        if not dry_run:
+            _notify_lw(msg)
+    elif skipped_kobans:
+        logger.info(
+            f"未処理の工番不明フォルダ {len(skipped_kobans)} 件（通常運転の範囲。"
+            f"しきい値 {SKIP_ALERT_THRESHOLD} 件を超えると通知します）"
+        )
 
 
 if __name__ == "__main__":
