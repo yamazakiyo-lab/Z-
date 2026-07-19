@@ -46,6 +46,9 @@ MASTER_CSV_NAMES = ("工事一覧表.csv", "CSV工番マスタ.csv", "master.csv
 SKIP_ALERT_THRESHOLD = 5
 MEDIA_EXTENSIONS = {".jpg", ".jpeg", ".png", ".mp4", ".mov", ".avi"}
 
+# Windows/Mac が勝手に作る不要ファイル（残るとフォルダが空にならず削除できない）
+JUNK_FILES = {"thumbs.db", "desktop.ini", ".ds_store"}
+
 MAGIC_MAP = [
     (b"\xff\xd8\xff",      ".jpg"),
     (b"\x89PNG\r\n\x1a\n", ".png"),
@@ -307,6 +310,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
     skipped = 0
     errors = 0
     skipped_kobans: set = set()   # 工番を特定できず未処理のまま残ったフォルダ名
+    orphan_json = 0               # 写真だけ先に移動されて残っていたJSONの回収数
 
     for koban_dir in sorted(LD_EXTRACTION.iterdir()):
         if not koban_dir.is_dir():
@@ -416,6 +420,59 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                 logger.error(f"エラー ({koban}/{media_file.name}): {e}")
                 errors += 1
 
+        # ── 取り残しの後始末 ─────────────────────────────────────────────
+        # 写真だけ先に移動されて残った「孤児JSON」を _annotations へ運び、
+        # Thumbs.db 等の不要ファイルは削除する。これをしないとフォルダが
+        # いつまでも空にならず、アノテーションも取りこぼしたままになる。
+        for leftover in sorted(koban_dir.iterdir()):
+            if leftover.is_dir():
+                continue
+
+            if leftover.name.lower() in JUNK_FILES:
+                if dry_run:
+                    logger.info(f"[dry-run] 不要ファイル削除予定: {koban}/{leftover.name}")
+                else:
+                    try:
+                        leftover.unlink()
+                        logger.info(f"不要ファイル削除: {koban}/{leftover.name}")
+                    except Exception as e:
+                        logger.warning(f"不要ファイル削除失敗 {leftover.name}: {e}")
+                continue
+
+            # 工番が特定できないフォルダは触らない（人が工番を付けて再投入する）
+            if leftover.suffix.lower() != ".json" or not workno:
+                continue
+            # 対応する写真がまだ残っていれば孤児ではない（次の周回で一緒に運ばれる）
+            if any(leftover.with_suffix(e).exists() for e in MEDIA_EXTENSIONS):
+                continue
+
+            dest_dir = ANNOTATIONS_ROOT / workno
+            dest = dest_dir / leftover.name
+            if dry_run:
+                logger.info(
+                    f"[dry-run] 取り残しJSON移動予定: {koban}/{leftover.name}"
+                    f" → _annotations/{workno}/"
+                )
+                orphan_json += 1
+                continue
+            try:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                if dest.exists():  # 同名があれば上書きせず退避
+                    stem, suf = dest.stem, dest.suffix
+                    i = 1
+                    while dest.exists():
+                        dest = dest_dir / f"{stem}_dup{i}{suf}"
+                        i += 1
+                shutil.move(str(leftover), str(dest))
+                logger.info(
+                    f"取り残しJSON移動: {koban}/{leftover.name}"
+                    f" → _annotations/{workno}/{dest.name}"
+                )
+                orphan_json += 1
+            except Exception as e:
+                logger.error(f"取り残しJSON移動エラー ({koban}/{leftover.name}): {e}")
+                errors += 1
+
     # ── 空になった工番フォルダを削除 ─────────────────────────────────────────
     removed_dirs = 0
     for koban_dir in sorted(LD_EXTRACTION.iterdir()):
@@ -435,6 +492,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
     label = "（dry-run）" if dry_run else ""
     logger.info(
         f"完了{label}: 移動 {moved} 件 / スキップ {skipped} 件"
+        f" / 取り残しJSON回収 {orphan_json} 件"
         f" / エラー {errors} 件 / 空フォルダ削除 {removed_dirs} 件"
     )
 
