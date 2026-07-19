@@ -203,6 +203,32 @@ def _find_existing_a_folder(workno: str) -> Optional[Path]:
     return sorted(candidates, key=lambda p: p.name.lower())[0]
 
 
+def _resolve_workno_without_branch(
+    koban: str, master: Dict[str, str]
+) -> Optional[str]:
+    """枝番なしで投稿された工番を <工番>-00 として解決する。
+
+    例: "IS080064" → "IS080064-00" / "4618" → "4618-00"
+    枝番0（本工事）を省略して投稿されるケースへの対応。
+    ただし日付などの数字列を誤って工番と判定しないよう、
+    マスタまたは既存Aフォルダで実在を確認できた場合のみ採用する。
+    """
+    s = str(koban).strip().lstrip("#")
+    m = re.match(r"^([A-Za-z]*\d+)(?:\s|_|-|$)", s)
+    if not m:
+        return None
+    m2 = re.match(r"^([A-Za-z]*)(\d+)$", m.group(1))
+    if not m2:
+        return None
+    prefix, digits = m2.group(1).upper(), m2.group(2)
+    cand = f"{prefix}{digits}-00" if prefix else f"{digits.lstrip('0') or '0'}-00"
+
+    if cand in master or _find_existing_a_folder(cand):
+        logger.info(f"枝番なしの工番を補完: {koban} → {cand}")
+        return cand
+    return None
+
+
 def _get_or_create_a_folder(
     workno: str, koban: str, master: Dict[str, str], dry_run: bool
 ) -> Optional[Path]:
@@ -287,6 +313,9 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
             continue
         koban = koban_dir.name
         workno = _get_workno(koban)
+        if not workno:
+            # 枝番なしで投稿された工番(例 IS080064 / ty080221)を -00 として救済
+            workno = _resolve_workno_without_branch(koban, master)
 
         for media_file in sorted(koban_dir.iterdir()):
             ext = media_file.suffix.lower()
