@@ -83,6 +83,23 @@ def _load_client_index() -> Dict[str, dict]:
     return clients
 
 
+@st.cache_data(show_spinner=False, ttl=600)
+def _index_updated() -> str:
+    """元マスタCSV(工事一覧表)の更新日を返す。取得できなければ空。"""
+    import os
+    from datetime import datetime
+    from pathlib import Path as _P
+    base = os.getenv(
+        "GD_EXTRACTION_DIR",
+        r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_GDExtraction",
+    )
+    try:
+        p = _P(base) / "工事一覧表.csv"
+        return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
+    except Exception:
+        return "－"
+
+
 # ── UI ────────────────────────────────────────────────────────────────────────
 st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
 
@@ -127,7 +144,8 @@ if not hits:
     st.warning(f"「{kw_raw.strip()}」に一致する納入先は見つかりませんでした。")
     st.stop()
 
-st.markdown(f"**{len(hits)} 件** の納入先が見つかりました（写真がある工番のみ集計）。")
+st.markdown(f"**{len(hits)} 件** の顧客が見つかりました（写真がある工番のみ集計）。")
+st.caption(f"データ更新日: {_index_updated()}（元データ: 工事一覧表・発注者一覧表）")
 if len(hits) > max_rows:
     st.caption(f"※ 先頭 {int(max_rows)} 件を表示しています。キーワードを絞ると件数が減ります。")
     hits = hits[: int(max_rows)]

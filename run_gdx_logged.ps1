@@ -418,6 +418,28 @@ try {
             }
         }
 
+        # ── 部品在庫・工具リストを Blob にエクスポート(検索アプリ用) ─────────
+        # xlsxを直接読むだけなので、置いてあれば毎晩自動で最新になる。
+        # (手動実行を忘れて古いデータのまま、という事故を防ぐ)
+        if (-not $isDryRun) {
+            $exportPython2 = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
+            foreach ($inv in @(
+                @{ Script = 'export_parts_inventory.py'; Label = '部品在庫' },
+                @{ Script = 'export_tools_inventory.py'; Label = '動治工具・測定具・消耗品' }
+            )) {
+                $invScript = Join-Path $pw $inv.Script
+                if (Test-Path -LiteralPath $invScript) {
+                    Write-Host "[INVENTORY] $($inv.Label)を Blob にエクスポート中..."
+                    & $exportPython2 $invScript 2>&1 | ForEach-Object { Write-Host $_ }
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Host "[INVENTORY] ✓ $($inv.Label) エクスポート完了"
+                    } else {
+                        Write-Warning "[INVENTORY] ✗ $($inv.Label) エクスポート失敗 (code $LASTEXITCODE)"
+                    }
+                }
+            }
+        }
+
         # ── AzCopyフラグ判定 ─────────────────────────────────────────
         if ($isDryRun) {
             $results.AzCopy = 'SKIP'
