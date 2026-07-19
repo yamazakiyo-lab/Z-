@@ -89,7 +89,7 @@ st.subheader("検索メニュー")
 _MENUS = [
     ("🔍 FMP SEARCH", "写真・動画・過去の指令書PDFを検索", "app_pages/fmp_search.py"),
     ("🔎 工番検索", "工事名・納入先・工番の一部から工番を探す", "app_pages/koban_search.py"),
-    ("🏢 納入先検索", "納入先(会社名)からその取引先の工番・写真を探す", "app_pages/nyunyusaki_search.py"),
+    ("🏢 顧客検索", "顧客(会社名)からその取引先の工番・写真を探す", "app_pages/nyunyusaki_search.py"),
     ("📦 部品在庫検索", "貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す", "app_pages/zaiko_search.py"),
 ]
 for _i, (_title, _desc, _page) in enumerate(_MENUS):

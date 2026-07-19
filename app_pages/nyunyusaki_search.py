@@ -1,4 +1,4 @@
-"""納入先検索ページ — 納入先(注文者)会社名から、その取引先の工番・写真を探す。
+"""顧客検索ページ — 納入先(注文者)会社名から、その取引先の工番・写真を探す。
 
 データ源は写真検索と同じ Azure AI Search インデックス（client_name は索引済み）。
 納入先ごとに工番を束ねて表示し、各工番から FMP SEARCH の写真へ飛べる。
@@ -40,7 +40,8 @@ def _load_client_index() -> Dict[str, dict]:
     """インデックス全件を走査し、納入先ごとに工番と件数を集約する。
 
     戻り値: {client: {"worknos": {workno: {"name": 工事名, "count": 件数}},
-                      "total": 写真総数}}
+                      "total": 写真総数, "address": 住所, "tel": 電話}}
+    ※ 納入先名は発注者一覧表由来の正式名称（株式会社等を含む）。
     """
     client = _get_search_client()
     clients: Dict[str, dict] = {}
@@ -50,7 +51,7 @@ def _load_client_index() -> Dict[str, dict]:
         rows = list(
             client.search(
                 search_text="*",
-                select=["workno", "workno_name", "client_name"],
+                select=["workno", "workno_name", "client_name", "client_address", "client_tel"],
                 top=page,
                 skip=skip,
             )
@@ -62,8 +63,14 @@ def _load_client_index() -> Dict[str, dict]:
             w = (d.get("workno") or "").strip()
             if not cl or not w:
                 continue
-            c = clients.setdefault(cl, {"worknos": {}, "total": 0})
+            c = clients.setdefault(
+                cl, {"worknos": {}, "total": 0, "address": "", "tel": ""}
+            )
             c["total"] += 1
+            if not c["address"] and d.get("client_address"):
+                c["address"] = d["client_address"]
+            if not c["tel"] and d.get("client_tel"):
+                c["tel"] = d["client_tel"]
             wk = c["worknos"].setdefault(w, {"name": "", "count": 0})
             wk["count"] += 1
             if not wk["name"] and d.get("workno_name"):
@@ -79,8 +86,8 @@ def _load_client_index() -> Dict[str, dict]:
 # ── UI ────────────────────────────────────────────────────────────────────────
 st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
 
-st.title("🏢 納入先検索")
-st.caption("納入先（注文者）会社名から、その取引先の工番・写真を探せます。")
+st.title("🏢 顧客検索")
+st.caption("顧客（注文者）の会社名から、その取引先の工番・写真を探せます。正式名称・住所つき。")
 st.markdown("""
 <style>
 div[data-testid="stTextInput"] input {
@@ -130,6 +137,12 @@ st.divider()
 for cl, info in hits:
     worknos = info["worknos"]
     with st.expander(f"🏢 {cl} 　（工番 {len(worknos)} 件 / 写真 {info['total']} 件）"):
+        # 住所・電話（発注者一覧表より）
+        _addr, _tel = info.get("address", ""), info.get("tel", "")
+        if _addr or _tel:
+            st.caption(
+                "　".join(x for x in [_addr, (f"TEL {_tel}" if _tel else "")] if x)
+            )
         for wno, wk in sorted(worknos.items()):
             col_info, col_btn = st.columns([5, 2])
             with col_info:

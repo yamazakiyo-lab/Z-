@@ -161,8 +161,79 @@ def _rename_key_from_path(path_str: str) -> Optional[Tuple[str, str, str, str]]:
 
 
 # ── 工事一覧表 CSV 読み込み（納入先・請求先） ──────────────────────────────────────
+def _load_orderer_csv(base_dir: Path) -> Dict[str, Dict[str, str]]:
+    """発注者一覧表.csv を読み込み {注文者コード: {name, address, tel}} を返す。
+
+    工事一覧表.csv の「工事注文者名称」は略称のことが多いため、
+    こちらの「注文者名称１」を正式名称として使う。住所・TELもここから取る。
+    ファイルが無い場合は空辞書（従来どおり略称表示にフォールバック）。
+    """
+    import csv as _csv
+    import io as _io
+
+    path = base_dir / "発注者一覧表.csv"
+    if not path.exists():
+        print("[CSV] 発注者一覧表.csv なし（納入先は略称のまま）", file=sys.stderr)
+        return {}
+
+    text = None
+    for enc in ("utf-8-sig", "cp932", "utf-8"):
+        try:
+            text = path.read_text(encoding=enc)
+            break
+        except Exception:
+            text = None
+    if not text:
+        return {}
+
+    rows = list(_csv.DictReader(_io.StringIO(text)))
+    if not rows:
+        return {}
+    headers = list(rows[0].keys())
+
+    def col(*keys):
+        for k in keys:
+            for h in headers:
+                if h and k in h:
+                    return h
+        return None
+
+    c_code = col("注文者コード")
+    c_name1, c_name2 = col("注文者名称１", "注文者名称1"), col("注文者名称２", "注文者名称2")
+    c_zip = col("注文者郵便番号")
+    c_ad1, c_ad2 = col("注文者住所１", "注文者住所1"), col("注文者住所２", "注文者住所2")
+    c_tel = col("注文者ＴＥＬ", "注文者TEL")
+    if not c_code:
+        return {}
+
+    out: Dict[str, Dict[str, str]] = {}
+    for r in rows:
+        code = (r.get(c_code) or "").strip()
+        if not code:
+            continue
+        name = " ".join(
+            x for x in [(r.get(c_name1) or "").strip(), (r.get(c_name2) or "").strip()] if x
+        )
+        zipcode = (r.get(c_zip) or "").strip() if c_zip else ""
+        addr = " ".join(
+            x for x in [(r.get(c_ad1) or "").strip(), (r.get(c_ad2) or "").strip()] if x
+        )
+        if zipcode and addr:
+            addr = f"〒{zipcode} {addr}"
+        elif zipcode:
+            addr = f"〒{zipcode}"
+        out[code] = {
+            "name": name,
+            "address": addr,
+            "tel": (r.get(c_tel) or "").strip() if c_tel else "",
+        }
+    print(f"[CSV] 発注者一覧表 読み込み: {len(out)} 件（正式名称・住所）")
+    return out
+
+
 def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
     """工事一覧表.csv を読み込み {workno: {"client_name": ..., "billing_name": ...}} を返す。
+    ※ 納入先は 発注者一覧表.csv と注文者コードで結合し、正式名称・住所を採用する。
 
     工事注文者名称・工事請求先名称 列がない場合や読み込み失敗時は空辞書を返す（非致命的）。
     """
@@ -221,6 +292,9 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
 
     code_col: Optional[str] = _find_code_col()
 
+    # 発注者一覧表（正式名称・住所）。無ければ空で従来どおり。
+    orderers = _load_orderer_csv(csv_path.parent)
+
     # 納入先列（工事注文者名称）
     client_col: Optional[str] = next(
         (h for h in headers if "工事注文者名称" in h or "注文者名称" in h), None
@@ -229,6 +303,11 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
     # 請求先列（工事請求先名称）
     billing_col: Optional[str] = next(
         (h for h in headers if "工事請求先名称" in h or "請求先名称" in h), None
+    )
+
+    # 注文者コード列 → 発注者一覧表.csv と結合して正式名称・住所を得る
+    client_code_col: Optional[str] = next(
+        (h for h in headers if "工事注文者コード" in h or "注文者コード" in h), None
     )
 
     # 完成日列（工事完成日）→ 値が入っていれば「完成」、空なら「未成」
@@ -271,8 +350,18 @@ def _load_workno_csv(csv_path: Path) -> Dict[str, Dict[str, str]]:
             kanryo = "完成" if (row.get(kanryo_col) or "").strip() else "未成"
         else:
             kanryo = ""
+        # 発注者一覧表で正式名称・住所に置き換える（コードで結合）
+        code = (row.get(client_code_col) or "").strip() if client_code_col else ""
+        orderer = orderers.get(code) or {}
+        formal = orderer.get("name", "")
+
         result[workno] = {
-            "client_name": (row.get(client_col) or "").strip() if client_col else "",
+            # 正式名称があればそちらを採用（工事一覧表の名称は略称のことが多い）
+            "client_name": formal or (
+                (row.get(client_col) or "").strip() if client_col else ""
+            ),
+            "client_address": orderer.get("address", ""),
+            "client_tel": orderer.get("tel", ""),
             "billing_name": (row.get(billing_col) or "").strip() if billing_col else "",
             "kanryo": kanryo,
             "name": (row.get(name_col) or "").strip() if name_col else "",
@@ -553,6 +642,15 @@ def _build_index_definition() -> SearchIndex:
             name="client_name",
             type=SearchFieldDataType.String,
         ),
+        # 納入先の住所・TEL（発注者一覧表.csv 由来）
+        SearchableField(
+            name="client_address",
+            type=SearchFieldDataType.String,
+        ),
+        SimpleField(
+            name="client_tel",
+            type=SearchFieldDataType.String,
+        ),
         SearchableField(
             name="billing_name",
             type=SearchFieldDataType.String,
@@ -695,6 +793,8 @@ class PhotoIndexer:
             # 工事マスタ CSV から納入先・請求先を補完
             csv_info = workno_csv.get(doc.get("workno", ""), {})
             doc["client_name"] = csv_info.get("client_name", "")
+            doc["client_address"] = csv_info.get("client_address", "")
+            doc["client_tel"] = csv_info.get("client_tel", "")
             doc["billing_name"] = csv_info.get("billing_name", "")
             new_manifest[doc["id"]] = doc["file_path"]
             batch.append(doc)
