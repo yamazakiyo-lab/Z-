@@ -1,4 +1,4 @@
-# DailyRun ログ確認スクリプト (CHECK_DAILYRUNS: 12:00 実行)
+﻿# DailyRun ログ確認スクリプト (CHECK_DAILYRUNS: 12:00 実行)
 # 複数ステップ（GDX, OTHER, AzCopy）の実行結果を検証
 # Encoding: UTF-8
 

@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$DeployPath = 'C:\Deploy\gdx_workspace',
     [switch]$CreateTasks
 )

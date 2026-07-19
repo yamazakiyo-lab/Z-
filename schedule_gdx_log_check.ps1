@@ -1,4 +1,4 @@
-# DailyRun ログ確認タスク登録スクリプト（12:00 実行）
+﻿# DailyRun ログ確認タスク登録スクリプト（12:00 実行）
 # CHECK_DAILYRUNS: GDX, OTHER, AzCopy の実行結果をチェック
 
 $pw = $PSScriptRoot

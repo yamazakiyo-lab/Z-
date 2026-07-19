@@ -1,4 +1,4 @@
-# GDX_DailyRun log check script (for 12:00 execution)
+﻿# GDX_DailyRun log check script (for 12:00 execution)
 # Encoding: UTF-8
 
 $utf8Init = Join-Path $PSScriptRoot 'ps_utf8_init.ps1'

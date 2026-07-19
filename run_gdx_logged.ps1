@@ -418,6 +418,17 @@ try {
             }
         }
 
+        # ── スクリプトの文字コードを自動修復 ────────────────────────────
+        # BOM無しの .ps1 は PowerShell が cp932 と誤読して落ちる。
+        # 人が気をつけるのではなく毎晩機械的に直す（通知はしない。直せば済むため）。
+        if (-not $isDryRun) {
+            $encScript = Join-Path $pw 'check_encoding.py'
+            if (Test-Path -LiteralPath $encScript) {
+                $encPython = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
+                & $encPython $encScript --fix 2>&1 | ForEach-Object { Write-Host "[ENCODING] $_" }
+            }
+        }
+
         # ── 部品在庫・工具リストを Blob にエクスポート(検索アプリ用) ─────────
         # xlsxを直接読むだけなので、置いてあれば毎晩自動で最新になる。
         # (手動実行を忘れて古いデータのまま、という事故を防ぐ)

@@ -1,0 +1,19 @@
+#!/bin/sh
+# コミット前に .ps1 の文字コードを自動修復する（BOM無しUTF-8 → BOM付きUTF-8）。
+#
+# なぜ必要か:
+#   Windows PowerShell 5.1 は BOM の無い UTF-8 を cp932 と誤読するため、
+#   日本語を含む .ps1 が BOM 無しだと文字化け・構文エラーで突然落ちる。
+#   人間が気をつけるのではなく、コミット時に機械的に直してしまう。
+#
+# 有効化（各PCで1回だけ実行）:
+#   git config core.hooksPath hooks
+
+python check_encoding.py --fix >/dev/null 2>&1 || py check_encoding.py --fix >/dev/null 2>&1
+
+# 修復されたファイルがあればステージに入れ直す（コミットに含める）
+for f in $(git diff --name-only -- '*.ps1'); do
+    git add "$f"
+done
+
+exit 0

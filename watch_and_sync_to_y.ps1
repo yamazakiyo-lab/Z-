@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Source      = $PSScriptRoot,
     [string]$Destination = '\\192.168.2.252\本社共有$\管理本部\情報管理課\tseg_vscode\Zフォルダ整理',
     [int]   $DebounceSeconds = 5
