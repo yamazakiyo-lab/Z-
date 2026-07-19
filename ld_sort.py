@@ -152,8 +152,15 @@ def _read_master() -> Dict[str, str]:
                         return i
             return None
 
-        code_i = find_col(["プロジェクトコード", "工番", "コード"])
-        name_i = find_col(["プロジェクト名", "工事名", "案件名", "名称", "名"])
+        # 工事一覧表.csv では「工事番号＋枝番」(例 00004618-00)が工番、
+        # 「工事名称」が工事名。※「工事プロジェクトコード/名称」列は実データが空の
+        # ことが多く、そちらを掴むとマスタ0件になるため後ろに回す。
+        code_i = find_col(
+            ["工事番号＋枝番", "工事番号+枝番", "プロジェクトコード", "工番", "コード"]
+        )
+        name_i = find_col(
+            ["工事名称", "工事名", "プロジェクト名", "案件名", "名称"]
+        )
         if code_i is None or name_i is None:
             code_i, name_i = 0, 1
 
@@ -297,7 +304,11 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
             # Bフォルダを既存から検索（GDXの {workno}_B4整理前写真・動画 形式も対応）
             b_dir      = _find_b_folder(a_folder, b_label)
             dest_media = b_dir / media_file.name
-            ann_dir    = ANNOTATIONS_ROOT / koban
+            # アノテーションの入れ先は「正規化した工番」で統一する。
+            # （LW側フォルダ名(koban)をそのまま使うと、同じ工番でも表記違いで
+            #   _annotations に同じ頭工番のフォルダが乱立してしまうため）
+            ann_key    = workno or koban
+            ann_dir    = ANNOTATIONS_ROOT / ann_key
             dest_json  = ann_dir / json_file.name
 
             # 既に移動済みならスキップ
@@ -314,7 +325,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                 if json_file.exists():
                     logger.info(
                         f"[dry-run] JSON移動予定: {koban}/{json_file.name}"
-                        f" → _annotations/{koban}/"
+                        f" → _annotations/{ann_key}/"
                     )
                 moved += 1
                 continue
@@ -332,7 +343,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                     shutil.move(str(json_file), str(dest_json))
                     logger.info(
                         f"JSON移動: {koban}/{json_file.name}"
-                        f" → _annotations/{koban}/"
+                        f" → _annotations/{ann_key}/"
                     )
 
                 moved += 1
