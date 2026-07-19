@@ -69,6 +69,11 @@ div.stButton > button strong {
     font-weight: 800;
     letter-spacing: 0.01em;
 }
+/* ローマ字は同じ文字サイズでも日本語より小さく見える(x-heightが低い)ため、
+   ローマ字表記の「FMP SEARCH」だけ少し大きくして見た目を揃える。 */
+div.st-key-menu_0 button strong {
+    font-size: 1.5rem;
+}
 div.stButton > button:hover {
     background: rgba(33,161,89,0.14);
     border-color: #44CC77;
