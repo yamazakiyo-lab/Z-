@@ -21,9 +21,10 @@ if _LOGO_PATH.exists():
 
 if _LOGO_B64:
     st.markdown(
-        '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px 0">'
-        '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="58" style="flex:0 0 auto">'
-        '<span style="font-size:2rem;font-weight:700;line-height:1.25">TSEG WORKS</span>'
+        '<div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin:0 0 6px 0">'
+        '<img src="data:image/png;base64,' + _LOGO_B64 + '" width="76" style="flex:0 0 auto">'
+        '<span style="font-size:2.4rem;font-weight:800;line-height:1.2;letter-spacing:0.01em">'
+        'TSEG WORKS</span>'
         '</div>',
         unsafe_allow_html=True,
     )
