@@ -17,7 +17,8 @@
     lw-raw/parts_inventory.json
     形式: {"generated_at": ISO8601, "count": N,
            "categories": [...],
-           "items": [{"cat","tana","model","spec","maker","supplier","qty","price"}, ...]}
+           "items": [{"cat","tana","model","spec","maker","qty","quote"}, ...]}
+           ※仕入先は社外に出したくないノウハウのため出力しない
 
 環境変数(.env):
     AZURE_BLOB_CONNECTION_STRING  Blob 接続文字列
@@ -100,7 +101,7 @@ def parse_inventory(xlsx_path: str) -> list[dict]:
                 return _num(row[idx]) if idx < len(row) else ""
 
             tana, model, spec = g(0), g(1), g(2)
-            maker, supplier = g(3), g(4)
+            maker = g(3)   # 仕入先(g(4))は意図的に取り込まない
             qty = g(5)
             # 原価(仕入単価=g(6))は表示しない。見積単価(J列=g(9))を採用し、小数は整数へ丸める。
             _pv = row[9] if 9 < len(row) else None
@@ -117,7 +118,6 @@ def parse_inventory(xlsx_path: str) -> list[dict]:
                 "model": model,     # 型式 / 図番・品名
                 "spec": spec,       # 用途・仕様 / 材質
                 "maker": maker,     # メーカー / 客先
-                "supplier": supplier,  # 仕入先
                 "qty": qty,         # 数量
                 "quote": price,     # 見積単価（原価=仕入単価は載せない。キーは quote）
             })

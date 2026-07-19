@@ -44,6 +44,19 @@ _components.html(
     height=0,
 )
 
+# ── 表データの持ち出し防止 ───────────────────────────────────────────────────
+# st.dataframe のツールバーには CSV ダウンロードボタンが出る。在庫・工具リストは
+# 社外に出したくないノウハウなので、アプリ全体でツールバーごと非表示にする。
+st.markdown(
+    """
+<style>
+[data-testid="stElementToolbar"] { display: none !important; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
+
+
 # ── 利用記録（誰がログインして使ったかを Blob に記録／Premium不要）──────────────
 def _log_app_usage() -> None:
     """Entra認証ユーザーの利用日を app_usage.json(Blob) に記録する。1セッション1回。
@@ -104,7 +117,8 @@ fmp_search = st.Page("app_pages/fmp_search.py", title="FMP SEARCH", icon="🔍")
 koban_search = st.Page("app_pages/koban_search.py", title="工番検索", icon="🔎")
 nyunyusaki_search = st.Page("app_pages/nyunyusaki_search.py", title="顧客検索", icon="🏢")
 zaiko_search = st.Page("app_pages/zaiko_search.py", title="部品在庫検索", icon="📦")
+tools_search = st.Page("app_pages/tools_search.py", title="動治工具・測定具・消耗品検索", icon="🛠️")
 manual = st.Page("app_pages/manual.py", title="利用者マニュアル", icon="📖")
 
-nav = st.navigation([home, fmp_search, koban_search, nyunyusaki_search, zaiko_search, manual])
+nav = st.navigation([home, fmp_search, koban_search, nyunyusaki_search, zaiko_search, tools_search, manual])
 nav.run()

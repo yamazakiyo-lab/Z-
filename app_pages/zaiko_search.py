@@ -43,7 +43,7 @@ def _load_parts() -> Tuple[List[dict], str]:
 st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
 
 st.title("📦 部品在庫検索")
-st.caption("型式・品名・メーカー・仕入先・棚番から、貯蔵品（寄居・綾瀬）の在庫を探せます。")
+st.caption("型式・品名・メーカー・棚番から、貯蔵品（寄居・綾瀬）の在庫を探せます。")
 st.markdown("""
 <style>
 div[data-testid="stTextInput"] input {
@@ -76,7 +76,7 @@ cats = sorted({it.get("cat", "") for it in items if it.get("cat")})
 col1, col2 = st.columns([3, 2])
 with col1:
     kw_raw = st.text_input(
-        "キーワード（型式・品名・メーカー・仕入先・棚番）",
+        "キーワード（型式・品名・メーカー・棚番）",
         placeholder="例: ベアリング / SMC / 6203 / TN1",
     )
 with col2:
@@ -97,7 +97,7 @@ def _match(it: dict) -> bool:
         return False
     if kw:
         hay = " ".join(
-            it.get(k, "") for k in ("model", "spec", "maker", "supplier", "tana", "cat")
+            it.get(k, "") for k in ("model", "spec", "maker", "tana", "cat")
         ).lower()
         if kw not in hay:
             return False
@@ -121,7 +121,6 @@ rows = [
         "型式/品名": it.get("model", ""),
         "用途・仕様": it.get("spec", ""),
         "メーカー": it.get("maker", ""),
-        "仕入先": it.get("supplier", ""),
         "数量": it.get("qty", ""),
         "見積単価": it.get("quote", ""),
     }
@@ -131,7 +130,7 @@ rows = [
 try:
     import pandas as pd
     df = pd.DataFrame(rows, columns=[
-        "カテゴリ", "棚番", "型式/品名", "用途・仕様", "メーカー", "仕入先", "数量", "見積単価",
+        "カテゴリ", "棚番", "型式/品名", "用途・仕様", "メーカー", "数量", "見積単価",
     ])
     st.dataframe(df, use_container_width=True, hide_index=True)
 except Exception:
