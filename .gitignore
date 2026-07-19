@@ -92,5 +92,6 @@ debug_extract_models_output/
 extract_models_output.txt
 rename_dryrun_*.txt
 rename_apply_*.txt
+preview_master_rename.txt
 _model_crop*.png
 _sample_top.png
