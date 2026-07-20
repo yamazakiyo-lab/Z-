@@ -950,7 +950,10 @@ def cmd_send() -> None:
 
     # 未アノテーションプールをBlobに保存（App Service側Y応答即時送信用）
     # ユーザー数×10件程度をランダムサンプリングして保存（肥大化防止）
-    pool_size = max(100, len(users) * 10)
+    # プールは「T」での即時配信用の在庫。10:00と15:00の配信ごとに作り直されるので
+    # 大量に持つ必要はない。annotation_state.json はコメント1件ごとに
+    # ダウンロード＋アップロードされるため、小さいほど応答が速くなる。
+    pool_size = max(80, len(users) * 3)
     pool_sample = random.sample(unannotated, min(pool_size, len(unannotated)))
     def _job_number(fp: str) -> str:
         try:

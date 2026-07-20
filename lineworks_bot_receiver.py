@@ -984,17 +984,23 @@ async def lineworks_callback(request: Request) -> Response:
                         # 保存（リトライ後も短い場合は quality=low）
                         quality = "low" if is_short else "ok"
                         _save_gdx_annotation(doc_id, file_path, text, user_id, quality)
-                        # annotation_state の pending から除去
-                        ann_state = _load_annotation_state()
-                        ann_state.get("pending", {}).pop(user_id, None)
-                        _save_annotation_state(ann_state)
-                        # Y/N を聞く
+
+                        # 先に返事をする。
+                        # 理由: この後の pending 除去は annotation_state.json(数百KB)の
+                        #   ダウンロード＋アップロードで、待たせる割に利用者には無関係な後片付け。
+                        #   コメント本体(_save_gdx_annotation)は上で保存済みなので、
+                        #   ここで返事を出しても「保存しました」は嘘にならない。
                         state_data["state"] = STATE_WAITING_NEXT
                         state_data.pop("comment_retry", None)
                         _send_text(ch, user_id,
                             "ありがとうございます！コメントを保存しました 🎉\n"
                             "次の写真も協力しますか？\nY → 続ける　N → 今はここまで（定時または「T」で再開）"
                         )
+
+                        # 後片付け: annotation_state の pending から除去
+                        ann_state = _load_annotation_state()
+                        ann_state.get("pending", {}).pop(user_id, None)
+                        _save_annotation_state(ann_state)
 
             elif state == STATE_WAITING_NEXT:
                 ch = state_data.get("channel_id", channel_id)
