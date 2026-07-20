@@ -969,6 +969,13 @@ def cmd_send() -> None:
         for d, f in pool_sample
     ]
 
+    # 送信ループに入る前に一度保存しておく。
+    # 理由: 保存を最後に1回だけにしていると、送信中(23人×0.5秒)はBlobの pending が
+    #   前回のまま or 未反映で、写真を受け取った人がすぐ返信すると受信側が
+    #   「pendingに居ない」と判断して案内文を返してしまう(実際に発生)。
+    #   ここで pending リセットと unannotated_pool を確定させる。
+    _save_annotation_state(state)
+
     sent_count = 0
     for user_id in users:
         doc_id, file_path = random.choice(unannotated)
@@ -976,6 +983,9 @@ def cmd_send() -> None:
         if ok:
             sent_count += 1
             logger.info(f"送信: {user_id} → {Path(file_path).name}")
+            # 1人送るたびに保存する。写真が届いた瞬間に返信されても
+            # 受信側が pending を復元できるようにするため(即時性が最優先)。
+            _save_annotation_state(state)
         time.sleep(0.5)
 
     _save_annotation_state(state)

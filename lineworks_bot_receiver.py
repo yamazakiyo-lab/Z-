@@ -955,6 +955,17 @@ async def lineworks_callback(request: Request) -> Response:
                     _save_annotation_state(ann_state)
                     _conv.pop(user_id, None)
                     _send_text(ch, user_id, "スキップしました。別の方に回します！\nまた写真が届いたらよろしくお願いします 🙏")
+                elif text.strip().lower() in {"y", "ｙ", "n", "ｎ"}:
+                    # Y/N はコメント保存後に聞く質問。この時点では操作の取り違えなので
+                    # コメント扱いにしない。（"n" を2回送ると quality=low で "n" が
+                    # そのまま保存されてしまうため、ここで確実に止める）
+                    _send_text(ch, user_id,
+                        "いまは写真のコメントを待っています 📸\n"
+                        "Y／N は、コメントを保存したあとに聞きます。\n"
+                        "・分かる方 → 部品名や作業内容を5文字以上で入力\n"
+                        "・分からない → 「？」でスキップ\n"
+                        "・やめる → 「X」でキャンセル"
+                    )
                 else:
                     # 文字数チェック（5文字未満はリトライ促す）
                     MIN_COMMENT_LEN = 5
