@@ -787,6 +787,16 @@ async def lineworks_callback(request: Request) -> Response:
             if state in _upload_states and text.strip().lower() in {"x", "ｘ", "キャンセル", "中止", "cancel"}:
                 _conv.pop(user_id, None)
                 _send_text(ch, user_id, "入力を中止しました。")
+            # 「戻る」で工番入力からやり直す。
+            # 工番を確認した後(部品・コメント・フェーズ待ち)に「あっ工番違った」と
+            # 気づいたとき、Xで全部捨てて写真を送り直す必要がないようにする。
+            # 写真(file_blob)とキュー(queued_files)は保持したまま工番だけ聞き直す。
+            elif state in {STATE_WAITING_BRANCH_CHOICE, STATE_WAITING_KOBAN_CONFIRM, STATE_WAITING_BUHIN, STATE_WAITING_COMMENT, STATE_WAITING_PHASE} \
+                    and text.strip().lower() in {"戻る", "もどる", "工番", "こうばん", "b", "ｂ"}:
+                state_data["state"] = STATE_WAITING_KOBAN
+                state_data["koban"] = ""
+                state_data.pop("branch_cands", None)
+                _send_text(ch, user_id, "工番を入力し直してください。（中止する場合は「X」）")
             elif state == STATE_WAITING_KOBAN:
                 key, looks_like, has_branch = _normalize_koban(text)
                 master = _load_workno_master()
@@ -818,7 +828,7 @@ async def lineworks_callback(request: Request) -> Response:
                     state_data["koban"] = key
                     state_data["state"] = STATE_WAITING_BUHIN
                     detail = f"（納入先: {client_name}）" if client_name else ""
-                    _send_text(ch, user_id, f"工番 {key} {detail}ですね。\nどの部分ですか？")
+                    _send_text(ch, user_id, f"工番 {key} {detail}ですね。\nどの部分ですか？\n（工番が違ったら「戻る」または「B」）")
                 elif looks_like:
                     # 工番の形はあるがマスタ未登録 → 新規工番として確認(取り立て工番対応)
                     state_data["koban"] = key
