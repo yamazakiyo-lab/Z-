@@ -211,6 +211,18 @@ def main(dry_run: bool = False) -> None:
                 name_parts.append(safe_name(comment))
 
             dest_filename = "_".join(name_parts) + ext
+
+            # ファイル名の長さを制限する。
+            # コメントに測定値など詳細を書くと(それ自体は歓迎)、そのまま繋ぐと
+            # Windows のパス長上限(260字)を超え、リネームが WinError 3 で失敗する
+            # (実例: 4654-00 のボルスタ測定写真6枚)。
+            # コメント全文は下の meta.json に完全な形で残る(アノテーション用)ので、
+            # ファイル名は人が見分けられる長さに切り詰めてよい。情報は失われない。
+            MAX_STEM = 120   # 拡張子を除いた「工番フォルダ内での」ファイル名の上限
+            stem = dest_filename[: -len(ext)] if ext else dest_filename
+            if len(stem) > MAX_STEM:
+                stem = stem[:MAX_STEM].rstrip(" _、。.")
+                dest_filename = stem + ext
             dest_dir = SYNC_DEST / safe_name(koban)
             dest_path = dest_dir / dest_filename
 
