@@ -118,7 +118,23 @@ koban_search = st.Page("app_pages/koban_search.py", title="工番検索", icon="
 nyunyusaki_search = st.Page("app_pages/nyunyusaki_search.py", title="顧客検索", icon="🏢")
 zaiko_search = st.Page("app_pages/zaiko_search.py", title="部品在庫検索", icon="📦")
 tools_search = st.Page("app_pages/tools_search.py", title="動治工具・測定具・消耗品検索", icon="🛠️")
+ai_qa = st.Page("app_pages/ai_qa.py", title="AI Q&A", icon="💬")
 manual = st.Page("app_pages/manual.py", title="利用者マニュアル", icon="📖")
 
-nav = st.navigation([home, fmp_search, koban_search, nyunyusaki_search, zaiko_search, tools_search, manual])
+_pages = [home, fmp_search, koban_search, nyunyusaki_search, zaiko_search, tools_search, ai_qa, manual]
+
+# AI Q&Aログは管理者(QA_LOG_ADMINS)だけメニューに表示する
+import os as _os
+_admins = {u.strip().lower() for u in
+           _os.getenv("QA_LOG_ADMINS", "yamazakiyo@tseg.co.jp").split(",") if u.strip()}
+try:
+    _hdrs = st.context.headers or {}
+    _upn = (_hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
+            or _hdrs.get("X-Ms-Client-Principal-Name") or "").strip().lower()
+except Exception:
+    _upn = ""
+if _upn in _admins:
+    _pages.append(st.Page("app_pages/ai_qa_log.py", title="AI Q&A ログ", icon="📋"))
+
+nav = st.navigation(_pages)
 nav.run()
