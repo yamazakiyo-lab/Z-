@@ -18,7 +18,8 @@ if errorlevel 1 (
 
 echo.
 echo === 検索アプリを起動します (streamlit) ===
-streamlit run search_app.py
+rem python -m 経由で起動: pipインストール先とstreamlit実行環境のPythonを必ず一致させる
+python -m streamlit run search_app.py
 
 echo.
 echo アプリを終了しました。ウィンドウを閉じてください。
