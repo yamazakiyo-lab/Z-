@@ -853,6 +853,18 @@ def cmd_sync_annotations() -> None:
             )
             logger.info(f"アノテーション保存: _annotations/{koban}/{sidecar_path.name}")
 
+            # comments.json にも登録する（済みマーク）。
+            # これが無いと _find_unannotated_docs が「未コメント」と誤判定し、
+            # 一度コメントした写真が学習協力で再配信され続ける（重複配信の原因だった）。
+            # run_rag_describe.py と同じ辞書形式で保存する。
+            if doc_id:
+                comments[doc_id] = {
+                    "comment": comment,
+                    "user_id": user_id,
+                    "annotated_at": annotated_at,
+                    "borrowed_from": "",
+                }
+
             # Blob 削除（処理済み）
             container.delete_blob(blob_item.name)
             logger.info(f"Blob 削除: {blob_item.name}")
