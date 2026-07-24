@@ -110,3 +110,13 @@ if st.button(
 
 st.divider()
 st.caption("※ 左上の「≫」からサイドバーを開くと、どの画面からでもメニューに移動できます。")
+
+# ログイン中アカウントの表示(管理者メニュー判定の確認にも使う)
+try:
+    _hdrs = st.context.headers or {}
+    _upn = (_hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
+            or _hdrs.get("X-Ms-Client-Principal-Name") or "")
+except Exception:
+    _upn = ""
+if _upn:
+    st.caption(f"ログイン中: {_upn}")
