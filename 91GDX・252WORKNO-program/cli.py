@@ -104,6 +104,11 @@ def parse_args() -> MainConfig:
         help="実際のファイル操作を行わず、処理内容のみ表示する",
     )
     parser.add_argument(
+        "--no-drive",
+        action="store_true",
+        help="Google Drive 連携([1]吸い取り/[4]同期)を行わない（環境変数 GDX_NO_DRIVE=1 でも可）",
+    )
+    parser.add_argument(
         "--preview-master-renames",
         action="store_true",
         help="GDExtraction の工番マスタ由来リネーム予定だけをログ出力して終了する",
@@ -124,6 +129,10 @@ def parse_args() -> MainConfig:
         target_9781_root=Path(args.target_9781_root) if args.target_9781_root else default.target_9781_root,
         target_271_root=Path(args.target_271_root) if args.target_271_root else default.target_271_root,
         drive_parent=args.drive_parent if args.drive_parent else default.drive_parent,
+        use_drive=not (
+            args.no_drive
+            or os.getenv("GDX_NO_DRIVE", "").strip().lower() in {"1", "true", "yes"}
+        ),
         log_drive_descendant_counts=args.log_drive_descendant_counts,
         sync_gdx_to_drive_during_process=not args.no_sync_during_process,
         log_dir=Path(args.log_dir) if args.log_dir else default.log_dir,
@@ -146,7 +155,7 @@ def main():
 
     if getattr(cfg, "apply_master_renames_only", False):
         p("=== GDExtraction 工番マスタ名整合のみ実行 ===")
-        service = drive_authentication()
+        service = drive_authentication() if cfg.use_drive else None
         result = apply_gdextraction_master_renames(
             cfg.gd_root,
             sync_service=service,
@@ -171,6 +180,9 @@ def main():
     if cfg.dry_run:
         p("[DRY-RUN] Drive 認証をスキップします")
         service = None
+    elif not cfg.use_drive:
+        p("[NO-DRIVE] Drive連携は無効化されています（写真取り込みはLINE WORKS botに一本化）")
+        service = None
     else:
         service = drive_authentication()
     
@@ -180,7 +192,7 @@ def main():
     p("=== [1] Drive -> GDExtraction 吸い取り（Drive指定親直下フォルダのみ） ===")
     
     if service is None:
-        p("[SKIP] [1] ドライランモード: Drive 吸い取りはスキップ")
+        p("[SKIP] [1] Drive吸い取りはスキップ（ドライラン/Drive無効）")
         drive_folders = []
     else:
         root_items = drive_list_children(service, cfg.drive_parent)
@@ -258,7 +270,7 @@ def main():
 
     p("=== [4] GDExtraction のフォルダ構成を Drive へ（空フォルダ）最終同期 ===")
     if service is None:
-        p("[SKIP] [4] ドライランモード: Drive 最終同期はスキップ")
+        p("[SKIP] [4] Drive最終同期はスキップ（ドライラン/Drive無効）")
     else:
         sync_gdx_tree_checkpoint(service, str(cfg.gd_root), cfg.drive_parent, "最終同期")
     p("=== [4] 完了 ===")

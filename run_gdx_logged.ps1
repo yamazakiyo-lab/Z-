@@ -21,6 +21,11 @@ $runtimeRoot = 'C:\ProgramData\tseg_vscode_runtime\gdx'
 if (-not (Test-Path $runtimeRoot)) { New-Item -ItemType Directory -Path $runtimeRoot -Force | Out-Null }
 $env:GDX_RUNTIME_ROOT = $runtimeRoot
 
+# ── GDX卒業(2026-07-24): Google Drive連携を無効化 ─────────────────────
+# 写真取り込みはLINE WORKS botに一本化。Drive吸い取り[1]と最終同期[4]を止める。
+# 元に戻す場合はこの行を削除（またはコメントアウト）する。
+$env:GDX_NO_DRIVE = '1'
+
 $lockDir = Join-Path $pw '.runtime'
 if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir -Force | Out-Null }
 $lockPath = Join-Path $lockDir 'dailyrun.lock'

@@ -54,11 +54,16 @@ def main() -> None:
         print("[ERROR] AZURE_BLOB_CONNECTION_STRING が未設定です", file=sys.stderr)
         sys.exit(1)
 
-    csv_path = Path(TARGET_91_ROOT) / "_GDExtraction" / "工事一覧表.csv"
+    # GDX卒業(2026-07-24): マスタCSVの恒久置き場は _masters。
+    # 移行期間中は旧置き場(_GDExtraction)にもフォールバックする。
+    csv_path = Path(TARGET_91_ROOT) / "_masters" / "工事一覧表.csv"
     if not csv_path.exists():
-        print(f"[ERROR] 工事一覧表.csv が見つかりません: {csv_path}", file=sys.stderr)
+        csv_path = Path(TARGET_91_ROOT) / "_GDExtraction" / "工事一覧表.csv"
+    if not csv_path.exists():
+        print("[ERROR] 工事一覧表.csv が見つかりません(_masters / _GDExtraction とも)", file=sys.stderr)
         print("        Z: 未接続の可能性。中止します(既存のBlobマスタを保護)。", file=sys.stderr)
         sys.exit(2)
+    print(f"[CSV] 使用: {csv_path}")
 
     # {workno: {"client_name": ..., "billing_name": ...}}
     workno_csv = _load_workno_csv(csv_path)

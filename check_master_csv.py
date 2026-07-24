@@ -32,7 +32,12 @@ try:
 except Exception:
     pass
 
+# GDX卒業(2026-07-24): マスタCSVの恒久置き場は _masters。
+# 移行期間中は旧置き場(_GDExtraction)にもフォールバックする。
 DEFAULT_DIR = (
+    r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_masters"
+)
+LEGACY_DIR = (
     r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_GDExtraction"
 )
 TARGETS = [
@@ -86,8 +91,13 @@ def main() -> None:
     for fname, label in TARGETS:
         p = base / fname
         if not p.exists():
-            problems.append(f"❌ {label}.csv が見つかりません")
-            continue
+            # 移行期間: 旧置き場(_GDExtraction)にあればそちらを見る
+            legacy = Path(LEGACY_DIR) / fname
+            if legacy.exists():
+                p = legacy
+            else:
+                problems.append(f"❌ {label}.csv が見つかりません")
+                continue
         try:
             mtime = datetime.fromtimestamp(p.stat().st_mtime)
         except Exception as e:

@@ -210,10 +210,13 @@ def _read_csv_master(master_path: Path) -> Dict[str, str]:
 
 
 def _pick_master_file(gd_root: Path) -> Optional[Path]:
-    for fn in ("工事一覧表.csv", "CSV工番マスタ.csv", "master.csv"):
-        pth = gd_root / fn
-        if pth.exists():
-            return pth
+    # GDX卒業(2026-07-24): 恒久置き場 <91ルート>/_masters を優先し、
+    # 旧置き場(_GDExtraction = gd_root)にフォールバックする。
+    for base in (gd_root.parent / "_masters", gd_root):
+        for fn in ("工事一覧表.csv", "CSV工番マスタ.csv", "master.csv"):
+            pth = base / fn
+            if pth.exists():
+                return pth
     return None
 
 

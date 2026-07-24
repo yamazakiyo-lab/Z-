@@ -17,6 +17,10 @@ class MainConfig:
     target_9781_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\97_技術資料\978_CADデータ図庫\9781_工事工番")
     target_271_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\27_サービス・出張工事\271_修理工事指令書")
     drive_parent: str = "root"
+    # Google Drive 連携([1]吸い取り/[4]同期)を行うか。
+    # GDX卒業(2026-07-24〜): 写真取り込みはLINE WORKS botに一本化したため
+    # デイリーランでは --no-drive / GDX_NO_DRIVE=1 で無効化して運用する。
+    use_drive: bool = True
     log_drive_descendant_counts: bool = False
     sync_gdx_to_drive_during_process: bool = True
     log_dir: Path = PROJECT_ROOT

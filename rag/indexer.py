@@ -721,7 +721,10 @@ class PhotoIndexer:
         self.ensure_index()
 
         # ── 工事マスタ CSV 読み込み（納入先・請求先） ──────────────────────────
-        csv_path = root / "_GDExtraction" / "工事一覧表.csv"
+        # GDX卒業(2026-07-24): _masters を優先し、旧置き場(_GDExtraction)にフォールバック
+        csv_path = root / "_masters" / "工事一覧表.csv"
+        if not csv_path.exists():
+            csv_path = root / "_GDExtraction" / "工事一覧表.csv"
         workno_csv = _load_workno_csv(csv_path)
 
         # ── 前回マニフェスト読み込み ────────────────────────────────────────
