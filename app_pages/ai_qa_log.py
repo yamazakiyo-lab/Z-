@@ -48,13 +48,18 @@ def _load_log(month: str) -> list[dict]:
         svc = BlobServiceClient.from_connection_string(conn)
         blob = svc.get_blob_client(QA_LOG_CONTAINER, f"qa_log_{month}.jsonl")
         raw = blob.download_blob().readall().decode("utf-8")
+        from urllib.parse import unquote
+
         recs = []
         for line in raw.splitlines():
             line = line.strip()
             if not line:
                 continue
             try:
-                recs.append(json.loads(line))
+                r = json.loads(line)
+                # デコード対応前に記録された %xx 形式の氏名も読める形にする
+                r["user"] = unquote(r.get("user", ""))
+                recs.append(r)
             except Exception:
                 continue
         recs.reverse()  # 新しい順
