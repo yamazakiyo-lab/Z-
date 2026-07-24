@@ -128,9 +128,11 @@ import os as _os
 _admins = {u.strip().lower() for u in
            _os.getenv("QA_LOG_ADMINS", "yamazakiyo@tseg.co.jp").split(",") if u.strip()}
 try:
+    from urllib.parse import unquote as _unquote
     _hdrs = st.context.headers or {}
     _upn = (_hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
-            or _hdrs.get("X-Ms-Client-Principal-Name") or "").strip().lower()
+            or _hdrs.get("X-Ms-Client-Principal-Name") or "").strip()
+    _upn = _unquote(_upn).strip().lower()  # URLエンコードされた氏名をデコード
 except Exception:
     _upn = ""
 if _upn in _admins:

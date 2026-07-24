@@ -25,10 +25,13 @@ ADMINS = {
 
 
 def _current_upn() -> str:
+    """Easy Authヘッダーからログインユーザーを取得(URLエンコードされた氏名をデコード)。"""
     try:
+        from urllib.parse import unquote
         hdrs = st.context.headers or {}
-        return (hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
-                or hdrs.get("X-Ms-Client-Principal-Name") or "").strip().lower()
+        raw = (hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
+               or hdrs.get("X-Ms-Client-Principal-Name") or "").strip()
+        return unquote(raw).strip().lower()
     except Exception:
         return ""
 
