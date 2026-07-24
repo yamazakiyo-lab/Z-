@@ -861,23 +861,38 @@ async def lineworks_callback(request: Request) -> Response:
                         f"Y → このまま進む　修正 → 工番を入力し直す"
                     )
                 else:
-                    # 工番の形をしていない(説明文など) → 必ず有効な工番の再入力を求める(C-2方針)
-                    # ステートは STATE_WAITING_KOBAN のまま維持 → 工番が入るまで先に進めない
-                    _koban_err = (
-                        "工番が読み取れませんでした。\n"
-                        "工番を入力してください（例: 4031-00、IS080064）。\n"
-                        "中止する場合は「X」。"
-                    )
-                    # 学習協力の写真が未回答のまま残っている人には脱出方法を案内する
+                    # 工番の形をしていない(説明文など)。
+                    # 写真アップロード途中に学習協力の定時配信が重なると、配信への
+                    # 返信がここに落ちて工番として誤解釈される(2026-07-24発生)。
+                    # → 学習協力が未回答(pending)で、5文字以上の文章なら、
+                    #   学習協力のコメントとして自動保存する。工番入力は継続。
+                    _saved_as_annotation = False
                     try:
-                        if user_id in _load_annotation_state().get("pending", {}):
-                            _koban_err += (
-                                "\n\n※学習協力の写真にコメントする場合は、"
-                                "先に「X」で写真の入力を中止してから、もう一度コメントを送ってください。"
+                        ann_state = _load_annotation_state()
+                        pend = ann_state.get("pending", {}).get(user_id)
+                        if pend and len(text.strip()) >= 5:
+                            _save_gdx_annotation(
+                                pend.get("doc_id", ""), pend.get("file_path", ""),
+                                text, user_id, "ok",
                             )
-                    except Exception:
-                        pass
-                    _send_text(ch, user_id, _koban_err)
+                            ann_state.get("pending", {}).pop(user_id, None)
+                            _save_annotation_state(ann_state)
+                            _saved_as_annotation = True
+                            _send_text(ch, user_id,
+                                "学習協力のコメントとして保存しました 🎉 ありがとうございます！\n"
+                                "引き続き、先ほど送ってもらった写真の工番入力をお願いします。\n"
+                                "（例: 4031-00、IS080064 ／ 中止する場合は「X」）"
+                            )
+                    except Exception as _e:
+                        logger.warning(f"学習協力コメント自動保存に失敗: {_e}")
+                    if not _saved_as_annotation:
+                        # 必ず有効な工番の再入力を求める(C-2方針)
+                        # ステートは STATE_WAITING_KOBAN のまま維持 → 工番が入るまで先に進めない
+                        _send_text(ch, user_id,
+                            "工番が読み取れませんでした。\n"
+                            "工番を入力してください（例: 4031-00、IS080064）。\n"
+                            "中止する場合は「X」。"
+                        )
 
             elif state == STATE_WAITING_BRANCH_CHOICE:
                 # 「1」「2」… の番号、または工番そのもの（4618-01 等）で選択を受け付ける
