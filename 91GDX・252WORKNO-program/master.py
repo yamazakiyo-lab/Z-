@@ -780,6 +780,17 @@ def rename_existing_paths_english_spaces(target_root: Path, *, label: str = ""):
     for root, dirs, files in os.walk(target_root, topdown=False):
         root_path = Path(root)
 
+        # 先頭 "_" のシステムフォルダ(_manual_input / _masters / _annotations /
+        # _LWExtraction 等)は名前正規化の対象外(配下も含む)。
+        # ※ _manual_input が「_manual input」に変換されて手動投入口の判定が
+        #    外れる事故(2026-07-24)の再発防止。
+        try:
+            _rel_parts = root_path.relative_to(target_root).parts
+        except ValueError:
+            _rel_parts = ()
+        if any(part.startswith("_") for part in _rel_parts):
+            continue
+
         for fn in files:
             src = root_path / fn
             desired_name = normalize_existing_path_name(src.name, is_dir=False)
@@ -801,6 +812,8 @@ def rename_existing_paths_english_spaces(target_root: Path, *, label: str = ""):
                 p(f"[WARN] english-space failed{f' ({label})' if label else ''}: {src} ({e})")
 
         for dn in dirs:
+            if dn.startswith("_"):  # システムフォルダ自体もリネームしない
+                continue
             src = root_path / dn
             desired_name = normalize_existing_path_name(src.name, is_dir=True)
             if desired_name == src.name:
