@@ -1,16 +1,30 @@
 """CLI および実行時の設定。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+_91_ROOT = Path(r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画")
+
+
+def _default_gd_root() -> Path:
+    """写真の手動投入口。
+
+    GDX卒業(2026-07-24)後、旧Drive受け皿(_GDExtraction)は「手動投入口」として
+    再利用する。リネーム後の _manual_input があればそちらを優先し、
+    なければ旧名 _GDExtraction を使う(リネーム前後どちらでも動く)。
+    ここに置いた写真フォルダは夜間ランで工番マスタ名に整えられ91へ投入される。
+    """
+    p = _91_ROOT / "_manual_input"
+    return p if p.exists() else _91_ROOT / "_GDExtraction"
+
 
 @dataclass(frozen=True)
 class MainConfig:
-    gd_root: Path = Path(r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_GDExtraction")
+    gd_root: Path = field(default_factory=_default_gd_root)
     target_91_root: Path = Path(r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画")
     target_252_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\25_リビルト・中古機\252_整備資料")
     target_92_root: Optional[Path] = Path(r"Z:\takachiho\2to9_業務別フォルダ\92_PO LIST")
