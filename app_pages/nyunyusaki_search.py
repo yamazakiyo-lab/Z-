@@ -89,15 +89,23 @@ def _index_updated() -> str:
     import os
     from datetime import datetime
     from pathlib import Path as _P
-    base = os.getenv(
-        "GD_EXTRACTION_DIR",
-        r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画\_GDExtraction",
-    )
-    try:
-        p = _P(base) / "工事一覧表.csv"
-        return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
-    except Exception:
-        return "－"
+    # GDX卒業(2026-07-24): _masters優先、旧_GDExtractionフォールバック
+    _root = r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画"
+    bases = [
+        os.getenv("GD_EXTRACTION_DIR", ""),
+        _root + r"\_masters",
+        _root + r"\_GDExtraction",
+    ]
+    for base in bases:
+        if not base:
+            continue
+        try:
+            p = _P(base) / "工事一覧表.csv"
+            if p.exists():
+                return datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
+        except Exception:
+            continue
+    return "－"
 
 
 # ── UI ────────────────────────────────────────────────────────────────────────

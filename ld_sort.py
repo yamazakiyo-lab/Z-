@@ -8,7 +8,7 @@ _LWExtraction/<工番>/ の写真・動画を 91/<工番フルネーム>/B1|B2|B
 
 動作:
   1. _LWExtraction/<工番>/ の画像・動画ファイルを探す
-  2. _GDExtraction/工事一覧表.csv でマスタを読み込む
+  2. _masters(なければ_GDExtraction)/工事一覧表.csv でマスタを読み込む
   3. 91フォルダ内の既存工番フォルダ（フルネーム）を前方一致で検索
      見つからない場合はマスタからフルネームで新規作成
      マスタにもない場合は警告してスキップ
@@ -37,6 +37,8 @@ BASE_DEST = Path(
 )
 LD_EXTRACTION  = BASE_DEST / "_LWExtraction"
 GD_EXTRACTION  = BASE_DEST / "_GDExtraction"
+# GDX卒業(2026-07-24): マスタCSVの恒久置き場。旧_GDExtractionにフォールバックする
+MASTERS_DIR    = BASE_DEST / "_masters"
 ANNOTATIONS_ROOT = BASE_DEST / "_annotations"
 
 MASTER_CSV_NAMES = ("工事一覧表.csv", "CSV工番マスタ.csv", "master.csv")
@@ -129,9 +131,10 @@ def _get_workno(name: str) -> Optional[str]:
 # ── マスタ CSV 読み込み ────────────────────────────────────────────────────────
 
 def _read_master() -> Dict[str, str]:
-    """_GDExtraction/工事一覧表.csv 等を読んで {workno: 工事名} を返す。"""
-    for fname in MASTER_CSV_NAMES:
-        path = GD_EXTRACTION / fname
+    """_masters(なければ_GDExtraction)/工事一覧表.csv 等を読んで {workno: 工事名} を返す。"""
+    for base in (MASTERS_DIR, GD_EXTRACTION):
+      for fname in MASTER_CSV_NAMES:
+        path = base / fname
         if not path.exists():
             continue
         for enc in ("utf-8-sig", "cp932", "utf-8"):
@@ -182,7 +185,7 @@ def _read_master() -> Dict[str, str]:
         logger.info(f"マスタ読込: {path.name} ({len(master)} 件)")
         return master
 
-    logger.warning(f"工事一覧表.csv が見つかりません: {GD_EXTRACTION}")
+    logger.warning(f"工事一覧表.csv が見つかりません: {MASTERS_DIR} / {GD_EXTRACTION}")
     return {}
 
 

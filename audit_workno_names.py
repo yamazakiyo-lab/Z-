@@ -33,7 +33,10 @@ PKG_DIR = HERE / "91GDX・252WORKNO-program"
 OUT = HERE / "audit_workno_names.txt"
 
 BASE = Path(r"Z:\takachiho\2to9_業務別フォルダ")
-MASTER_CSV = BASE / "91_工番別実績写真・動画" / "_GDExtraction" / "工事一覧表.csv"
+# GDX卒業(2026-07-24): _masters優先、旧_GDExtractionフォールバック
+MASTER_CSV = BASE / "91_工番別実績写真・動画" / "_masters" / "工事一覧表.csv"
+if not MASTER_CSV.exists():
+    MASTER_CSV = BASE / "91_工番別実績写真・動画" / "_GDExtraction" / "工事一覧表.csv"
 
 # 監査対象(工番名で並んでいる場所)
 TARGETS = [

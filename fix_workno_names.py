@@ -36,7 +36,10 @@ HERE = Path(__file__).resolve().parent
 PKG_DIR = HERE / "91GDX・252WORKNO-program"
 
 BASE = Path(r"Z:\takachiho\2to9_業務別フォルダ")
-MASTER_CSV = BASE / "91_工番別実績写真・動画" / "_GDExtraction" / "工事一覧表.csv"
+# GDX卒業(2026-07-24): _masters優先、旧_GDExtractionフォールバック
+MASTER_CSV = BASE / "91_工番別実績写真・動画" / "_masters" / "工事一覧表.csv"
+if not MASTER_CSV.exists():
+    MASTER_CSV = BASE / "91_工番別実績写真・動画" / "_GDExtraction" / "工事一覧表.csv"
 
 TARGETS = [
     ("91",   BASE / "91_工番別実績写真・動画", "dir"),
