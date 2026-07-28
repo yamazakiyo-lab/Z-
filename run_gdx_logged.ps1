@@ -554,6 +554,14 @@ try {
         }
     } catch {}
 
+    # ── Blob上の古いログも掃除（保持7日、dailyrun_latest.txt は常に残す）──
+    try {
+        $cleanupPython = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
+        if ($cleanupPython) {
+            & $cleanupPython (Join-Path $pw 'cleanup_blob_logs.py') --days 7
+        }
+    } catch {}
+
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)
