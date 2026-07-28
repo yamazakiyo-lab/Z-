@@ -200,8 +200,7 @@ def _log_qa(upn: str, question: str, answer: str, hits: list[dict]) -> None:
 def main() -> None:
     st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
     st.title("💬 AI Q&A")
-    st.caption("技術・業務の質問にAIが答えます。社内の工番実績に関連情報があれば併せて参照します。"
-               "※やり取りは記録されます。")
+    st.caption("技術・業務の質問にAIが答えます。社内の工番実績に関連情報があれば併せて参照します。")
     st.divider()
 
     if "qa_messages" not in st.session_state:
