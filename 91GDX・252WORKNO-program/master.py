@@ -570,7 +570,10 @@ def rename_92_files_to_master(target_root: Path, master: Dict[str, str]):
         if not new_name_part:
             continue
 
-        desired_name = sanitize_name(f"{workno}_{normalize_master_name(new_name_part)}_PO_LIST{src.suffix}")
+        # 接尾辞は「PO LIST」(スペース)とする。後段のENSPACE処理(英単語間の_を
+        # スペースへ戻す)の最終形と一致させ、毎晩171ファイルが
+        # PO LIST→PO_LIST→PO LIST と改名往復する無駄を止める(2026-07-29修正)
+        desired_name = sanitize_name(f"{workno}_{normalize_master_name(new_name_part)}_PO LIST{src.suffix}")
         desired_path = src.parent / desired_name
 
         if src.name == desired_name:
