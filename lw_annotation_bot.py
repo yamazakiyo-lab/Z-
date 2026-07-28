@@ -1121,9 +1121,9 @@ def cmd_morning_greeting() -> None:
         return
     names = _load_user_names()
     body = (
-        "おはようございます！☀️\n"
-        "今日も良い1日でありますように。\n"
-        "今日の作業中の作業写真投稿のご協力をお願いします！📸"
+        "おはようございます！☀️"
+        "今日も良い1日でありますように。"
+        "作業中写真の投稿協力をお願いします！📸"
     )
     ok = 0
     for user_id in users:
@@ -1319,9 +1319,17 @@ def _load_app_usage(days: int = 7) -> set:
         return set()
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     used = set()
+    from urllib.parse import unquote
     for upn, d in data.items():
         if isinstance(d, str) and d >= cutoff:  # ISO日付は辞書順比較でOK
-            used.add(upn.strip().lower())
+            k = upn.strip().lower()
+            used.add(k)
+            # Easy Authヘッダー由来のキーはURLエンコードされた氏名
+            # (%e5%b1%b1...=山嵜喜隆)の場合があるため、デコード形・
+            # 空白除去形も加えて氏名でも突合できるようにする(2026-07-28)
+            dec = unquote(k).strip().lower()
+            used.add(dec)
+            used.add(_norm_name(dec))
     return used
 
 
@@ -1449,13 +1457,15 @@ def cmd_app_usage_reminder() -> None:
             unmatched += 1
             logger.warning(f"UPN未特定(要マッピング追記): {user_id} ({name})")
             continue
-        if upn in used:
+        # UPNまたは氏名(空白除去)のどちらかが利用記録にあれば利用ありとみなす。
+        # app_usage.json のキーがUPNではなくEasy Auth由来の氏名で記録される
+        # 環境のため(未利用の誤通知 2026-07-27 の修正)
+        if upn in used or nkey in used:
             continue  # 先週 利用あり → 通知不要
         prefix = f"{name}さん、" if name else ""
         msg = (
-            f"{prefix}先週の検索アプリの利用がありませんでした。\n"
-            "是非、ログインして活用してくださいね。\n"
-            "お困りの際は上長に相談してください！"
+            f"{prefix}先週のTSEG WORKSの利用がありませんでした。"
+            "是非、ログインして活用してください!"
         )
         if _send_text(user_id, msg):
             notified += 1

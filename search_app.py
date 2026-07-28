@@ -71,9 +71,11 @@ def _log_app_usage() -> None:
     try:
         upn = ""
         try:
+            from urllib.parse import unquote
             hdrs = st.context.headers or {}
             upn = (hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
                    or hdrs.get("X-Ms-Client-Principal-Name") or "")
+            upn = unquote(upn)  # URLエンコードされた氏名をデコードして記録(2026-07-28)
         except Exception:
             upn = ""
         if not upn:

@@ -135,7 +135,18 @@ def get_search_used() -> set[str]:
         print(f"[WARN] app_usage.json 読込失敗({e}) → 検索アプリ利用は全員×")
         return set()
     cutoff = (date.today() - timedelta(days=DAYS)).isoformat()
-    return {u.lower() for u, d in data.items() if isinstance(d, str) and d >= cutoff}
+    # Easy Authヘッダー由来のキーはURLエンコードされた氏名(%e5..=山嵜喜隆)の
+    # 場合があるため、デコード形・空白除去形も加えて氏名でも突合できるようにする(2026-07-28)
+    from urllib.parse import unquote
+    used: set[str] = set()
+    for u, d in data.items():
+        if isinstance(d, str) and d >= cutoff:
+            k = u.lower()
+            used.add(k)
+            dec = unquote(k).strip().lower()
+            used.add(dec)
+            used.add("".join(dec.split()))
+    return used
 
 
 def _norm(s: str) -> str:
@@ -237,7 +248,8 @@ def main() -> None:
             upn = (u.get("userPrincipalName") or "").lower()
             name = u.get("displayName") or ""
             kind = _kind(upn)
-            s_ok = upn in search_used
+            # UPNまたは氏名(空白除去・小文字)のどちらかで利用ありとみなす
+            s_ok = (upn in search_used) or (_norm(name).lower() in search_used)
             t_ok = upn in teams_active
             both_x = (not s_ok) and (not t_ok)
             if not t_ok:
