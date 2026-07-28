@@ -526,6 +526,34 @@ try {
         }
     }
 
+    # ── ログを Blob にもアップロード（2026-07-28 追加） ──────────────────
+    # VPN・Yドライブ・デスクトップなしでランのログを確認できるようにする。
+    # 固定名 logs/dailyrun_latest.txt も置くので、最新ログはファイル名を知らなくても取れる。
+    try {
+        $blobLogSas = $env:AZURE_BLOB_SAS_TOKEN
+        if (-not $blobLogSas) {
+            $envFile2 = Join-Path $pw '.env'
+            if (Test-Path -LiteralPath $envFile2) {
+                Get-Content -LiteralPath $envFile2 | ForEach-Object {
+                    if ($_ -match '^AZURE_BLOB_SAS_TOKEN=(.+)$') { $blobLogSas = $Matches[1].Trim() }
+                }
+            }
+        }
+        if ($blobLogSas -and $log -and (Test-Path -LiteralPath $log)) {
+            $logLeaf = Split-Path $log -Leaf
+            $blobHdr = @{ 'x-ms-blob-type' = 'BlockBlob'; 'x-ms-blob-content-type' = 'text/plain; charset=utf-8' }
+            foreach ($blobName in @("logs/$logLeaf", 'logs/dailyrun_latest.txt')) {
+                $blobUri = "https://tsegphotos.blob.core.windows.net/lw-raw/$blobName`?$blobLogSas"
+                try {
+                    Invoke-RestMethod -Uri $blobUri -Method Put -InFile $log -Headers $blobHdr | Out-Null
+                    Write-Host "[BLOBLOG] uploaded: $blobName"
+                } catch {
+                    Write-Warning "[BLOBLOG] upload failed: $blobName ($_)"
+                }
+            }
+        }
+    } catch {}
+
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)
