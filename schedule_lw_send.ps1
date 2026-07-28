@@ -2,7 +2,7 @@
 # schedule_lw_send.ps1
 # Register LINE WORKS Bot scheduled tasks
 # Tasks:
-#   LW_Morning_Greeting   Daily 08:05  --morning-greeting
+#   LW_Morning_Greeting   Daily 08:30  --morning-greeting
 #   LW_Send_Morning       Daily 10:00  --send
 #   LW_Send_Afternoon     Daily 15:00  --send
 #   LW_Ranking_Weekly     Daily 10:15  --ranking-weekly (fires only on first workday of week)
@@ -75,12 +75,12 @@ $trCheckLogs = 'powershell -NoProfile -ExecutionPolicy Bypass -File "' + $checkL
 schtasks /Create /SC DAILY /TN "CHECK_DAILYRUNS" /TR $trCheckLogs /ST 12:00 /RL HIGHEST /F
 Write-Host "OK: CHECK_DAILYRUNS 12:00"
 
-# LW_Morning_Greeting: daily 08:05
+# LW_Morning_Greeting: daily 08:30
 $batMorning = Resolve-TaskPath (Join-Path $pw 'run_lw_morning_greeting_wrapper.bat')
 $a4 = New-ScheduledTaskAction -Execute $batMorning
-$t4 = New-ScheduledTaskTrigger -Daily -At "08:05"
+$t4 = New-ScheduledTaskTrigger -Daily -At "08:30"
 Register-ScheduledTask -TaskName "LW_Morning_Greeting" -Action $a4 -Trigger $t4 -Settings $settings -RunLevel Highest -Force | Out-Null
-Write-Host "OK: LW_Morning_Greeting 08:05"
+Write-Host "OK: LW_Morning_Greeting 08:30"
 
 # LW_Evening_Reminder: daily 16:55
 $batEvening = Resolve-TaskPath (Join-Path $pw 'run_lw_evening_reminder_wrapper.bat')
