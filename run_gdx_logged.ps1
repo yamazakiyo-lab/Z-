@@ -481,6 +481,13 @@ try {
         if (-not $isDryRun) {
             $gdxOverall = if ($results.GDX -eq 'PASS' -and $results.AzCopy -ne 'FAIL') { 'PASS' } else { 'FAIL' }
             $statusMsg = "GDX=$($results.GDX), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
+            # リポジトリ整合チェック用: 実行ホストのコミットと未コミット変更数を添える
+            # (ノート側HEADと突き合わせて、ノート⇔デスクトップの同期ずれを検知する)
+            try {
+                $repoHead  = (& git -C $pw rev-parse --short HEAD 2>$null)
+                $repoDirty = @(& git -C $pw status --porcelain 2>$null).Count
+                if ($repoHead) { $statusMsg += ", commit=$repoHead, dirty=$repoDirty" }
+            } catch {}
             # SYSTEM ユーザーでは 'py' が PATH にないため $ragPython を使用
             $statusPython = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
             Write-Host "[STATUS] タスクステータスを Blob に書き込み中..."
