@@ -32,7 +32,7 @@ TSEG のデスクトップ(KEIRI-PC)で動くスケジュールタスクの正�
 | タスク名 | 実行内容(Task To Run) | スケジュール |
 |---|---|---|
 | GDX_DailyRun | `<DIR>\run_gdx_wrapper.bat` | 毎日 0:00 |
-| LW_Morning_Greeting | `<DIR>\run_lw_morning_greeting_wrapper.bat` | 毎日 8:05 |
+| LW_Morning_Greeting | `<DIR>\run_lw_morning_greeting_wrapper.bat` | 毎日 8:30 |
 | LW_Blob_Sync | `<DIR>\lw_blob_sync_wrapper.bat` | 毎日 8:15 |
 | LW_Send_Morning | `<DIR>\run_lw_send_wrapper.bat` | 毎日 10:00 |
 | LW_Ranking_Weekly | `<DIR>\run_lw_ranking_wrapper.bat` | 毎日 10:15 |
@@ -40,7 +40,7 @@ TSEG のデスクトップ(KEIRI-PC)で動くスケジュールタスクの正�
 | LW_Send_Afternoon | `<DIR>\run_lw_send_wrapper.bat` | 毎日 15:00 |
 | LW_Evening_Reminder | `<DIR>\run_lw_evening_reminder_wrapper.bat` | 毎日 16:55 |
 | LW_Cleanup_Reminder | `<DIR>\run_lw_cleanup_wrapper.bat` | 毎週月曜 14:00 |
-| TSEG_検索アプリ未利用通知 | `<DIR>\run_app_usage_reminder.bat` | 毎週月曜 8:00 |
+| TSEG_検索アプリ未利用通知 | `<DIR>\run_app_usage_reminder.bat` | 毎週月曜 9:30 |
 | TSEG_週次利用レポート | `<DIR>\run_usage_report.bat` | 毎週月曜 9:00 |
 | TSEG_ログ掃除 | `<DIR>\run_log_cleanup.bat` | 毎日 12:30（ノート・デスクトップ両方に設定） |
 | TSEG_マスタCSV鮮度チェック | `<DIR>\run_master_csv_check.bat` | 毎週土曜 9:00（古ければ山嵜喜隆・山嵜絵里へLW通知） |
@@ -62,7 +62,7 @@ schtasks /Create /TN "LW_Evening_Reminder" /TR "`"C:\Users\user\tseg_vscode\Zフ
 schtasks /Create /TN "TSEG_タスク点検通知" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_task_check.bat`"" /SC DAILY /ST 12:00 /F
 
 # 毎週月曜系
-schtasks /Create /TN "TSEG_検索アプリ未利用通知" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_app_usage_reminder.bat`"" /SC WEEKLY /D MON /ST 08:00 /F
+schtasks /Create /TN "TSEG_検索アプリ未利用通知" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_app_usage_reminder.bat`"" /SC WEEKLY /D MON /ST 09:30 /F
 schtasks /Create /TN "TSEG_週次利用レポート" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_usage_report.bat`"" /SC WEEKLY /D MON /ST 09:00 /F
 schtasks /Create /TN "TSEG_マスタCSV鮮度チェック" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_master_csv_check.bat`"" /SC WEEKLY /D SAT /ST 09:00 /F
 ```
