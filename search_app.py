@@ -126,15 +126,17 @@ manual = st.Page("app_pages/manual.py", title="利用者マニュアル", icon="
 _pages = [home, fmp_search, koban_search, nyunyusaki_search, zaiko_search, tools_search, ai_qa, manual]
 
 # AI Q&Aログは管理者(QA_LOG_ADMINS)だけメニューに表示する
+# ※氏名は「山嵜 絵里」のようにスペースが入る表記ゆれがあるため、
+#   空白を全除去した形で比較する(2026-07-28)
 import os as _os
-_admins = {u.strip().lower() for u in
+_admins = {"".join(u.split()).lower() for u in
            _os.getenv("QA_LOG_ADMINS", "yamazakiyo@tseg.co.jp").split(",") if u.strip()}
 try:
     from urllib.parse import unquote as _unquote
     _hdrs = st.context.headers or {}
     _upn = (_hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
             or _hdrs.get("X-Ms-Client-Principal-Name") or "").strip()
-    _upn = _unquote(_upn).strip().lower()  # URLエンコードされた氏名をデコード
+    _upn = "".join(_unquote(_upn).split()).lower()  # デコード+空白除去
 except Exception:
     _upn = ""
 if _upn in _admins:

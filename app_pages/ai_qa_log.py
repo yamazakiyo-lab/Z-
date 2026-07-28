@@ -17,21 +17,22 @@ import streamlit as st
 
 JST = timezone(timedelta(hours=9))
 QA_LOG_CONTAINER = os.getenv("LW_BLOB_CONTAINER", "lw-raw")
+# 氏名の空白表記ゆれ(「山嵜 絵里」等)に影響されないよう空白全除去で比較する
 ADMINS = {
-    u.strip().lower()
+    "".join(u.split()).lower()
     for u in os.getenv("QA_LOG_ADMINS", "yamazakiyo@tseg.co.jp").split(",")
     if u.strip()
 }
 
 
 def _current_upn() -> str:
-    """Easy Authヘッダーからログインユーザーを取得(URLエンコードされた氏名をデコード)。"""
+    """Easy Authヘッダーからログインユーザーを取得(デコード+空白除去+小文字)。"""
     try:
         from urllib.parse import unquote
         hdrs = st.context.headers or {}
         raw = (hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
                or hdrs.get("X-Ms-Client-Principal-Name") or "").strip()
-        return unquote(raw).strip().lower()
+        return "".join(unquote(raw).split()).lower()
     except Exception:
         return ""
 
