@@ -82,33 +82,43 @@ def _get_search_client():
 
 # ── 社内データ検索(RAG) ───────────────────────────────────────────────────────
 def _search_internal(query: str) -> list[dict]:
+    """規程と工番データを別枠で検索して統合する。
+
+    1回の検索だと語の出現頻度で特定文書(例: 「休暇」「申請」が頻出する
+    育児・介護休業規程)に枠を占有され、本命の条文(就業規則の年休など)が
+    落ちることがあるため、規程枠(kitei)と実績枠を分けて取得する。
+    """
     client = _get_search_client()
     if client is None:
         return []
-    try:
-        results = client.search(
-            search_text=query,
-            top=RAG_TOP,
-            select=["workno", "workno_name", "phase", "file_name",
-                    "media_type", "content_text"],
-        )
-        hits = []
-        for r in results:
-            txt = (r.get("content_text") or "").strip()
-            if not txt:
-                continue
-            is_kitei = (r.get("media_type") or "") == "kitei"
-            hits.append({
-                "workno": r.get("workno") or "",
-                "workno_name": r.get("workno_name") or "",
-                "phase": r.get("phase") or "",
-                "file_name": r.get("file_name") or "",
-                "is_kitei": is_kitei,
-                "text": txt[:1000 if is_kitei else 500],  # 規程条文は長めに渡す
-            })
-        return hits
-    except Exception:
-        return []
+
+    _select = ["workno", "workno_name", "phase", "file_name",
+               "media_type", "content_text"]
+
+    def _run(filter_expr: str, top: int) -> list:
+        try:
+            return list(client.search(
+                search_text=query, top=top, filter=filter_expr, select=_select))
+        except Exception:
+            return []
+
+    results = _run("media_type eq 'kitei'", 4) + _run("media_type ne 'kitei'", 3)
+
+    hits = []
+    for r in results:
+        txt = (r.get("content_text") or "").strip()
+        if not txt:
+            continue
+        is_kitei = (r.get("media_type") or "") == "kitei"
+        hits.append({
+            "workno": r.get("workno") or "",
+            "workno_name": r.get("workno_name") or "",
+            "phase": r.get("phase") or "",
+            "file_name": r.get("file_name") or "",
+            "is_kitei": is_kitei,
+            "text": txt[:1000 if is_kitei else 500],  # 規程条文は長めに渡す
+        })
+    return hits
 
 
 def _build_context(hits: list[dict]) -> str:
