@@ -3,6 +3,8 @@ Pillow>=10.0.0
 openpyxl>=3.1.0
 azure-search-documents>=11.4.0
 openai>=1.30.0  # AI Q&A (Azure OpenAI GPT-4o)
+python-docx>=1.1.0  # 規程集インデクサ (export_kitei_index.py)
+pypdf>=4.0.0        # 規程集インデクサ (PDF抽出)
 azure-core>=1.30.0
 python-dotenv>=1.0.0
 # Google Drive API

@@ -34,6 +34,8 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 製造業(産業機械・省力化装置)の現場からの質問に、日本語で簡潔・正確に答えてください。
 
 - 「社内データ」として渡された工番実績・コメントに関連情報があれば、それを優先して回答に使い、どの工番の情報かを明示すること。
+- 「社内データ」に【規程名】付きの社内規程の条文が含まれる場合は、それを根拠として回答し、規程名と条番号を必ず明示すること(例: 「就業規則 第23条によると…」)。人事・総務に関する質問(休暇・手当・勤務時間・慶弔など)はこの規程が最優先の根拠。
+- 規程の条文が見つからない人事・総務の質問には、推測で答えず「規程に該当箇所が見つからないため、人事課に確認してください」と案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
 - 回答は現場の人が読みやすいよう、簡潔にすること。"""
@@ -87,19 +89,22 @@ def _search_internal(query: str) -> list[dict]:
         results = client.search(
             search_text=query,
             top=RAG_TOP,
-            select=["workno", "workno_name", "phase", "file_name", "content_text"],
+            select=["workno", "workno_name", "phase", "file_name",
+                    "media_type", "content_text"],
         )
         hits = []
         for r in results:
             txt = (r.get("content_text") or "").strip()
             if not txt:
                 continue
+            is_kitei = (r.get("media_type") or "") == "kitei"
             hits.append({
                 "workno": r.get("workno") or "",
                 "workno_name": r.get("workno_name") or "",
                 "phase": r.get("phase") or "",
                 "file_name": r.get("file_name") or "",
-                "text": txt[:500],
+                "is_kitei": is_kitei,
+                "text": txt[:1000 if is_kitei else 500],  # 規程条文は長めに渡す
             })
         return hits
     except Exception:
@@ -111,8 +116,11 @@ def _build_context(hits: list[dict]) -> str:
         return "(該当する社内データなし)"
     lines = []
     for h in hits:
-        head = f"[工番 {h['workno']} {h['workno_name']}".strip() + (
-            f" / {h['phase']}]" if h["phase"] else "]")
+        if h.get("is_kitei"):
+            head = f"[社内規程: {h['workno_name']}]"
+        else:
+            head = f"[工番 {h['workno']} {h['workno_name']}".strip() + (
+                f" / {h['phase']}]" if h["phase"] else "]")
         lines.append(f"{head} {h['text']}")
     return "\n".join(lines)
 
@@ -205,9 +213,13 @@ def main() -> None:
             if hits:
                 with st.expander(f"参照した社内データ({len(hits)}件)"):
                     for h in hits:
-                        st.markdown(
-                            f"- **工番 {h['workno']}** {h['workno_name']} "
-                            f"{('/ ' + h['phase']) if h['phase'] else ''} — {h['text'][:120]}…")
+                        if h.get("is_kitei"):
+                            st.markdown(
+                                f"- 📖 **{h['workno_name']}**(社内規程) — {h['text'][:120]}…")
+                        else:
+                            st.markdown(
+                                f"- **工番 {h['workno']}** {h['workno_name']} "
+                                f"{('/ ' + h['phase']) if h['phase'] else ''} — {h['text'][:120]}…")
 
     st.session_state.qa_messages.append({"role": "assistant", "content": answer})
     _log_qa(upn, question, answer, hits)

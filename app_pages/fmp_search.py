@@ -131,6 +131,9 @@ def do_search(
     if media_types:
         types_str = ",".join(media_types)
         filters.append(f"search.in(media_type, '{types_str}', ',')")
+    else:
+        # 種別未指定でも社内規程(kitei)は写真検索に出さない(AI Q&A専用データ)
+        filters.append("media_type ne 'kitei'")
 
     # 工番パターン（例: 3477-00）は workno フィールドで完全一致フィルタを追加
     # → 標準アナライザーが "-" を分割するため "4555-00" も "00" でマッチする問題を防ぐ
