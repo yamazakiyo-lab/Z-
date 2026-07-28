@@ -11,7 +11,7 @@
     python run_rag_index.py --dry-run
 
 自動実行への組み込み方:
-    動作確認が完了したら run_gdx.py の main() 末尾に以下を追加する:
+    動作確認が完了したら run_mie.py の main() 末尾に以下を追加する:
 
         import subprocess
         subprocess.run([sys.executable, "run_rag_index.py"], check=False)

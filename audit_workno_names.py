@@ -18,7 +18,7 @@ r"""工番フォルダ名が工事一覧表と一致しているかを全社フ�
 
 使い方(PowerShell):
     cd C:\Users\Yamazakiyo\tseg_vscode\Zフォルダ整理
-    & ".\91GDX・252WORKNO-program\venv\Scripts\python.exe" audit_workno_names.py
+    & ".\91MIE・252WORKNO-program\venv\Scripts\python.exe" audit_workno_names.py
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from collections import defaultdict
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-PKG_DIR = HERE / "91GDX・252WORKNO-program"
+PKG_DIR = HERE / "91MIE・252WORKNO-program"
 OUT = HERE / "audit_workno_names.txt"
 
 BASE = Path(r"Z:\takachiho\2to9_業務別フォルダ")
@@ -60,14 +60,14 @@ def main() -> int:
         print(f"[ERROR] 工事一覧表.csv が見つかりません: {MASTER_CSV}")
         return 1
 
-    _ensure_pkg("gdxpkg", PKG_DIR)
+    _ensure_pkg("miepkg", PKG_DIR)
     importlib.invalidate_caches()
     try:
-        m = importlib.import_module("gdxpkg.master")
-        u = importlib.import_module("gdxpkg.utils")
+        m = importlib.import_module("miepkg.master")
+        u = importlib.import_module("miepkg.utils")
     except ImportError as e:
         print(f"[ERROR] 読み込み失敗: {e}")
-        print(r'  venv で実行してください: & ".\91GDX・252WORKNO-program\venv\Scripts\python.exe" audit_workno_names.py')
+        print(r'  venv で実行してください: & ".\91MIE・252WORKNO-program\venv\Scripts\python.exe" audit_workno_names.py')
         return 1
 
     master = m._read_csv_master(MASTER_CSV)

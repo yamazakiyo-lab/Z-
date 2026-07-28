@@ -2,7 +2,7 @@ import os
 import sys
 import importlib.util
 
-pkg_dir = os.path.join(os.path.dirname(__file__), '91GDX・252WORKNO-program')
+pkg_dir = os.path.join(os.path.dirname(__file__), '91MIE・252WORKNO-program')
 init_py = os.path.join(pkg_dir, '__init__.py')
 
 spec = importlib.util.spec_from_file_location('gdx91', init_py)

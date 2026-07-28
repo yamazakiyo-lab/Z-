@@ -1,8 +1,8 @@
 @echo off
 REM ============================================================
 REM KEIRI-PC 用テンプレート
-REM 初回セットアップ時: このファイルを run_gdx_wrapper.bat にコピー
-REM   copy run_gdx_wrapper.bat.template run_gdx_wrapper.bat
+REM 初回セットアップ時: このファイルを run_mie_wrapper.bat にコピー
+REM   copy run_mie_wrapper.bat.template run_mie_wrapper.bat
 REM ============================================================
 set "SCRIPT_DIR=%~dp0"
 
@@ -16,4 +16,4 @@ git pull origin master
 git stash pop
 
 REM PowerShell スクリプト実行
-powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run_gdx_logged.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%run_mie_logged.ps1"

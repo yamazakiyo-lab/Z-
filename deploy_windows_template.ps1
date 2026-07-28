@@ -26,7 +26,7 @@ if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir | Out
 
 if ($CreateTasks) {
     Write-Output 'Creating scheduled tasks (local user)...'
-    $gdx = "schtasks /Create /TN `"GDX_DailyRun`" /SC DAILY /ST 00:00 /TR `"$DeployPath\\run_gdx_wrapper.bat`" /F"
+    $gdx = "schtasks /Create /TN `"GDX_DailyRun`" /SC DAILY /ST 00:00 /TR `"$DeployPath\\run_mie_wrapper.bat`" /F"
     $other = "schtasks /Create /TN `"OTHER_DailyRun`" /SC DAILY /ST 00:00 /TR `"$DeployPath\\run_91other_wrapper.bat`" /F"
     $check = "schtasks /Create /TN `"CHECK_DAILYRUNS`" /SC DAILY /ST 00:01 /TR `"powershell -NoProfile -ExecutionPolicy Bypass -File '$DeployPath\\check_and_cleanup_logs.ps1'`" /F"
     iex $gdx; iex $other; iex $check

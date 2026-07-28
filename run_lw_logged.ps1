@@ -42,7 +42,7 @@ try {
     }
 
     # Python 検索（GDX venv → system py）
-    $gdxVenv = Join-Path $pw '91GDX・252WORKNO-program\venv\Scripts\python.exe'
+    $gdxVenv = Join-Path $pw '91MIE・252WORKNO-program\venv\Scripts\python.exe'
     if (Test-Path -LiteralPath $gdxVenv) {
         $python = $gdxVenv
     } else {
@@ -81,7 +81,7 @@ try {
 } catch {
     Write-Error $_
     if (-not $DryRun) {
-        $python2 = if (Test-Path -LiteralPath (Join-Path $pw '91GDX・252WORKNO-program\venv\Scripts\python.exe')) { Join-Path $pw '91GDX・252WORKNO-program\venv\Scripts\python.exe' } else { 'py' }
+        $python2 = if (Test-Path -LiteralPath (Join-Path $pw '91MIE・252WORKNO-program\venv\Scripts\python.exe')) { Join-Path $pw '91MIE・252WORKNO-program\venv\Scripts\python.exe' } else { 'py' }
         & $python2 (Join-Path $pw 'write_task_status.py') --task lw --status FAIL --message "$_"
     }
 } finally {

@@ -14,7 +14,7 @@ r"""工番フォルダ名を工事一覧表に合わせて修復する(既定は
 
 使い方(PowerShell):
     cd C:\Users\Yamazakiyo\tseg_vscode\Zフォルダ整理
-    $py = ".\91GDX・252WORKNO-program\venv\Scripts\python.exe"
+    $py = ".\91MIE・252WORKNO-program\venv\Scripts\python.exe"
 
     & $py fix_workno_names.py                  # ドライラン(何も変更しない)
     & $py fix_workno_names.py --only 91        # 91だけ様子を見る
@@ -33,7 +33,7 @@ from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-PKG_DIR = HERE / "91GDX・252WORKNO-program"
+PKG_DIR = HERE / "91MIE・252WORKNO-program"
 
 BASE = Path(r"Z:\takachiho\2to9_業務別フォルダ")
 # GDX卒業(2026-07-24): _masters優先、旧_GDExtractionフォールバック
@@ -58,9 +58,9 @@ def _ensure_pkg(name: str, path: Path) -> None:
 
 
 def _load_modules():
-    _ensure_pkg("gdxpkg", PKG_DIR)
+    _ensure_pkg("miepkg", PKG_DIR)
     importlib.invalidate_caches()
-    return importlib.import_module("gdxpkg.master"), importlib.import_module("gdxpkg.utils")
+    return importlib.import_module("miepkg.master"), importlib.import_module("miepkg.utils")
 
 
 def do_undo(csv_path: Path) -> int:
@@ -108,7 +108,7 @@ def main() -> int:
         m, u = _load_modules()
     except ImportError as e:
         print(f"[ERROR] 読み込み失敗: {e}")
-        print(r'  venv で実行してください: & ".\91GDX・252WORKNO-program\venv\Scripts\python.exe" fix_workno_names.py')
+        print(r'  venv で実行してください: & ".\91MIE・252WORKNO-program\venv\Scripts\python.exe" fix_workno_names.py')
         return 1
 
     master = m._read_csv_master(MASTER_CSV)

@@ -11,7 +11,7 @@
 1. ワークスペースをサーバーへコピー（例: `robocopy` または SMB）。
 2. サーバーで venv を作成し依存をインストール。
 3. `credentials.json` / `token.json` を安全な場所に配置（アクセス権を限定）。
-4. スケジュールタスク（`schtasks`）を作成して `run_gdx_wrapper.bat` / `run_91other_wrapper.bat` を 00:00 に実行する。要件に応じて「ユーザーがログオンしているかどうかに関係なく実行」設定にする。
+4. スケジュールタスク（`schtasks`）を作成して `run_mie_wrapper.bat` / `run_91other_wrapper.bat` を 00:00 に実行する。要件に応じて「ユーザーがログオンしているかどうかに関係なく実行」設定にする。
 5. 日次ログ集約（`check_and_cleanup_logs.ps1`）を 00:01 に実行するタスクを作成。
 6. 手動テスト実行 → `logs/` と `daily_runs_summary_*.txt` を確認。
 
@@ -32,7 +32,7 @@ mkdir logs
 
 スケジュールタスク作成（現在ログオン中のユーザーで登録する例）
 ```powershell
-schtasks /Create /TN "GDX_DailyRun" /SC DAILY /ST 00:00 /TR "C:\Deploy\gdx_workspace\run_gdx_wrapper.bat" /F
+schtasks /Create /TN "GDX_DailyRun" /SC DAILY /ST 00:00 /TR "C:\Deploy\gdx_workspace\run_mie_wrapper.bat" /F
 schtasks /Create /TN "OTHER_DailyRun" /SC DAILY /ST 00:00 /TR "C:\Deploy\gdx_workspace\run_91other_wrapper.bat" /F
 schtasks /Create /TN "CHECK_DAILYRUNS" /SC DAILY /ST 00:01 /TR "powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\Deploy\gdx_workspace\check_and_cleanup_logs.ps1'" /F
 ```

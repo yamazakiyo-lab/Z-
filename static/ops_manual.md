@@ -14,7 +14,7 @@ Windows タスクスケジューラで、毎日 00:00 に2本のタスクを実�
 
 | タスク | 実行経路 |
 | --- | --- |
-| GDX_DailyRun | run_gdx_wrapper.bat → run_gdx_logged.ps1 → run_gdx.py → 91GDX・252WORKNO-program/cli.py |
+| GDX_DailyRun | run_mie_wrapper.bat → run_mie_logged.ps1 → run_mie.py → 91MIE・252WORKNO-program/cli.py |
 | OTHER_DailyRun | run_91other_wrapper.bat → run_91other_logged.ps1 → run_91other.py → 91OTHER-program/cleanup.py |
 
 【2026-07-18 更新】 両タスクの wrapper 冒頭で最新コードを自動取得するようにした(git stash → git pull origin master → git stash pop)。従来 GDX のみだったが OTHER にも追加。実行ホストは常に master ブランチで運用する。
@@ -37,7 +37,7 @@ Windows タスクスケジューラで、毎日 00:00 に2本のタスクを実�
 
 - 手動投入口(`_manual_input`)経由: 置かれた写真フォルダを夜間ラン([2]工程)が工番マスタ名に整えて 91 の B4 へ投入する。フォルダ名の先頭に工番を付けておくこと(例: `4031-00 ○○作業`)。
 
-- デイリーランは `GDX_NO_DRIVE=1`(run_gdx_logged.ps1 で設定)で動き、Google Drive への接続は行わない。
+- デイリーランは `GDX_NO_DRIVE=1`(run_mie_logged.ps1 で設定)で動き、Google Drive への接続は行わない。
 
 ### 4-2. 工番マスタによる補正
 
@@ -144,7 +144,7 @@ photo_video_general の当日ログが空になることがあるが、これは
 
 - 検索アプリ: ログインを Entra ID に一本化(Google認証を廃止)。部品在庫の見積単価を J列 に変更。
 
-- デイリーラン安定化: run_lw_logged.ps1 / run_gdx_logged.ps1 のPython起動から -3 を除去(py→python.exe直結環境での「Unknown option: -3」を回避)。
+- デイリーラン安定化: run_lw_logged.ps1 / run_mie_logged.ps1 のPython起動から -3 を除去(py→python.exe直結環境での「Unknown option: -3」を回避)。
 
 - スケジュールタスク運用ルール: PowerShellで %CD% を使わない(展開されず壊れる)、「全タスク一括再作成」を実行しない。正式定義・復旧手順は SCHEDULED_TASKS.md 参照。
 

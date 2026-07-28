@@ -1,6 +1,6 @@
 """organizer.py の _remove_B4_and_empty_subdirs バグ修正スクリプト"""
 
-TARGET = r'C:\Users\Yamazakiyo\tseg_vscode\Zフォルダ整理\91GDX・252WORKNO-program\organizer.py'
+TARGET = r'C:\Users\Yamazakiyo\tseg_vscode\Zフォルダ整理\91MIE・252WORKNO-program\organizer.py'
 
 with open(TARGET, encoding='utf-8') as f:
     lines = f.readlines()

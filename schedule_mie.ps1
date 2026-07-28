@@ -26,7 +26,7 @@ function Resolve-ScheduledTaskPath {
 	return $Path
 }
 
-$script = Resolve-ScheduledTaskPath -Path (Join-Path $pw "run_gdx_wrapper.bat")
+$script = Resolve-ScheduledTaskPath -Path (Join-Path $pw "run_mie_wrapper.bat")
 
 Write-Host "Registering scheduled task 'GDX_DailyRun' to run daily at $Time"
 

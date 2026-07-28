@@ -131,7 +131,8 @@ def parse_args() -> MainConfig:
         drive_parent=args.drive_parent if args.drive_parent else default.drive_parent,
         use_drive=not (
             args.no_drive
-            or os.getenv("GDX_NO_DRIVE", "").strip().lower() in {"1", "true", "yes"}
+            or os.getenv("MIE_NO_DRIVE", "").strip().lower() in {"1", "true", "yes"}
+            or os.getenv("GDX_NO_DRIVE", "").strip().lower() in {"1", "true", "yes"}  # 旧名も受付
         ),
         log_drive_descendant_counts=args.log_drive_descendant_counts,
         sync_gdx_to_drive_during_process=not args.no_sync_during_process,

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import List
 
 PROJECTS = [
-    Path("91GDX・252WORKNO-program"),
+    Path("91MIE・252WORKNO-program"),
     Path("91OTHER-program"),
 ]
 

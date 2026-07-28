@@ -1,7 +1,7 @@
 # 91フォルダ整理＆GDX同期スクリプト
 
 > **GDX卒業 (2026-07-24)**: 写真取り込みは LINE WORKS bot に一本化した。
-> デイリーランは `GDX_NO_DRIVE=1`（run_gdx_logged.ps1 で設定）により
+> デイリーランは `GDX_NO_DRIVE=1`（run_mie_logged.ps1 で設定）により
 > Google Drive 連携（下記の [1] 吸い取り / [4] 同期）をスキップして動く。
 > 91整理・工番マスタ整合・B4投入などのローカル処理は従来どおり有効。
 > マスタCSV（工事一覧表・発注者一覧表）の恒久置き場は `<91ルート>\_masters`
@@ -25,7 +25,7 @@
 ### 1) 依存パッケージをインストール
 
 ```powershell
-cd "C:\Users\Yamazakiyo\tseg_vscode\Zフォルダ整理\91GDX・252WORKNO-program"
+cd "C:\Users\Yamazakiyo\tseg_vscode\Zフォルダ整理\91MIE・252WORKNO-program"
 py -m pip install -r requirements.txt
 ```
 

@@ -31,7 +31,7 @@ TSEG のデスクトップ(KEIRI-PC)で動くスケジュールタスクの正�
 
 | タスク名 | 実行内容(Task To Run) | スケジュール |
 |---|---|---|
-| GDX_DailyRun | `<DIR>\run_gdx_wrapper.bat` | 毎日 0:00 |
+| GDX_DailyRun | `<DIR>\run_mie_wrapper.bat` | 毎日 0:00 |
 | LW_Morning_Greeting | `<DIR>\run_lw_morning_greeting_wrapper.bat` | 毎日 8:30 |
 | LW_Blob_Sync | `<DIR>\lw_blob_sync_wrapper.bat` | 毎日 8:15 |
 | LW_Send_Morning | `<DIR>\run_lw_send_wrapper.bat` | 毎日 10:00 |
@@ -54,7 +54,7 @@ TSEG のデスクトップ(KEIRI-PC)で動くスケジュールタスクの正�
 
 ```powershell
 # 毎日系
-schtasks /Create /TN "GDX_DailyRun" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_gdx_wrapper.bat`"" /SC DAILY /ST 00:00 /F
+schtasks /Create /TN "GDX_DailyRun" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_mie_wrapper.bat`"" /SC DAILY /ST 00:00 /F
 schtasks /Create /TN "LW_Blob_Sync" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\lw_blob_sync_wrapper.bat`"" /SC DAILY /ST 08:15 /F
 schtasks /Create /TN "LW_Send_Morning" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_lw_send_wrapper.bat`"" /SC DAILY /ST 10:00 /F
 schtasks /Create /TN "LW_Send_Afternoon" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_lw_send_wrapper.bat`"" /SC DAILY /ST 15:00 /F

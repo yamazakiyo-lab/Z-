@@ -1,6 +1,6 @@
 """Blob上のデイリーランログ(lw-raw/logs/)を保持期間で掃除する。
 
-run_gdx_logged.ps1 がログを logs/dailyrun_*.txt としてBlobにアップロードする
+run_mie_logged.ps1 がログを logs/dailyrun_*.txt としてBlobにアップロードする
 (2026-07-28追加)ため、その置き場を定期掃除する。dailyrun_latest.txt は常に残す。
 
 使い方:

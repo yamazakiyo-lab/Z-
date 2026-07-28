@@ -24,7 +24,8 @@ $env:GDX_RUNTIME_ROOT = $runtimeRoot
 # ── GDX卒業(2026-07-24): Google Drive連携を無効化 ─────────────────────
 # 写真取り込みはLINE WORKS botに一本化。Drive吸い取り[1]と最終同期[4]を止める。
 # 元に戻す場合はこの行を削除（またはコメントアウト）する。
-$env:GDX_NO_DRIVE = '1'
+$env:MIE_NO_DRIVE = '1'
+$env:GDX_NO_DRIVE = '1'  # 旧名(移行期間の互換用)
 
 $lockDir = Join-Path $pw '.runtime'
 if (-not (Test-Path $lockDir)) { New-Item -ItemType Directory -Path $lockDir -Force | Out-Null }
@@ -95,9 +96,9 @@ try {
     }
 
     $launcher = 'py'
-    $script = Join-Path $pw 'run_gdx.py'
+    $script = Join-Path $pw 'run_mie.py'
     $gdxProjectDir = Get-ChildItem -LiteralPath $pw -Directory |
-        Where-Object { $_.Name -like '91GDX*252WORKNO-program' } |
+        Where-Object { $_.Name -like '91MIE*252WORKNO-program' -or $_.Name -like '91GDX*252WORKNO-program' } |
         Select-Object -First 1
     $venvPython = if ($gdxProjectDir) {
         Join-Path $gdxProjectDir.FullName 'venv\Scripts\python.exe'
@@ -173,7 +174,7 @@ try {
             Write-Host "[GDX] ✓ GDXパイプライン完了"
         } else {
             $results.GDX = 'FAIL'
-            Write-Warning "[GDX] ✗ run_gdx.py がエラーで終了しました (code $LASTEXITCODE)。以降のステップは続行します。"
+            Write-Warning "[GDX] ✗ run_mie.py がエラーで終了しました (code $LASTEXITCODE)。以降のステップは続行します。"
         }
 
         # ── [2] OTHER処理実行 ────────────────────────────────────────────
@@ -253,7 +254,7 @@ try {
         $ragDir = $pw  # $PSScriptRoot（UNCパス）を使用。$env:USERPROFILEはデスクトップPCのローカルパスになるため不可
         $ragPython = Join-Path $ragDir 'rag_venv\Scripts\python.exe'
         if (-not (Test-Path -LiteralPath $ragPython)) {
-            $ragPython = Join-Path $ragDir '91GDX・252WORKNO-program\venv\Scripts\python.exe'
+            $ragPython = Join-Path $ragDir '91MIE・252WORKNO-program\venv\Scripts\python.exe'
         }
         if (-not (Test-Path -LiteralPath $ragPython)) { $ragPython = $venvPython }
 
