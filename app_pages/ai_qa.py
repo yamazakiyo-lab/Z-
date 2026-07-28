@@ -81,24 +81,55 @@ def _get_search_client():
 
 
 # ── 社内データ検索(RAG) ───────────────────────────────────────────────────────
-def _search_internal(query: str) -> list[dict]:
+def _extract_keywords(openai_client, question: str) -> str:
+    """話し言葉の質問を、規程・実績検索用のキーワードに変換する。
+
+    例: 「有給休暇は当日申請でもいい？」→「年次有給休暇 請求 届出 期限 手続」
+    話し言葉(当日申請)と条文の書き言葉(前日までに請求)の語のすれ違いを埋める。
+    失敗時は元の質問文をそのまま返す。
+    """
+    try:
+        from rag.config import OPENAI_GPT4O_DEPLOYMENT
+        resp = openai_client.chat.completions.create(
+            model=OPENAI_GPT4O_DEPLOYMENT,
+            messages=[{
+                "role": "user",
+                "content": (
+                    "次の質問を、社内規程・作業記録の全文検索に使うキーワードに変換してください。"
+                    "名詞・専門用語を中心に3〜8語、スペース区切りで出力。"
+                    "規程で使われる正式な言い回し(例: 有給→年次有給休暇、申請→請求 届出)も"
+                    "含めること。キーワードのみを出力。\n\n質問: " + question
+                ),
+            }],
+            max_tokens=60,
+            temperature=0.0,
+        )
+        kw = (resp.choices[0].message.content or "").strip()
+        return kw if kw else question
+    except Exception:
+        return question
+
+
+def _search_internal(query: str, keywords: str = "") -> list[dict]:
     """規程と工番データを別枠で検索して統合する。
 
     1回の検索だと語の出現頻度で特定文書(例: 「休暇」「申請」が頻出する
     育児・介護休業規程)に枠を占有され、本命の条文(就業規則の年休など)が
     落ちることがあるため、規程枠(kitei)と実績枠を分けて取得する。
+    検索語はキーワード変換済みのもの(keywords)を優先して使う。
     """
     client = _get_search_client()
     if client is None:
         return []
 
+    q = keywords or query
     _select = ["workno", "workno_name", "phase", "file_name",
                "media_type", "content_text"]
 
     def _run(filter_expr: str, top: int) -> list:
         try:
             return list(client.search(
-                search_text=query, top=top, filter=filter_expr, select=_select))
+                search_text=q, top=top, filter=filter_expr, select=_select))
         except Exception:
             return []
 
@@ -193,7 +224,13 @@ def main() -> None:
     # 社内データ検索 → GPT-4o
     with st.chat_message("assistant"):
         with st.spinner("回答を作成中..."):
-            hits = _search_internal(question)
+            # 話し言葉→検索キーワード変換をしてから検索(規程の取りこぼし対策)
+            try:
+                _oai = _get_openai_client()
+                keywords = _extract_keywords(_oai, question)
+            except Exception:
+                keywords = ""
+            hits = _search_internal(question, keywords)
             context = _build_context(hits)
 
             history = st.session_state.qa_messages[-(MAX_HISTORY * 2):]
