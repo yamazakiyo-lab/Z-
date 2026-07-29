@@ -610,10 +610,10 @@ def rename_271_shirei_files_to_master(target_271_root: Path, master: Dict[str, s
         p(f"[WARN] 271 root not found: {target_271_root}")
         return
 
-    # ステップ1: 複数の _指令書_ を削除（クリーンアップ）
-    _cleanup_duplicate_shirei_suffix_271(target_271_root)
-    
-    # ステップ2: 正規リネーム（工番グループ化とサフィックス処理対応）
+    # 正規リネーム（工番グループ化とサフィックス処理対応）
+    # ※旧ステップ1のクリーンアップ(_cleanup_duplicate_shirei_suffix_271)は
+    #   番号を失って衝突スキップを生み、リネームと毎晩綱引きしていたため呼び出し廃止。
+    #   接尾辞の正規化は _rename_271_with_suffix 内で行う(2026-07-29)
     _rename_271_with_suffix(target_271_root, master)
 
 
@@ -669,7 +669,13 @@ def _rename_271_with_suffix(target_271_root: Path, master: Dict[str, str]):
         # プレフィックス除去
         if stem.startswith("指令書"):
             stem = _SHIREI_PREFIX.sub("", stem)
-        
+
+        # 既存の指令書サフィックス(「_指令書」「_指令書_1」やその重複)をすべて
+        # 剥がし、素の「工番_説明」に正規化してから組み立て直す。
+        # 旧実装は「_指令書_1」を説明部の一部として扱い、毎晩
+        # 「_指令書_1_指令書_1」と接尾辞が増殖していた(2026-07-29修正)
+        stem = re.sub(r"(_指令書(_\d+)?)+$", "", stem)
+
         # 工番抽出: \d+-\d+ パターン（2桁-2桁も対応）
         workno = None
         
