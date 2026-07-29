@@ -16,7 +16,7 @@ Windows タスクスケジューラで、毎日 00:00 に2本のタスクを実�
 | --- | --- |
 | MIE_DailyRun | run_mie_wrapper.bat → run_mie_logged.ps1 → run_mie.py → 91MIE・252WORKNO-program/cli.py |
 
-【2026-07-29〜30 改名】 パイプライン名を GDX(Google Drive Extraction) から MIE(Manual_Input Extraction) に変更した。Drive吸い取り廃止に伴う実態合わせ。第1段(7/29)でスクリプト群を run_mie_* / miepkg / 91MIE・252WORKNO-program に改名、第2段(7/30)でタスク名 MIE_DailyRun・ステータスキー mie(task_status/mie.json)・表示ラベル(MIE=PASS等)へ切替済み。旧 run_gdx_wrapper.bat は転送板として残置。Blobの gdx_annotations/ と環境変数の旧名受付(GDX_NO_DRIVE)は内部互換として温存。
+【2026-07-29〜30 改名】 パイプライン名を GDX(Google Drive Extraction) から MIE(Manual_Input Extraction) に変更した。Drive吸い取り廃止に伴う実態合わせ。第1段(7/29)でスクリプト群を run_mie_* / miepkg / 91MIE・252WORKNO-program に改名、第2段(7/30)でタスク名 MIE_DailyRun・ステータスキー mie(task_status/mie.json)・表示ラベル(MIE=PASS等)へ切替、第3段(7/30)で転送板 run_gdx_wrapper.bat を削除しコメント類も掃除して完了。Blobの gdx_annotations/ と環境変数の旧名受付(GDX_NO_DRIVE)は内部互換としてあえて温存。
 | OTHER_DailyRun | run_91other_wrapper.bat → run_91other_logged.ps1 → run_91other.py → 91OTHER-program/cleanup.py |
 
 【2026-07-18 更新】 両タスクの wrapper 冒頭で最新コードを自動取得するようにした(git stash → git pull origin master → git stash pop)。従来 GDX のみだったが OTHER にも追加。実行ホストは常に master ブランチで運用する。
@@ -179,4 +179,4 @@ photo_video_general の当日ログが空になることがあるが、これは
 | 2026-07-24 | AI Q&Aメニュー新設(GPT-4o+RAG、全やり取りをBlob記録、管理者用ログ閲覧ページ)／GDX卒業: Drive取り込み[1]・同期[4]を停止(GDX_NO_DRIVE=1、写真取り込みはLW botに一本化)／マスタCSV置き場を _masters に変更／_GDExtraction を _manual_input(手動投入口)に改名／LW bot: 放置工番待ちの6h自動リセット+学習協力返信の自動救済／両マニュアル改訂 |
 | 2026-07-28 | ランのログをBlobへ自動アップロード(dailyrun_latest.txt、7日掃除)／夜間ステータスにコミットハッシュ+dirty数を追加(ノート⇔デスクトップ同期監視)／Yミラー(watch_sync)廃止／利用記録の氏名突合を修正(未利用の誤通知解消)／未利用通知を月曜9:30・新文面に、朝あいさつを8:30・改行なしに変更／AI Q&Aに社内規程集を連携(規程インデクサ・条文引用回答・キーワード変換検索) |
 | 2026-07-29 | GDX→MIE改名 第1段(スクリプト・フォルダ・import名)／説明文生成V3(アノテーション優先)の稼働確認／92 PO LISTの改名往復(毎晩342回)を解消／271指令書の接尾辞増殖を修正(パイプライン完全冪等化)／AI Q&Aミス回答レビュー(qa_review.py)+用語対応表を導入 |
-| 2026-07-30 | GDX→MIE改名 第2段(タスク名MIE_DailyRun・ステータスキーmie・表示ラベル切替)／QAレビューを週次化(毎週月曜9:15、山嵜喜隆・山嵜絵里へLW通知) |
+| 2026-07-30 | GDX→MIE改名 第2段(タスク名MIE_DailyRun・ステータスキーmie・表示ラベル切替)＋第3段(転送板削除・表記掃除)で改名完了／QAレビューを週次化(毎週月曜9:15、山嵜喜隆・山嵜絵里へLW通知) |

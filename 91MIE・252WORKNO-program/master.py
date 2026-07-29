@@ -1,4 +1,4 @@
-"""工番マスタ・GDX -> 91 への移動ロジック。"""
+"""工番マスタ・MIE(投入口) -> 91 への移動ロジック。"""
 
 import csv
 import io
@@ -267,17 +267,17 @@ def rename_gdextraction_folders_to_master(gd_root: Path, master: Dict[str, str])
         desired_path = src.parent / desired_name
         if desired_path.exists():
             skipped += 1
-            p(f"[WARN] rename skip (GDX) (target exists): {src.name} -> {desired_name}")
+            p(f"[WARN] rename skip (MIE) (target exists): {src.name} -> {desired_name}")
             continue
 
         try:
             old_name = src.name
             src.rename(desired_path)
             renamed_pairs.append((old_name, desired_name))
-            p(f"[RENAME:GDX] {old_name} -> {desired_name}")
+            p(f"[RENAME:MIE] {old_name} -> {desired_name}")
         except Exception as e:
             skipped += 1
-            p(f"[WARN] rename failed (GDX): {src} ({e})")
+            p(f"[WARN] rename failed (MIE): {src} ({e})")
 
     p(f"[RENAME SUMMARY:MIE] renamed={len(renamed_pairs)}, skipped={skipped}")
     return renamed_pairs
@@ -336,16 +336,16 @@ def rename_gdextraction_files_to_master(gd_root: Path, master: Dict[str, str]):
             desired_path = src.with_name(desired_name)
             if desired_path.exists():
                 skipped += 1
-                p(f"[WARN] rename skip (GDX FILE) (target exists): {src.name} -> {desired_name}")
+                p(f"[WARN] rename skip (MIE FILE) (target exists): {src.name} -> {desired_name}")
                 continue
 
             try:
                 src.rename(desired_path)
                 renamed += 1
-                p(f"[RENAME:GDX FILE] {src.name} -> {desired_name}")
+                p(f"[RENAME:MIE FILE] {src.name} -> {desired_name}")
             except Exception as e:
                 skipped += 1
-                p(f"[WARN] rename failed (GDX FILE): {src} ({e})")
+                p(f"[WARN] rename failed (MIE FILE): {src} ({e})")
 
     p(f"[RENAME SUMMARY:MIE FILE] renamed={renamed}, skipped={skipped}")
 
@@ -451,7 +451,7 @@ def write_gdextraction_master_preview_report(gd_root: Path, output_path: Path) -
     if not master_file:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
-            f"[ERROR] GDX直下にマスタCSVが見つかりません: {gd_root}\n",
+            f"[ERROR] 投入口(_manual_input)直下にマスタCSVが見つかりません: {gd_root}\n",
             encoding="utf-8",
         )
         return output_path
@@ -490,7 +490,7 @@ def apply_gdextraction_master_renames(
 ) -> Dict[str, int]:
     master_file = _pick_master_file(gd_root)
     if not master_file:
-        p(f"[ERROR] GDX直下にマスタCSVが見つかりません: {gd_root}")
+        p(f"[ERROR] 投入口(_manual_input)直下にマスタCSVが見つかりません: {gd_root}")
         return {"master_count": 0, "folder_renamed": 0, "file_renamed": 0}
 
     master = _read_csv_master(master_file)
@@ -909,7 +909,7 @@ def move_gdextraction_to_91_B4_with_master(
         master = _read_csv_master(master_file)
         p(f"[MASTER] 使用: {master_file} (件数={len(master)})")
     else:
-        p("[MASTER] GDX直下にマスタCSVが見つかりません（工事一覧表.csv 等）。")
+        p("[MASTER] 投入口(_manual_input)直下にマスタCSVが見つかりません（工事一覧表.csv 等）。")
 
     if master:
         p("[STEP] GDExtraction フォルダ名のマスタ整合開始")
@@ -957,7 +957,7 @@ def move_gdextraction_to_91_B4_with_master(
         if media_count == 0:
             skipped += 1
             if sync_during_process and sync_service and sync_drive_parent_id:
-                sync_gdx_tree_checkpoint(sync_service, str(gd_root), sync_drive_parent_id, f"GDX空フォルダ確認後 {src.name}")
+                sync_gdx_tree_checkpoint(sync_service, str(gd_root), sync_drive_parent_id, f"MIE空フォルダ確認後 {src.name}")
             continue
 
         a_folder = find_existing_A_folder(target_91_root, workno)
@@ -980,7 +980,7 @@ def move_gdextraction_to_91_B4_with_master(
 
         b4 = ensure_B4_under_A(a_folder, workno)
 
-        p("=== GDX -> 91(B4) ===")
+        p("=== MIE -> 91(B4) ===")
         p(f"src    : {src} (media={media_count})")
         p(f"A      : {a_folder} {'[NEW]' if created else '[EXIST]'}")
         p(f"dst(B4): {b4}")
@@ -989,6 +989,6 @@ def move_gdextraction_to_91_B4_with_master(
         processed += 1
 
         if sync_during_process and sync_service and sync_drive_parent_id:
-            sync_gdx_tree_checkpoint(sync_service, str(gd_root), sync_drive_parent_id, f"GDX->91処理後 {src.name}")
+            sync_gdx_tree_checkpoint(sync_service, str(gd_root), sync_drive_parent_id, f"MIE->91処理後 {src.name}")
 
     p(f"[STEP SUMMARY] MIE processed={processed}, skipped={skipped}")

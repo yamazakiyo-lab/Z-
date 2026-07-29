@@ -29,7 +29,7 @@ from .utils import ensure_local_dir, p, sanitize_name
 def parse_args() -> MainConfig:
     default = MainConfig()
     parser = argparse.ArgumentParser(
-        description="91フォルダ整理＆GDX同期スクリプト",
+        description="91フォルダ整理＆MIE取り込みスクリプト",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 デフォルト設定:
@@ -91,7 +91,7 @@ def parse_args() -> MainConfig:
     parser.add_argument(
         "--no-sync-during-process",
         action="store_true",
-        help="処理途中で GDX のフォルダ構成を Drive へ同期しない",
+        help="処理途中で投入口のフォルダ構成を Drive へ同期しない(Drive無効時は無関係)",
     )
     parser.add_argument(
         "--log-dir",
