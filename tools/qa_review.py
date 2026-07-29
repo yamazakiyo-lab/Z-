@@ -138,12 +138,19 @@ def suggest_synonyms(questions: list[str]) -> dict[str, str]:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="AI Q&A ログレビュー")
-    default_month = f"{(datetime.now(JST).replace(day=1) - timedelta(days=1)):%Y%m}"
-    ap.add_argument("--month", default=default_month, help="対象月 YYYYMM(既定: 先月)")
+    # 週次運用(毎週月曜)を既定とし、当月のここまでの分を見る。
+    # 月初(1〜7日)は先月分がまだ総括されていないため先月を対象にする。
+    _now = datetime.now(JST)
+    default_month = (f"{(_now.replace(day=1) - timedelta(days=1)):%Y%m}"
+                     if _now.day <= 7 else f"{_now:%Y%m}")
+    ap.add_argument("--month", default=default_month,
+                    help="対象月 YYYYMM(既定: 当月。毎月1〜7日は先月)")
     ap.add_argument("--local", help="Blobの代わりに読むローカルjsonl")
     ap.add_argument("--out", default=str(ROOT / "logs"), help="レポート出力先")
     ap.add_argument("--check-index", action="store_true", help="ミス質問を索引に再照会して原因を推定")
     ap.add_argument("--suggest", action="store_true", help="GPTで類義語候補を生成しドラフトに出力")
+    ap.add_argument("--notify", action="store_true",
+                    help="結果の要約をLINE WORKSで管理者へ通知(週次タスク用)")
     args = ap.parse_args()
 
     recs = load_records(args.month, args.local)
@@ -195,6 +202,33 @@ def main() -> None:
     ]
     report.write_text("\n".join(lines), encoding="utf-8")
     print(f"レポート: {report}({len(misses)}/{len(recs)}件がミス)")
+
+    # ── LW通知(週次タスク用): 要約1通を管理者へ ──────────────────────────────
+    if args.notify:
+        try:
+            from check_tasks_notify import _notify
+            # 通知先: 山嵜喜隆・山嵜絵里(このプロセス内でのみ上書き。点検通知には影響しない)
+            os.environ["CHECK_NOTIFY_NAMES"] = os.getenv(
+                "QA_REVIEW_NOTIFY_NAMES", "山嵜喜隆,山嵜絵里")
+            if not recs:
+                msg = f"📊AI Q&A週次レビュー({args.month}): ログなし"
+            elif not misses:
+                msg = (f"📊AI Q&A週次レビュー({args.month}): "
+                       f"やり取り{len(recs)}件、未回答ミスなし🎉")
+            else:
+                # 正規化キー→元の質問文(最初に出たもの)
+                orig = {}
+                for _, r in misses:
+                    orig.setdefault(norm(r["q"]), (r["q"] or "").strip())
+                tops = "、".join(
+                    f"「{orig.get(k, k)[:25]}」×{v}"
+                    for k, v in freq.most_common(3))
+                msg = (f"📊AI Q&A週次レビュー({args.month}): "
+                       f"やり取り{len(recs)}件中ミス{len(misses)}件。"
+                       f"上位: {tops}。詳細はデスクトップの {report.name} を確認。")
+            _notify(msg, dry_run=False)
+        except Exception as e:
+            print(f"[WARN] LW通知に失敗: {e}")
 
     if args.suggest and misses:
         uniq = list({norm(r["q"]): r["q"] for k, r in misses
