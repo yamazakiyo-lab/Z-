@@ -279,7 +279,7 @@ def rename_gdextraction_folders_to_master(gd_root: Path, master: Dict[str, str])
             skipped += 1
             p(f"[WARN] rename failed (GDX): {src} ({e})")
 
-    p(f"[RENAME SUMMARY:GDX] renamed={len(renamed_pairs)}, skipped={skipped}")
+    p(f"[RENAME SUMMARY:MIE] renamed={len(renamed_pairs)}, skipped={skipped}")
     return renamed_pairs
 
 
@@ -347,7 +347,7 @@ def rename_gdextraction_files_to_master(gd_root: Path, master: Dict[str, str]):
                 skipped += 1
                 p(f"[WARN] rename failed (GDX FILE): {src} ({e})")
 
-    p(f"[RENAME SUMMARY:GDX FILE] renamed={renamed}, skipped={skipped}")
+    p(f"[RENAME SUMMARY:MIE FILE] renamed={renamed}, skipped={skipped}")
 
 
 def cleanup_drive_gdx_names_after_local_rename(service, drive_parent_id: Optional[str], renamed_pairs: List[tuple[str, str]]):
@@ -938,21 +938,21 @@ def move_gdextraction_to_91_B4_with_master(
         p("[INFO] GDExtraction に対象フォルダがありません。")
         return
 
-    p(f"[STEP] GDX対象フォルダ数: {len(src_folders)}")
+    p(f"[STEP] MIE対象フォルダ数: {len(src_folders)}")
 
     processed = 0
     skipped = 0
 
     for idx, src in enumerate(sorted(src_folders, key=lambda pth: pth.name.lower()), 1):
-        p(f"[GDX {idx}/{len(src_folders)}] 処理開始: {src.name}")
+        p(f"[MIE {idx}/{len(src_folders)}] 処理開始: {src.name}")
         workno = get_workno_from_name(src.name)
         if not workno:
             skipped += 1
-            p(f"[GDX {idx}/{len(src_folders)}] 工番取得不可のためスキップ: {src.name}")
+            p(f"[MIE {idx}/{len(src_folders)}] 工番取得不可のためスキップ: {src.name}")
             continue
 
         media_count = count_media_recursive(src)
-        p(f"[GDX {idx}/{len(src_folders)}] media_count={media_count} / workno={workno}")
+        p(f"[MIE {idx}/{len(src_folders)}] media_count={media_count} / workno={workno}")
 
         if media_count == 0:
             skipped += 1
@@ -991,4 +991,4 @@ def move_gdextraction_to_91_B4_with_master(
         if sync_during_process and sync_service and sync_drive_parent_id:
             sync_gdx_tree_checkpoint(sync_service, str(gd_root), sync_drive_parent_id, f"GDX->91処理後 {src.name}")
 
-    p(f"[STEP SUMMARY] GDX processed={processed}, skipped={skipped}")
+    p(f"[STEP SUMMARY] MIE processed={processed}, skipped={skipped}")

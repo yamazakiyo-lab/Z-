@@ -19,7 +19,7 @@ BLOB_CONTAINER = "lw-raw"
 STATUS_PREFIX  = "task_status/"
 
 TASKS = [
-    ("gdx",     "GDX・RAG・AzCopy  "),
+    ("mie",     "MIE・RAG・AzCopy  "),
     ("other",   "91フォルダ以外整理"),
     ("lw",      "LW Blob同期       "),
     ("lw_send", "LW送信（朝/昼）   "),

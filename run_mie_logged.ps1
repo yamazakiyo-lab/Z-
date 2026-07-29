@@ -35,7 +35,7 @@ $lockStream = $null
 
 # ── 結果フラグ初期化 ──────────────────────────────────────
 $results = @{
-    GDX = 'UNKNOWN'
+    MIE = 'UNKNOWN'
     OTHER = 'UNKNOWN'
     AzCopy = 'UNKNOWN'
 }
@@ -154,7 +154,7 @@ try {
     Push-Location $pw
     try {
         # ── [1] GDX処理実行 ──────────────────────────────────────────────
-        Write-Host "[GDX] GDXパイプライン開始"
+        Write-Host "[MIE] MIEパイプライン開始"
         # パイプで1行ずつ受けて Write-Host することで Transcript にリアルタイムに落とす
         if ($venvPython -and (Test-Path -LiteralPath $venvPython)) {
             if ($isDryRun) {
@@ -170,11 +170,11 @@ try {
             }
         }
         if ($LASTEXITCODE -eq 0) {
-            $results.GDX = 'PASS'
-            Write-Host "[GDX] ✓ GDXパイプライン完了"
+            $results.MIE = 'PASS'
+            Write-Host "[MIE] ✓ MIEパイプライン完了"
         } else {
-            $results.GDX = 'FAIL'
-            Write-Warning "[GDX] ✗ run_mie.py がエラーで終了しました (code $LASTEXITCODE)。以降のステップは続行します。"
+            $results.MIE = 'FAIL'
+            Write-Warning "[MIE] ✗ run_mie.py がエラーで終了しました (code $LASTEXITCODE)。以降のステップは続行します。"
         }
 
         # ── [2] OTHER処理実行 ────────────────────────────────────────────
@@ -467,7 +467,7 @@ try {
         }
 
         # ── [RESULT] 結果サマリー出力 ──────────────────────────────────
-        $summaryMsg = "[RESULT] GDX=$($results.GDX), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
+        $summaryMsg = "[RESULT] MIE=$($results.MIE), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
         Write-Host ""
         Write-Host "════════════════════════════════════════════════════════"
         Write-Host $summaryMsg
@@ -480,8 +480,8 @@ try {
 
         # タスクステータスを Blob に書く
         if (-not $isDryRun) {
-            $gdxOverall = if ($results.GDX -eq 'PASS' -and $results.AzCopy -ne 'FAIL') { 'PASS' } else { 'FAIL' }
-            $statusMsg = "GDX=$($results.GDX), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
+            $mieOverall = if ($results.MIE -eq 'PASS' -and $results.AzCopy -ne 'FAIL') { 'PASS' } else { 'FAIL' }
+            $statusMsg = "MIE=$($results.MIE), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
             # リポジトリ整合チェック用: 実行ホストのコミットと未コミット変更数を添える
             # (ノート側HEADと突き合わせて、ノート⇔デスクトップの同期ずれを検知する)
             try {
@@ -492,7 +492,7 @@ try {
             # SYSTEM ユーザーでは 'py' が PATH にないため $ragPython を使用
             $statusPython = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
             Write-Host "[STATUS] タスクステータスを Blob に書き込み中..."
-            & $statusPython (Join-Path $pw 'write_task_status.py') --task gdx --status $gdxOverall --message $statusMsg
+            & $statusPython (Join-Path $pw 'write_task_status.py') --task mie --status $mieOverall --message $statusMsg
             if ($LASTEXITCODE -eq 0) {
                 Write-Host "[STATUS] ✓ Blob 書き込み完了"
             } else {

@@ -45,7 +45,7 @@ if ($todayLogs.Count -eq 0) {
         $otherStatus = 'UNKNOWN'
         $azcopyStatus = 'UNKNOWN'
         
-        if ($resultLine.Line -match 'GDX=(\S+)') { $gdxStatus = $Matches[1] }
+        if ($resultLine.Line -match 'MIE=(\S+)') { $gdxStatus = $Matches[1] }
         if ($resultLine.Line -match 'OTHER=(\S+)') { $otherStatus = $Matches[1] }
         if ($resultLine.Line -match 'AzCopy=(\S+)') { $azcopyStatus = $Matches[1] }
         

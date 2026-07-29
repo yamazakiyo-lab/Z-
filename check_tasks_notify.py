@@ -32,7 +32,7 @@ except Exception:
 
 # 監視対象タスク（重要なものだけ。必要に応じて増減可）
 CRITICAL_TASKS = [
-    "GDX_DailyRun",
+    "MIE_DailyRun",
     "LW_Blob_Sync",
     "TSEG_検索アプリ未利用通知",
     "TSEG_週次利用レポート",

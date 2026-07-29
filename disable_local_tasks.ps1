@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 
-$tasks = 'GDX_DailyRun', 'OTHER_DailyRun', 'CHECK_DAILYRUNS_0600'
+$tasks = 'MIE_DailyRun', 'OTHER_DailyRun', 'CHECK_DAILYRUNS_0600'
 
 foreach ($taskName in $tasks) {
     try {

@@ -32,7 +32,7 @@ mkdir logs
 
 スケジュールタスク作成（現在ログオン中のユーザーで登録する例）
 ```powershell
-schtasks /Create /TN "GDX_DailyRun" /SC DAILY /ST 00:00 /TR "C:\Deploy\gdx_workspace\run_mie_wrapper.bat" /F
+schtasks /Create /TN "MIE_DailyRun" /SC DAILY /ST 00:00 /TR "C:\Deploy\gdx_workspace\run_mie_wrapper.bat" /F
 schtasks /Create /TN "OTHER_DailyRun" /SC DAILY /ST 00:00 /TR "C:\Deploy\gdx_workspace\run_91other_wrapper.bat" /F
 schtasks /Create /TN "CHECK_DAILYRUNS" /SC DAILY /ST 00:01 /TR "powershell -NoProfile -ExecutionPolicy Bypass -File 'C:\Deploy\gdx_workspace\check_and_cleanup_logs.ps1'" /F
 ```

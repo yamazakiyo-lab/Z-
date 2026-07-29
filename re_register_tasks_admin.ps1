@@ -15,8 +15,8 @@ try {
     & (Join-Path $root 'schedule_91other.ps1') -Time '00:00'
     & (Join-Path $root 'schedule_daily_status_check.ps1') -Time '06:00'
 
-    '=== GDX_DailyRun ==='
-    schtasks /Query /TN 'GDX_DailyRun' /V /FO LIST | Select-String 'Task To Run|Status'
+    '=== MIE_DailyRun ==='
+    schtasks /Query /TN 'MIE_DailyRun' /V /FO LIST | Select-String 'Task To Run|Status'
     '=== OTHER_DailyRun ==='
     schtasks /Query /TN 'OTHER_DailyRun' /V /FO LIST | Select-String 'Task To Run|Status'
     '=== CHECK_DAILYRUNS_0600 ==='

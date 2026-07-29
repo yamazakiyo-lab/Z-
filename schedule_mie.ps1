@@ -28,7 +28,7 @@ function Resolve-ScheduledTaskPath {
 
 $script = Resolve-ScheduledTaskPath -Path (Join-Path $pw "run_mie_wrapper.bat")
 
-Write-Host "Registering scheduled task 'GDX_DailyRun' to run daily at $Time"
+Write-Host "Registering scheduled task 'MIE_DailyRun' to run daily at $Time"
 
 # Build scheduled task action/trigger using ScheduledTasks cmdlets for robust quoting and Unicode support
 try {
@@ -37,12 +37,12 @@ try {
 	$hour = [int]$parts[0]
 	$minute = [int]$parts[1]
 	$trigger = New-ScheduledTaskTrigger -Daily -At (Get-Date -Hour $hour -Minute $minute -Second 0)
-	Register-ScheduledTask -TaskName "GDX_DailyRun" -Action $action -Trigger $trigger -RunLevel Highest -Force
-	Write-Host "Scheduled task 'GDX_DailyRun' registered. To remove: schtasks /Delete /TN \"GDX_DailyRun\" /F"
+	Register-ScheduledTask -TaskName "MIE_DailyRun" -Action $action -Trigger $trigger -RunLevel Highest -Force
+	Write-Host "Scheduled task 'MIE_DailyRun' registered. To remove: schtasks /Delete /TN \"MIE_DailyRun\" /F"
 } catch {
 	Write-Host "Failed to register scheduled task using ScheduledTasks cmdlets. Falling back to schtasks with careful quoting. Error: $_"
 	$tr = '"' + $script + '"'
-	schtasks /Create /SC DAILY /TN "GDX_DailyRun" /TR $tr /ST $Time /RL HIGHEST /F
-	Write-Host "Fallback registration attempted. To remove: schtasks /Delete /TN \"GDX_DailyRun\" /F"
+	schtasks /Create /SC DAILY /TN "MIE_DailyRun" /TR $tr /ST $Time /RL HIGHEST /F
+	Write-Host "Fallback registration attempted. To remove: schtasks /Delete /TN \"MIE_DailyRun\" /F"
 }
 

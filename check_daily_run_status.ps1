@@ -230,7 +230,7 @@ function Add-AttentionBlock {
     $Buffer.Add('')
 }
 
-$gdxTask = Get-TaskInfo -TaskName 'GDX_DailyRun'
+$gdxTask = Get-TaskInfo -TaskName 'MIE_DailyRun'
 $otherTask = Get-TaskInfo -TaskName 'OTHER_DailyRun'
 
 $gdxTranscript = Get-LatestFileToday -Path $localLogDir -Filter 'gdx_run_*.txt'
@@ -264,7 +264,7 @@ Set-Content -LiteralPath $attentionFile -Value $attentionLines -Encoding UTF8
 $lines = @(
     "Summary generated: $now",
     '',
-    '[GDX_DailyRun]',
+    '[MIE_DailyRun]',
     "Verdict: $gdxVerdict",
     "Last run: $($gdxTask.LastRunTime)",
     "Last result: $($gdxTask.LastResult)",

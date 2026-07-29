@@ -138,10 +138,10 @@ Move-FilesOlderThan -SourceDir $pw -Filter 'daily_runs_summary_*.txt' -Cutoff $d
 Move-FilesOlderThan -SourceDir $pw -Filter 'daily_runs_attention_*.txt' -Cutoff $dailySummaryCutoff -DestinationDir $retentionDir
 
 try {
-    $gdx = schtasks /Query /TN "GDX_DailyRun" /V /FO LIST 2>$null
+    $gdx = schtasks /Query /TN "MIE_DailyRun" /V /FO LIST 2>$null
     $other = schtasks /Query /TN "OTHER_DailyRun" /V /FO LIST 2>$null
     Write-SummaryLine ""
-    Write-SummaryLine "--- GDX_DailyRun ---"
+    Write-SummaryLine "--- MIE_DailyRun ---"
     Write-SummaryLine $gdx
     Write-SummaryLine ""
     Write-SummaryLine "--- OTHER_DailyRun ---"
