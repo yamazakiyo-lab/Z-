@@ -81,6 +81,31 @@ def _get_search_client():
 
 
 # ── 社内データ検索(RAG) ───────────────────────────────────────────────────────
+SYNONYMS_PATH = Path(__file__).resolve().parent.parent / "rag" / "qa_synonyms.json"
+
+
+@st.cache_data(ttl=600)
+def _load_synonyms() -> dict:
+    """レビュー(tools/qa_review.py)で採用した用語対応表を読む。無ければ空。
+
+    形式: {"話し言葉の語": "規程・実績で使われる言い回し", ...}
+    """
+    try:
+        d = json.loads(SYNONYMS_PATH.read_text(encoding="utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def _synonyms_hint() -> str:
+    syn = _load_synonyms()
+    if not syn:
+        return ""
+    lines = [f"{k} → {v}" for k, v in list(syn.items())[:40]]
+    return ("\n\n社内で確認済みの用語対応表(質問に該当する語があれば必ず変換に使うこと):\n"
+            + "\n".join(lines))
+
+
 def _extract_keywords(openai_client, question: str) -> str:
     """話し言葉の質問を、規程・実績検索用のキーワードに変換する。
 
@@ -98,7 +123,9 @@ def _extract_keywords(openai_client, question: str) -> str:
                     "次の質問を、社内規程・作業記録の全文検索に使うキーワードに変換してください。"
                     "名詞・専門用語を中心に3〜8語、スペース区切りで出力。"
                     "規程で使われる正式な言い回し(例: 有給→年次有給休暇、申請→請求 届出)も"
-                    "含めること。キーワードのみを出力。\n\n質問: " + question
+                    "含めること。キーワードのみを出力。"
+                    + _synonyms_hint()
+                    + "\n\n質問: " + question
                 ),
             }],
             max_tokens=60,
