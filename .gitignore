@@ -97,3 +97,8 @@ audit_workno_names.txt
 undo_rename_*.csv
 _model_crop*.png
 _sample_top.png
+
+# QAレビューの生成物(採用前ドラフト・実行ログ。dirty監視を汚さないため)
+rag/qa_synonyms_draft.json
+qa_review.log
+logs/qa_review_*.md
