@@ -37,6 +37,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - 「社内データ」に【規程名】付きの社内規程の条文が含まれる場合は、それを根拠として回答し、規程名と条番号を必ず明示すること(例: 「就業規則 第23条によると…」)。人事・総務に関する質問(休暇・手当・勤務時間・慶弔など)はこの規程が最優先の根拠。
 - 規程の条文が見つからない人事・総務の質問には、推測で答えず「規程に該当箇所が見つからないため、人事課に確認してください」と案内すること。
 - 手当・休暇などの「一覧」「種類」を問われたら、[規程用語カタログ]の種類をすべて挙げて網羅的に答えること(条文が手元に無い種類は名称のみ挙げ、詳細は該当規程の参照を案内)。
+- TSEG WORKS(このアプリ)や写真投稿botの使い方の質問には、【利用マニュアル】のチャンクを根拠に、章名を示して答えること(例: 「利用マニュアル『写真の投稿』によると…」)。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
 - 回答は現場の人が読みやすいよう、簡潔にすること。"""
@@ -206,21 +207,27 @@ def _search_internal(query: str, keywords: str = "") -> list[dict]:
         except Exception:
             return []
 
-    results = _run("media_type eq 'kitei'", 4) + _run("media_type ne 'kitei'", 3)
+    results = (_run("media_type eq 'kitei'", 4)
+               + _run("media_type eq 'manual'", 2)
+               + _run("media_type ne 'kitei' and media_type ne 'manual'", 3))
 
     hits = []
     for r in results:
         txt = (r.get("content_text") or "").strip()
         if not txt:
             continue
-        is_kitei = (r.get("media_type") or "") == "kitei"
+        mt = r.get("media_type") or ""
+        is_kitei = mt == "kitei"
+        is_manual = mt == "manual"
         hits.append({
             "workno": r.get("workno") or "",
             "workno_name": r.get("workno_name") or "",
             "phase": r.get("phase") or "",
             "file_name": r.get("file_name") or "",
             "is_kitei": is_kitei,
-            "text": txt[:1000 if is_kitei else 500],  # 規程条文は長めに渡す
+            "is_manual": is_manual,
+            # 規程条文・マニュアルは長めに渡す
+            "text": txt[:1000 if (is_kitei or is_manual) else 500],
         })
     return hits
 
@@ -232,6 +239,8 @@ def _build_context(hits: list[dict]) -> str:
     for h in hits:
         if h.get("is_kitei"):
             head = f"[社内規程: {h['workno_name']}]"
+        elif h.get("is_manual"):
+            head = f"[利用マニュアル: {h['workno_name']}]"
         else:
             head = f"[工番 {h['workno']} {h['workno_name']}".strip() + (
                 f" / {h['phase']}]" if h["phase"] else "]")
@@ -274,7 +283,8 @@ def main() -> None:
     st.page_link("app_pages/home.py", label="ホームに戻る", icon="🏠")
     st.title("💬 AI Q&A")
     st.caption("技術・業務・人事総務の質問にAIが答えます。"
-               "社内の工番実績や社内規程(就業規則・給与規程・出張旅費規程など)も参照して回答します。")
+               "社内の工番実績や社内規程(就業規則・給与規程・出張旅費規程など)、"
+               "このアプリの利用マニュアルも参照して回答します。")
     st.divider()
 
     if "qa_messages" not in st.session_state:
@@ -339,6 +349,9 @@ def main() -> None:
                         if h.get("is_kitei"):
                             st.markdown(
                                 f"- 📖 **{h['workno_name']}**(社内規程) — {h['text'][:120]}…")
+                        elif h.get("is_manual"):
+                            st.markdown(
+                                f"- 📘 **{h['workno_name']}**(利用マニュアル) — {h['text'][:120]}…")
                         else:
                             st.markdown(
                                 f"- **工番 {h['workno']}** {h['workno_name']} "

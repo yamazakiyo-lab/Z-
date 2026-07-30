@@ -577,6 +577,14 @@ try {
         }
     } catch {}
 
+    # ── 利用マニュアルをAI検索インデックスへ再取り込み（AI Q&Aの使い方回答用）──
+    try {
+        if ($cleanupPython) {
+            Write-Host "[MANUAL] 利用マニュアルのインデックス更新..."
+            & $cleanupPython (Join-Path $pw 'export_manual_index.py')
+        }
+    } catch {}
+
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)
