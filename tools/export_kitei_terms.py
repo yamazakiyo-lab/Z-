@@ -46,8 +46,8 @@ CATEGORIES = {
     "休業": re.compile(r"[一-龠ァ-ヶーA-Za-z]{1,8}休業"),
     "休職": re.compile(r"[一-龠ァ-ヶーA-Za-z]{0,8}休職"),
 }
-# 抽出ノイズ(語として成立していない断片)の除外
-STOPWORDS = {"該当", "当該"}
+# 抽出ノイズ(語として成立していない断片・指示語付き)の除外
+STOPWORDS = {"該当", "当該", "本手当", "ブル休暇", "週間休業", "等休暇"}
 
 
 def main() -> int:
@@ -72,6 +72,8 @@ def main() -> int:
         text = r.get("content_text") or ""
         for cat, rx in CATEGORIES.items():
             for m in rx.findall(text):
+                if m.startswith("当該"):
+                    m = m[2:]  # 指示語を剥がす(当該育児休業→育児休業)
                 if m in STOPWORDS or len(m) <= len(cat):
                     continue  # 「手当」単体などカテゴリ語そのものは除外
                 counters[cat][m] += 1
