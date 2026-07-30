@@ -82,6 +82,18 @@ def main() -> int:
         if m.group(1) >= cutoff:
             kept_recent += 1
             continue
+        # callbackダンプ(受信生データのログ)は同期対象外なので期限だけで削除
+        if re.match(r"^\d{8}/callback_", blob.name):
+            if args.dry_run:
+                print(f"[DRY-RUN] 削除対象(callback): {blob.name}")
+            else:
+                try:
+                    container.delete_blob(blob.name)
+                except Exception as e:
+                    print(f"[WARN] 削除失敗: {blob.name}: {e}")
+                    continue
+            deleted += 1
+            continue
         if blob.name.endswith("_meta.json"):
             ok = blob.name[:-len("_meta.json")] in synced_stems
         else:
