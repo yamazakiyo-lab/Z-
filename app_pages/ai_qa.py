@@ -36,6 +36,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - 「社内データ」として渡された工番実績・コメントに関連情報があれば、それを優先して回答に使い、どの工番の情報かを明示すること。
 - 「社内データ」に【規程名】付きの社内規程の条文が含まれる場合は、それを根拠として回答し、規程名と条番号を必ず明示すること(例: 「就業規則 第23条によると…」)。人事・総務に関する質問(休暇・手当・勤務時間・慶弔など)はこの規程が最優先の根拠。
 - 規程の条文が見つからない人事・総務の質問には、推測で答えず「規程に該当箇所が見つからないため、人事課に確認してください」と案内すること。
+- 手当・休暇などの「一覧」「種類」を問われたら、[規程用語カタログ]の種類をすべて挙げて網羅的に答えること(条文が手元に無い種類は名称のみ挙げ、詳細は該当規程の参照を案内)。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
 - 回答は現場の人が読みやすいよう、簡潔にすること。"""
@@ -106,6 +107,50 @@ def _synonyms_hint() -> str:
             + "\n".join(lines))
 
 
+@st.cache_data(ttl=21600)
+def _load_kitei_terms() -> dict:
+    """規程用語カタログ(Blob: kitei_terms.json)を読む。無ければ空。
+
+    tools/export_kitei_terms.py が規程本文から自動抽出した
+    手当・休暇等の実在用語一覧。規程再取り込みのたびに更新される。
+    """
+    try:
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        if not conn:
+            return {}
+        from azure.storage.blob import BlobServiceClient
+        raw = BlobServiceClient.from_connection_string(conn) \
+            .get_blob_client(QA_LOG_CONTAINER, "kitei_terms.json") \
+            .download_blob().readall()
+        d = json.loads(raw.decode("utf-8"))
+        return d if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+_TERM_CATS = ("手当", "休暇", "休業", "休職")
+
+
+def _kitei_terms_hint() -> str:
+    """キーワード変換用: 一覧系質問で実在の全種類を検索語に含めさせる。"""
+    terms = _load_kitei_terms()
+    lines = [f"{c}: {' '.join(terms[c][:20])}" for c in _TERM_CATS if terms.get(c)]
+    if not lines:
+        return ""
+    return ("\n\n規程に実在する用語一覧(『一覧』『種類』『どんな○○がある』型の質問では、"
+            "該当カテゴリの語をすべて検索語に含めること):\n" + "\n".join(lines))
+
+
+def _kitei_terms_context() -> str:
+    """回答用の文脈に足すカタログ。一覧系の回答の網羅性を担保する。"""
+    terms = _load_kitei_terms()
+    lines = [f"{c}: {'、'.join(terms[c][:20])}" for c in _TERM_CATS if terms.get(c)]
+    if not lines:
+        return ""
+    return ("[規程用語カタログ(規程本文から自動抽出。一覧を問われたらこの種類で網羅を確認)] "
+            + " ／ ".join(lines))
+
+
 def _extract_keywords(openai_client, question: str) -> str:
     """話し言葉の質問を、規程・実績検索用のキーワードに変換する。
 
@@ -125,6 +170,7 @@ def _extract_keywords(openai_client, question: str) -> str:
                     "規程で使われる正式な言い回し(例: 有給→年次有給休暇、申請→請求 届出)も"
                     "含めること。キーワードのみを出力。"
                     + _synonyms_hint()
+                    + _kitei_terms_hint()
                     + "\n\n質問: " + question
                 ),
             }],
@@ -259,6 +305,9 @@ def main() -> None:
                 keywords = ""
             hits = _search_internal(question, keywords)
             context = _build_context(hits)
+            _terms_ctx = _kitei_terms_context()
+            if _terms_ctx:
+                context = f"{context}\n{_terms_ctx}"
 
             history = st.session_state.qa_messages[-(MAX_HISTORY * 2):]
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]

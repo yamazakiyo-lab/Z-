@@ -8,5 +8,8 @@ cd /d "%~dp0"
 echo === 規程集をAI検索インデックスへ取り込みます ===
 python export_kitei_index.py
 echo.
+echo === 規程用語カタログ(手当・休暇等の一覧)を自動更新します ===
+python tools\export_kitei_terms.py
+echo.
 echo 終了しました。上の [DONE] 表示を確認してください。
 pause
