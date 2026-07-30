@@ -570,6 +570,13 @@ try {
         }
     } catch {}
 
+    # ── Blob上のLW写真ステージング(lw-raw/YYYYMMDD/)も掃除（保持30日・同期済みのみ）──
+    try {
+        if ($cleanupPython) {
+            & $cleanupPython (Join-Path $pw 'cleanup_blob_photos.py') --days 30
+        }
+    } catch {}
+
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)
