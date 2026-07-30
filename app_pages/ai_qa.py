@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
+import unicodedata
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
@@ -38,6 +40,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - 規程の条文が見つからない人事・総務の質問には、推測で答えず「規程に該当箇所が見つからないため、人事課に確認してください」と案内すること。
 - 手当・休暇などの「一覧」「種類」を問われたら、[規程用語カタログ]の種類をすべて挙げて網羅的に答えること(条文が手元に無い種類は名称のみ挙げ、詳細は該当規程の参照を案内)。
 - TSEG WORKS(このアプリ)や写真投稿botの使い方の質問には、【利用マニュアル】のチャンクを根拠に、章名を示して答えること(例: 「利用マニュアル『写真の投稿』によると…」)。
+- 在庫の質問に[在庫データ]が渡された場合は、その数量・棚番を根拠に直接答えること。ただし「昨晩時点のデータ」であることを添え、最新・詳細は「部品在庫検索」「動治工具・測定具・消耗品検索」メニューでの確認を必ず案内すること。[在庫データ]に該当が無い品は、数を推測せず在庫は不明としてメニューを案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
 - 回答は現場の人が読みやすいよう、簡潔にすること。"""
@@ -140,6 +143,82 @@ def _kitei_terms_hint() -> str:
         return ""
     return ("\n\n規程に実在する用語一覧(『一覧』『種類』『どんな○○がある』型の質問では、"
             "該当カテゴリの語をすべて検索語に含めること):\n" + "\n".join(lines))
+
+
+@st.cache_data(ttl=3600)
+def _load_inventories() -> dict:
+    """部品在庫・工具リスト(Blobの夜間エクスポート)を読む。無ければ空。"""
+    out: dict = {}
+    try:
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        if not conn:
+            return {}
+        from azure.storage.blob import BlobServiceClient
+        svc = BlobServiceClient.from_connection_string(conn)
+        for key, blob_name in (("parts", "parts_inventory.json"),
+                               ("tools", "tools_inventory.json")):
+            try:
+                raw = svc.get_blob_client(QA_LOG_CONTAINER, blob_name) \
+                    .download_blob().readall()
+                out[key] = json.loads(raw.decode("utf-8"))
+            except Exception:
+                pass
+    except Exception:
+        return {}
+    return out
+
+
+_INV_INTENT = re.compile(
+    r"在庫|何個|何本|何枚|個数|数量|残数|残って|持って|払い出|ストック|部品|工具|測定具|消耗品")
+_INV_STOP = {"在庫", "個数", "数量", "何個", "部品", "工具", "ある", "あり",
+             "ありますか", "教えて", "ください", "どれ", "くらい"}
+
+
+def _inv_norm(s) -> str:
+    """在庫照合用の正規化(全半角統一・空白/ハイフン/括弧を除去・小文字化)。"""
+    s = unicodedata.normalize("NFKC", str(s or ""))
+    return re.sub(r"[\s\-‐－ー_/()（）,、.。]", "", s).lower()
+
+
+def _search_inventory(question: str, keywords: str) -> list[dict]:
+    """在庫の質問なら、品名・型式のキーワード一致で在庫データを引く。"""
+    if not _INV_INTENT.search(question):
+        return []
+    inv = _load_inventories()
+    if not inv:
+        return []
+    terms = []
+    for t in re.split(r"[\s、。,？?]+", f"{keywords} {question}"):
+        n = _inv_norm(t)
+        if len(n) >= 2 and t not in _INV_STOP and n not in {_inv_norm(x) for x in _INV_STOP}:
+            terms.append(n)
+    if not terms:
+        return []
+    scored = []
+    for src, label in (("parts", "部品在庫"), ("tools", "動治工具・測定具・消耗品")):
+        data = inv.get(src) or {}
+        for it in data.get("items", []):
+            hay = _inv_norm(" ".join(str(it.get(k, "")) for k in
+                                     ("name", "model", "spec", "cat", "maker", "tana")))
+            score = sum(1 for t in terms if t in hay)
+            if score:
+                scored.append((score, len(hay), label, it))
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [{"label": lb, **it} for _, _, lb, it in scored[:8]]
+
+
+def _inventory_context(inv_hits: list[dict]) -> str:
+    if not inv_hits:
+        return ""
+    lines = []
+    for h in inv_hits:
+        if h["label"] == "部品在庫":
+            lines.append(f"{h.get('cat','')}/型式:{h.get('model','')}/仕様:{h.get('spec','')}"
+                         f"/メーカー:{h.get('maker','')}/棚番:{h.get('tana','')}/数量:{h.get('qty','')}")
+        else:
+            lines.append(f"工具({h.get('site','')}){h.get('cat','')}/品名:{h.get('name','')}"
+                         f"/型式:{h.get('model','')}/数量:{h.get('qty','')}")
+    return ("[在庫データ(毎晩自動エクスポート=昨晩時点)] " + " ｜ ".join(lines))
 
 
 def _kitei_terms_context() -> str:
@@ -318,6 +397,12 @@ def main() -> None:
             _terms_ctx = _kitei_terms_context()
             if _terms_ctx:
                 context = f"{context}\n{_terms_ctx}"
+            try:
+                inv_hits = _search_inventory(question, keywords)
+            except Exception:
+                inv_hits = []
+            if inv_hits:
+                context = f"{context}\n{_inventory_context(inv_hits)}"
 
             history = st.session_state.qa_messages[-(MAX_HISTORY * 2):]
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
@@ -356,6 +441,13 @@ def main() -> None:
                             st.markdown(
                                 f"- **工番 {h['workno']}** {h['workno_name']} "
                                 f"{('/ ' + h['phase']) if h['phase'] else ''} — {h['text'][:120]}…")
+            if inv_hits:
+                with st.expander(f"参照した在庫データ({len(inv_hits)}件・昨晩時点)"):
+                    for h in inv_hits:
+                        nm = h.get("name") or h.get("model") or "?"
+                        st.markdown(
+                            f"- 📦 **{nm}**({h['label']}/{h.get('cat','')}) — "
+                            f"数量 {h.get('qty') or '?'}")
 
     st.session_state.qa_messages.append({"role": "assistant", "content": answer})
     _log_qa(upn, question, answer, hits)
