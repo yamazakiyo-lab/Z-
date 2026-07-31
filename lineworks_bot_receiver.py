@@ -75,6 +75,14 @@ PHOTOS_BLOB_ENDPOINT: str = os.environ.get(
 BLOB_SAS_TOKEN: str = os.environ.get("AZURE_BLOB_SAS_TOKEN", "")
 PHOTOS_CONTAINER: str = os.environ.get("AZURE_PHOTOS_CONTAINER", "photos")
 
+# 学習協力の継続送信(Y/T)で動画を送るときのリダイレクトURL基点(自分自身の /video)。
+# LINE WORKSはURL内の?以降(SASトークン)を切り捨てるため、動画Blobの直URLを
+# 画像メッセージに入れても表示できない。定時配信(lw_annotation_bot)と同じく
+# receiver経由のリダイレクトリンクをテキストで送る。
+RECEIVER_BASE_URL: str = os.environ.get(
+    "LW_RECEIVER_BASE_URL", "https://tseg-lw-receiver.azurewebsites.net").rstrip("/")
+VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv"}
+
 LW_TOKEN_URL = "https://auth.worksmobile.com/oauth2/v2.0/token"
 LW_FILE_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/attachments/{file_id}"
 LW_SEND_CHANNEL_URL = "https://www.worksapis.com/v1.0/bots/{bot_id}/channels/{channel_id}/messages"
@@ -359,6 +367,38 @@ def _send_image(channel_id: str, user_id: str, image_url: str) -> None:
         resp.raise_for_status()
     except Exception as e:
         logger.error(f"画像送信失敗: {e}")
+
+
+def _send_annotation_media(channel_id: str, user_id: str, item: dict) -> None:
+    """学習協力の写真・動画を1件送る。
+
+    動画は画像メッセージとして送っても LINE WORKS 側で表示できない
+    (SAS付き直URLの?以降が切り捨てられる)ため、receiver の /video
+    リダイレクトリンクをテキストで送る(定時配信側と同方式)。
+    従来はこの分岐が無く、継続(Y/T)で動画を引くと「写真が出ない」
+    状態になっていた(2026-07-31報告)。
+    """
+    from urllib.parse import quote
+    fp = item.get("file_path", "")
+    name = Path(fp).name if fp else "写真"
+    if Path(fp).suffix.lower() in VIDEO_EXTS:
+        rel = ""
+        blob_url = item.get("blob_url", "")
+        if f"/{PHOTOS_CONTAINER}/" in blob_url:
+            rel = blob_url.split(f"/{PHOTOS_CONTAINER}/", 1)[1].split("?", 1)[0]
+        if rel:
+            _send_text(channel_id, user_id,
+                       f"🎬 動画: {name}\n{RECEIVER_BASE_URL}/video/{quote(rel, safe='/')}")
+        else:
+            _send_text(channel_id, user_id, f"🎬 {name}")
+        logger.info(f"学習協力 動画リンク送信: {name}")
+    else:
+        url = item.get("thumb_url", "") or item.get("blob_url", "")
+        if url:
+            _send_image(channel_id, user_id, url)
+        else:
+            _send_text(channel_id, user_id, f"📸 {name}")
+        logger.info(f"学習協力 画像送信: {name}")
 
 
 # ── LINE WORKS ファイルダウンロード ───────────────────────────────────────────
@@ -760,10 +800,7 @@ async def lineworks_callback(request: Request) -> Response:
                     next_fp     = item.get("file_path", "")
                     next_url    = item.get("thumb_url", "") or item.get("blob_url", "")
                     job_number  = item.get("job_number", "")
-                    if next_url:
-                        _send_image(channel_id, user_id, next_url)
-                    else:
-                        _send_text(channel_id, user_id, f"📸 {Path(next_fp).name}")
+                    _send_annotation_media(channel_id, user_id, item)
                     ann_msg = "この写真・動画について教えてください！\n"
                     if job_number:
                         ann_msg += f"工番: {job_number}\n"
@@ -1076,10 +1113,7 @@ async def lineworks_callback(request: Request) -> Response:
                         next_fp      = item.get("file_path", "")
                         next_url     = item.get("thumb_url", "") or item.get("blob_url", "")
                         job_number   = item.get("job_number", "")
-                        if next_url:
-                            _send_image(ch, user_id, next_url)
-                        else:
-                            _send_text(ch, user_id, f"📸 {Path(next_fp).name}")
+                        _send_annotation_media(ch, user_id, item)
                         ann_msg = "この写真・動画について教えてください！\n"
                         if job_number:
                             ann_msg += f"工番: {job_number}\n"
