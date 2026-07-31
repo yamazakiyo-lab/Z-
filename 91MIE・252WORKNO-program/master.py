@@ -451,7 +451,7 @@ def write_gdextraction_master_preview_report(gd_root: Path, output_path: Path) -
     if not master_file:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(
-            f"[ERROR] 投入口(_manual_input)直下にマスタCSVが見つかりません: {gd_root}\n",
+            f"[ERROR] 投入口(_MIExtraction)直下にマスタCSVが見つかりません: {gd_root}\n",
             encoding="utf-8",
         )
         return output_path
@@ -490,7 +490,7 @@ def apply_gdextraction_master_renames(
 ) -> Dict[str, int]:
     master_file = _pick_master_file(gd_root)
     if not master_file:
-        p(f"[ERROR] 投入口(_manual_input)直下にマスタCSVが見つかりません: {gd_root}")
+        p(f"[ERROR] 投入口(_MIExtraction)直下にマスタCSVが見つかりません: {gd_root}")
         return {"master_count": 0, "folder_renamed": 0, "file_renamed": 0}
 
     master = _read_csv_master(master_file)
@@ -789,9 +789,9 @@ def rename_existing_paths_english_spaces(target_root: Path, *, label: str = ""):
     for root, dirs, files in os.walk(target_root, topdown=False):
         root_path = Path(root)
 
-        # 先頭 "_" のシステムフォルダ(_manual_input / _masters / _annotations /
+        # 先頭 "_" のシステムフォルダ(_MIExtraction / _masters / _annotations /
         # _LWExtraction 等)は名前正規化の対象外(配下も含む)。
-        # ※ _manual_input が「_manual input」に変換されて手動投入口の判定が
+        # ※ 旧 _manual_input が「_manual input」に変換されて手動投入口の判定が
         #    外れる事故(2026-07-24)の再発防止。
         try:
             _rel_parts = root_path.relative_to(target_root).parts
@@ -909,7 +909,7 @@ def move_gdextraction_to_91_B4_with_master(
         master = _read_csv_master(master_file)
         p(f"[MASTER] 使用: {master_file} (件数={len(master)})")
     else:
-        p("[MASTER] 投入口(_manual_input)直下にマスタCSVが見つかりません（工事一覧表.csv 等）。")
+        p("[MASTER] 投入口(_MIExtraction)直下にマスタCSVが見つかりません（工事一覧表.csv 等）。")
 
     if master:
         p("[STEP] GDExtraction フォルダ名のマスタ整合開始")

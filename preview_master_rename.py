@@ -34,12 +34,12 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 PKG_DIR = HERE / "91MIE・252WORKNO-program"
 
-# 手動投入口: _manual_input 優先、旧 _GDExtraction フォールバック(GDX卒業 2026-07-24)
+# 手動投入口: _MIExtraction 優先、旧 _manual_input / _GDExtraction フォールバック
 _91_ROOT = Path(r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写真・動画")
-_gd_default = (
-    _91_ROOT / "_manual_input"
-    if (_91_ROOT / "_manual_input").exists()
-    else _91_ROOT / "_GDExtraction"
+_gd_default = next(
+    (_91_ROOT / n for n in ("_MIExtraction", "_manual_input", "_GDExtraction")
+     if (_91_ROOT / n).exists()),
+    _91_ROOT / "_MIExtraction",
 )
 GD_ROOT = Path(os.environ.get("GD_EXTRACTION_DIR", str(_gd_default)))
 OUT = HERE / "preview_master_rename.txt"

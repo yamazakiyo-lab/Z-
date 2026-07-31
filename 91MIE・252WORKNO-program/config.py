@@ -11,15 +11,18 @@ _91_ROOT = Path(r"Z:\takachiho\2to9_業務別フォルダ\91_工番別実績写�
 
 
 def _default_gd_root() -> Path:
-    """写真の手動投入口。
+    """写真の手動投入口(MIE = Manual_Input Extraction の投入側)。
 
-    GDX卒業(2026-07-24)後、旧Drive受け皿(_GDExtraction)は「手動投入口」として
-    再利用する。リネーム後の _manual_input があればそちらを優先し、
-    なければ旧名 _GDExtraction を使う(リネーム前後どちらでも動く)。
+    GDX卒業(2026-07-24)後、旧Drive受け皿は「手動投入口」として再利用する。
+    現行名は _MIExtraction (2026-07-31改名)。旧名 _manual_input・_GDExtraction
+    にもフォールバックする(リネーム前後どちらでも動く)。
     ここに置いた写真フォルダは夜間ランで工番マスタ名に整えられ91へ投入される。
     """
-    p = _91_ROOT / "_manual_input"
-    return p if p.exists() else _91_ROOT / "_GDExtraction"
+    for name in ("_MIExtraction", "_manual_input", "_GDExtraction"):
+        p = _91_ROOT / name
+        if p.exists():
+            return p
+    return _91_ROOT / "_MIExtraction"
 
 
 @dataclass(frozen=True)
