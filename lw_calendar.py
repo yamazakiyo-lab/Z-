@@ -84,6 +84,9 @@ def _fetch_user_events(token: str, user_id: str, range_start: str,
             timeout=15)
         if r.status_code in (403, 404):
             return []  # カレンダー未使用ユーザー等は黙ってスキップ
+        if r.status_code == 400:
+            logger.warning(f"カレンダー400 ({user_id}): {r.text[:300]}")
+            return []
         r.raise_for_status()
         payload = r.json() or {}
     except Exception as e:
