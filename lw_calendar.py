@@ -80,7 +80,7 @@ def _fetch_user_events(token: str, user_id: str, range_start: str,
         r = requests.get(
             LW_CAL_EVENTS_URL.format(user_id=user_id),
             headers={"Authorization": f"Bearer {token}"},
-            params={"rangeStart": range_start, "rangeEnd": range_end},
+            params={"fromDateTime": range_start, "untilDateTime": range_end},
             timeout=15)
         if r.status_code in (403, 404):
             return []  # カレンダー未使用ユーザー等は黙ってスキップ
