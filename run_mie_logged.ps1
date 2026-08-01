@@ -585,6 +585,15 @@ try {
         }
     } catch {}
 
+    # ── 現場用語カタログの更新（写真コメント→AI Q&Aのキーワード変換強化）──
+    # コメントが溜まるほど賢くなる。抽出は機械的(正規表現)で人の精査は不要。
+    try {
+        if ($cleanupPython) {
+            Write-Host "[GENBA] 現場用語カタログの更新..."
+            & $cleanupPython (Join-Path $pw 'tools\export_genba_terms.py')
+        }
+    } catch {}
+
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)

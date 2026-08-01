@@ -145,6 +145,37 @@ def _kitei_terms_hint() -> str:
             "該当カテゴリの語をすべて検索語に含めること):\n" + "\n".join(lines))
 
 
+@st.cache_data(ttl=21600)
+def _load_genba_terms() -> dict:
+    """現場用語カタログ(genba_terms.json)をBlobから読む。無ければ空。
+
+    写真コメントから夜間ランが自動抽出する現場の呼び名(部品・型式・作業語)。
+    コメントが溜まるほど語彙が増え、キーワード変換が現場語に強くなる。
+    """
+    try:
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        if not conn:
+            return {}
+        from azure.storage.blob import BlobServiceClient
+        svc = BlobServiceClient.from_connection_string(conn)
+        raw = svc.get_blob_client(QA_LOG_CONTAINER, "genba_terms.json") \
+            .download_blob().readall()
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+def _genba_terms_hint() -> str:
+    """キーワード変換用: 現場写真コメントで実際に使われる語を検索語に使わせる。"""
+    terms = _load_genba_terms()
+    lines = [f"{c}: {' '.join(terms[c][:20])}"
+             for c in ("カタカナ", "型式", "作業") if terms.get(c)]
+    if not lines:
+        return ""
+    return ("\n\n現場の写真コメントで実際に使われる語(社内の呼び名。質問に関連する語が"
+            "あればこの表記のまま検索語に含めること):\n" + "\n".join(lines))
+
+
 @st.cache_data(ttl=3600)
 def _load_inventories() -> dict:
     """部品在庫・工具リスト(Blobの夜間エクスポート)を読む。無ければ空。"""
@@ -251,6 +282,7 @@ def _extract_keywords(openai_client, question: str) -> str:
                     "含めること。キーワードのみを出力。"
                     + _synonyms_hint()
                     + _kitei_terms_hint()
+                    + _genba_terms_hint()
                     + "\n\n質問: " + question
                 ),
             }],
