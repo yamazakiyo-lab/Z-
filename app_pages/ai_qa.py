@@ -40,6 +40,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - 規程の条文が見つからない人事・総務の質問には、推測で答えず「規程に該当箇所が見つからないため、人事課に確認してください」と案内すること。
 - 手当・休暇などの「一覧」「種類」を問われたら、[規程用語カタログ]の種類をすべて挙げて網羅的に答えること(条文が手元に無い種類は名称のみ挙げ、詳細は該当規程の参照を案内)。
 - TSEG WORKS(このアプリ)や写真投稿botの使い方の質問には、【利用マニュアル】のチャンクを根拠に、章名を示して答えること(例: 「利用マニュアル『写真の投稿』によると…」)。
+- 社員の予定・出張・休暇の質問に[社内予定]が渡された場合は、それを根拠に答え、スナップショット時点の情報であることを添えること。該当が無ければ「カレンダーに予定が見当たらない」と答え、推測しないこと。
 - 在庫の質問に[在庫データ]が渡された場合は、その数量・棚番を根拠に直接答えること。ただし「昨晩時点のデータ」であることを添え、最新・詳細は「部品在庫検索」「動治工具・測定具・消耗品検索」メニューでの確認を必ず案内すること。[在庫データ]に該当が無い品は、数を推測せず在庫は不明としてメニューを案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
@@ -174,6 +175,48 @@ def _genba_terms_hint() -> str:
         return ""
     return ("\n\n現場の写真コメントで実際に使われる語(社内の呼び名。質問に関連する語が"
             "あればこの表記のまま検索語に含めること):\n" + "\n".join(lines))
+
+
+@st.cache_data(ttl=900)
+def _load_calendar() -> dict:
+    """社内予定スナップショット(calendar_events.json)をBlobから読む。無ければ空。
+
+    LINE WORKSカレンダーから朝8:30と夜間ランで自動エクスポートされる7日分。
+    """
+    try:
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        if not conn:
+            return {}
+        from azure.storage.blob import BlobServiceClient
+        svc = BlobServiceClient.from_connection_string(conn)
+        raw = svc.get_blob_client(QA_LOG_CONTAINER, "calendar_events.json") \
+            .download_blob().readall()
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+_CAL_INTENT = re.compile(
+    r"予定|出張|カレンダー|スケジュール|休み|休暇|不在|在社|出社|出勤|どこに|来てる|いますか|いる？")
+
+
+def _calendar_context(question: str) -> str:
+    """予定の質問なら、スナップショットの予定一覧を文脈として返す。"""
+    if not _CAL_INTENT.search(question):
+        return ""
+    cal = _load_calendar()
+    events = cal.get("events") or []
+    if not events:
+        return ""
+    lines = []
+    for e in events[:40]:
+        d = (e.get("start") or "")[:10]
+        t = (e.get("start") or "")[11:16]
+        when = f"{d[5:].replace('-', '/')}" + (f" {t}" if t and not e.get("all_day") else "")
+        loc = f"({e['location']})" if e.get("location") else ""
+        lines.append(f"{when} {e.get('user_name', '?')}: {e.get('summary', '')}{loc}")
+    gen = (cal.get("generated_at") or "")[:16].replace("T", " ")
+    return (f"[社内予定(LINE WORKSカレンダー、{gen}時点の7日分)] " + " ｜ ".join(lines))
 
 
 @st.cache_data(ttl=3600)
@@ -435,6 +478,12 @@ def main() -> None:
                 inv_hits = []
             if inv_hits:
                 context = f"{context}\n{_inventory_context(inv_hits)}"
+            try:
+                _cal_ctx = _calendar_context(question)
+            except Exception:
+                _cal_ctx = ""
+            if _cal_ctx:
+                context = f"{context}\n{_cal_ctx}"
 
             history = st.session_state.qa_messages[-(MAX_HISTORY * 2):]
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]

@@ -1,4 +1,4 @@
-if (-not $PSScriptRoot) {
+﻿if (-not $PSScriptRoot) {
     $PSScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Definition
 }
 $ts = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -14,6 +14,11 @@ try {
     try {
         py (Join-Path $pw 'lw_annotation_bot.py') --morning-greeting
         Write-Host "Exit code: $LASTEXITCODE"
+        # カレンダーのスナップショットをBlobへ(AI Q&Aの予定回答用。失敗しても続行)
+        try {
+            Write-Host "[CAL] カレンダースナップショット更新..."
+            py (Join-Path $pw 'lw_calendar.py') --export
+        } catch {}
     } finally {
         Pop-Location
     }

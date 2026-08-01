@@ -594,6 +594,15 @@ try {
         }
     } catch {}
 
+    # ── LINE WORKSカレンダーのスナップショット（AI Q&Aの予定回答用）──
+    # 朝8:30の朝あいさつランでも更新される。スコープ未設定時は失敗するが続行。
+    try {
+        if ($cleanupPython) {
+            Write-Host "[CAL] カレンダースナップショット更新..."
+            & $cleanupPython (Join-Path $pw 'lw_calendar.py') --export
+        }
+    } catch {}
+
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)

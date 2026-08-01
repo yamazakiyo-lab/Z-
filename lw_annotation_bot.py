@@ -995,8 +995,21 @@ def cmd_send() -> None:
     #   ここで pending リセットと unannotated_pool を確定させる。
     _save_annotation_state(state)
 
+    # LINE WORKSカレンダーで今日休暇の人には送らない(無駄打ち防止)。
+    # スコープ未設定・API障害時は空集合=全員送信(従来どおり)。
+    on_leave: set = set()
+    try:
+        import lw_calendar
+        on_leave = lw_calendar.users_on_leave()
+        if on_leave:
+            logger.info(f"休暇のためスキップ: {len(on_leave)} 名")
+    except Exception as e:
+        logger.warning(f"休暇カレンダー確認スキップ: {e}")
+
     sent_count = 0
     for user_id in users:
+        if user_id in on_leave:
+            continue
         doc_id, file_path = random.choice(unannotated)
         ok = _send_annotation_request(user_id, doc_id, file_path, state)
         if ok:
@@ -1129,6 +1142,15 @@ def cmd_morning_greeting() -> None:
         "今日も良い1日でありますように。"
         "作業中写真の投稿協力をお願いします！📸"
     )
+    # LINE WORKSカレンダーから今日の予定(出張・工事系+お休み)を添える。
+    # スコープ未設定・API障害時は握りつぶして従来文面のまま送る。
+    try:
+        import lw_calendar
+        _cal_lines = lw_calendar.today_lines()
+        if _cal_lines:
+            body += "\n\n📅 今日の予定\n" + "\n".join(_cal_lines)
+    except Exception as e:
+        logger.warning(f"カレンダー読込スキップ(朝あいさつは通常文面): {e}")
     ok = 0
     for user_id in users:
         name = names.get(user_id, "")
