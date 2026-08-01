@@ -832,8 +832,12 @@ def cmd_sync_annotations() -> None:
                 continue
 
             # _annotations/<工番>/ に保存
+            # ld_sort と同じく「頭の工番」に統一する(2026-08-01)。
+            # Aフォルダ名フルをキーにすると、同じ工番のフォルダが
+            # 工事名付き/なしの二本立てで乱立するため。
             try:
-                koban = Path(file_path).relative_to(TARGET_91_ROOT).parts[0]
+                folder = Path(file_path).relative_to(TARGET_91_ROOT).parts[0]
+                koban = folder.split("_", 1)[0] or folder
             except (ValueError, IndexError):
                 koban = "_unknown"
             ann_dir = TARGET_91_ROOT / "_annotations" / koban
