@@ -46,6 +46,7 @@ TSEG のデスクトップ(KEIRI-PC)で動くスケジュールタスクの正�
 | TSEG_ログ掃除 | `<DIR>\run_log_cleanup.bat` | 毎日 12:30（ノート・デスクトップ両方に設定） |
 | TSEG_マスタCSV鮮度チェック | `<DIR>\run_master_csv_check.bat` | 毎週土曜 9:00（古ければ山嵜喜隆・山嵜絵里へLW通知） |
 | TSEG_CalendarExport | `<DIR>\run_cal_export_wrapper.bat` | 毎時 0分（LWカレンダー7日分をBlobへスナップショット。AI Q&Aの予定回答用） |
+| TSEG_記念日通知 | `<DIR>\run_anniversary_wrapper.bat` | 毎日 8:00（誕生日・入社記念日を山嵜喜隆・山嵜絵里へLW通知。該当日のみ。マスタはLWメンバー情報の誕生日・入社日欄） |
 | LW_Bot_Receiver | `<DIR>\lw_venv\Scripts\python.exe -m uvicorn lineworks_bot_receiver:app --host 0.0.0.0 --port 8000`（Start In: `<DIR>`） | 起動時 |
 
 ---
@@ -69,6 +70,7 @@ schtasks /Create /TN "TSEG_週次利用レポート" /TR "`"C:\Users\user\tseg_v
 schtasks /Create /TN "TSEG_QAレビュー週次" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_qa_review.bat`"" /SC WEEKLY /D MON /ST 09:15 /F
 schtasks /Create /TN "TSEG_マスタCSV鮮度チェック" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_master_csv_check.bat`"" /SC WEEKLY /D SAT /ST 09:00 /F
 schtasks /Create /TN "TSEG_CalendarExport" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_cal_export_wrapper.bat`"" /SC HOURLY /MO 1 /ST 07:00 /F
+schtasks /Create /TN "TSEG_記念日通知" /TR "`"C:\Users\user\tseg_vscode\Zフォルダ整理\run_anniversary_wrapper.bat`"" /SC DAILY /ST 08:00 /F
 ```
 
 ログ掃除（ノート・デスクトップ **両方** に設定する。ローカルリポジトリ + Y を保持14日で削除）:
