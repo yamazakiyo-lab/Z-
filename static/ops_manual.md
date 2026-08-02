@@ -158,6 +158,8 @@ photo_video_general の当日ログが空になることがあるが、これは
 
 - ログ一括掃除(TSEG_ログ掃除): 毎日12:30、ノートとデスクトップの両方に設定。cleanup_logs_all.ps1 が実行マシンのローカルリポジトリ＋Y共有のログを保持14日で削除する(デスクトップ実行でK＋Y、ノート実行でノート＋Yをカバー)。従来の check_and_cleanup_logs.ps1(旧CHECK_DAILYRUNS由来)を統合・置換。
 
+- 新規アカウントの命名ルール(2026-08-02 制定): LINE WORKS ID・Entra UPNとも**姓ローマ字**とする(例: 藤澤謙一 → LW `fujisawa`、Entra `fujisawa@tseg7421.onmicrosoft.com`)。姓が既存と重複する場合は名イニシャルをドットで付ける(例: `fujisawa.k`)。既存の wo+数字/拠点名/個人名の混在は歴史的経緯としてそのまま(UPN変更はログインID変更のため実施しない)。作成手順: LW管理画面でメンバー追加(初回ログイン時に本人がパスワード設定)→ `python create_entra_users_from_lw.py --single 姓 名 --lw-id <ID>` でEntra作成 → 本人がTSEGFMBotに1通送って配信対象へ自動登録 → Entra_ID_アカウント一覧.xlsx に追記。
+
 ## 13. AI Q&A（2026-07-24 追加）
 
 検索アプリのメニュー「AI Q&A」は、Azure OpenAI GPT-4o に質問できるチャット。回答前に Azure AI Search(photo-index)で社内データを検索し、関連する工番実績を回答に反映する。
