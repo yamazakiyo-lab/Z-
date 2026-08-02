@@ -40,6 +40,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - 規程の条文が見つからない人事・総務の質問には、推測で答えず「規程に該当箇所が見つからないため、人事課に確認してください」と案内すること。
 - 手当・休暇などの「一覧」「種類」を問われたら、[規程用語カタログ]の種類をすべて挙げて網羅的に答えること(条文が手元に無い種類は名称のみ挙げ、詳細は該当規程の参照を案内)。
 - TSEG WORKS(このアプリ)や写真投稿botの使い方の質問には、【利用マニュアル】のチャンクを根拠に、章名を示して答えること(例: 「利用マニュアル『写真の投稿』によると…」)。
+- 会社の経営方針・企業理念・重点施策・業務方針に関する質問には、[経営計画]のチャンクを根拠に、章名を示して答えること(例: 「中期経営計画書2026『重点施策』によると…」)。
 - 社員の予定・出張・休暇の質問に[社内予定]が渡された場合は、それを根拠に答え、スナップショット時点の情報であることを添えること。該当が無ければ「カレンダーに予定が見当たらない」と答え、推測しないこと。
 - 在庫の質問に[在庫データ]が渡された場合は、その数量・棚番を根拠に直接答えること。ただし「昨晩時点のデータ」であることを添え、最新・詳細は「部品在庫検索」「動治工具・測定具・消耗品検索」メニューでの確認を必ず案内すること。[在庫データ]に該当が無い品は、数を推測せず在庫は不明としてメニューを案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
@@ -364,6 +365,8 @@ def _search_internal(query: str, keywords: str = "") -> list[dict]:
     results = (_run("media_type eq 'kitei'", 4)
                + _run("media_type eq 'manual'", 2)
                + _run("media_type ne 'kitei' and media_type ne 'manual'", 3))
+    # 経営計画は上記3枠目(その他)に含まれて返るが、専用の底上げは行わない
+    # (経営方針系の質問ならキーワード一致で自然に上位に来るため)
 
     hits = []
     for r in results:
@@ -373,6 +376,7 @@ def _search_internal(query: str, keywords: str = "") -> list[dict]:
         mt = r.get("media_type") or ""
         is_kitei = mt == "kitei"
         is_manual = mt == "manual"
+        is_keikaku = mt == "keikaku"
         hits.append({
             "workno": r.get("workno") or "",
             "workno_name": r.get("workno_name") or "",
@@ -380,8 +384,9 @@ def _search_internal(query: str, keywords: str = "") -> list[dict]:
             "file_name": r.get("file_name") or "",
             "is_kitei": is_kitei,
             "is_manual": is_manual,
-            # 規程条文・マニュアルは長めに渡す
-            "text": txt[:1000 if (is_kitei or is_manual) else 500],
+            "is_keikaku": is_keikaku,
+            # 規程条文・マニュアル・経営計画は長めに渡す
+            "text": txt[:1000 if (is_kitei or is_manual or is_keikaku) else 500],
         })
     return hits
 
@@ -395,6 +400,8 @@ def _build_context(hits: list[dict]) -> str:
             head = f"[社内規程: {h['workno_name']}]"
         elif h.get("is_manual"):
             head = f"[利用マニュアル: {h['workno_name']}]"
+        elif h.get("is_keikaku"):
+            head = f"[経営計画: {h['workno_name']}]"
         else:
             head = f"[工番 {h['workno']} {h['workno_name']}".strip() + (
                 f" / {h['phase']}]" if h["phase"] else "]")
@@ -518,6 +525,9 @@ def main() -> None:
                         elif h.get("is_manual"):
                             st.markdown(
                                 f"- 📘 **{h['workno_name']}**(利用マニュアル) — {h['text'][:120]}…")
+                        elif h.get("is_keikaku"):
+                            st.markdown(
+                                f"- 📋 **{h['workno_name']}**(経営計画) — {h['text'][:120]}…")
                         else:
                             st.markdown(
                                 f"- **工番 {h['workno']}** {h['workno_name']} "
