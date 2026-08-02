@@ -148,9 +148,50 @@ def _load_members(xlsx_path: Path) -> list[dict]:
 # ── メイン ────────────────────────────────────────────────────────────────────
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--xlsx",    required=True, help="LW メンバー Excel パス")
+    parser.add_argument("--xlsx",    help="LW メンバー Excel パス(一括作成時)")
+    parser.add_argument("--single",  nargs=2, metavar=("姓", "名"),
+                        help="単発作成: 姓 名 (例: --single 藤澤 謙一 --lw-id fujisawa)")
+    parser.add_argument("--lw-id",   help="--single 用の LINE WORKS ID (例: fujisawa)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
+
+    # ── 単発作成(中途入社1名など。Excel不要) ────────────────────────────────
+    if args.single:
+        if not args.lw_id:
+            print("[ERROR] --single には --lw-id が必要です")
+            sys.exit(1)
+        sei, mei = args.single
+        upn = _lw_id_to_upn(args.lw_id.strip())
+        print(f"単発作成: {sei}{mei} / LW ID={args.lw_id} → UPN={upn}")
+        if args.dry_run:
+            print("[DRY RUN] --dry-run を外すと実際に作成されます。")
+            return
+        missing = [k for k, v in {
+            "ENTRA_TENANT_ID":     TENANT_ID,
+            "ENTRA_CLIENT_ID":     CLIENT_ID,
+            "ENTRA_CLIENT_SECRET": CLIENT_SEC,
+            "ENTRA_INIT_PASSWORD": INIT_PASS,
+        }.items() if not v]
+        if missing:
+            print(f"[ERROR] .env 未設定: {', '.join(missing)}")
+            sys.exit(1)
+        token = _get_token()
+        if upn.lower() in _get_existing_upns(token):
+            print(f"[SKIP] 既存: {upn}")
+            return
+        result = _create_user(token, f"{sei}{mei}", mei, sei, upn)
+        if result["ok"]:
+            print(f"[OK] 作成完了: {upn} (初期パスワードは ENTRA_INIT_PASSWORD、"
+                  f"初回サインイン時に本人変更)")
+        else:
+            print(f"[ERROR] {result['status']}: "
+                  f"{json.dumps(result['detail'], ensure_ascii=False)[:300]}")
+            sys.exit(1)
+        return
+
+    if not args.xlsx:
+        print("[ERROR] --xlsx か --single のどちらかを指定してください")
+        sys.exit(1)
 
     if not args.dry_run:
         missing = [k for k, v in {
