@@ -3,7 +3,7 @@
 AI Q&Aが「会社の経営方針は？」「重点施策は？」「MF-TOKYOって何を目指してる？」
 などの質問に、経営計画書を根拠に章名付きで答えられるようにする。
 
-対象: KEIKAKU_DIR (既定: Y:\\管理本部\\経営計画) 配下の .docx
+対象: KEIKAKU_DIR (既定: Y:\\経営企画\\中期経営計画\\中期経営計画26-29) 配下の .docx
       複数年版を置いた場合は全て取り込む(ファイル名が文書名になる)。
 方式: 【…】見出しで章分割し、長い章は番号見出し(1）/1．)でさらに分割 →
       photo-index に media_type="keikaku" で全量入れ替えupsert。
@@ -32,7 +32,8 @@ except Exception:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-KEIKAKU_DIR = Path(os.environ.get("KEIKAKU_DIR", r"Y:\管理本部\経営計画"))
+KEIKAKU_DIR = Path(os.environ.get(
+    "KEIKAKU_DIR", r"Y:\経営企画\中期経営計画\中期経営計画26-29"))
 MEDIA_TYPE = "keikaku"
 CHUNK_MAX = 1000
 BATCH = 100
