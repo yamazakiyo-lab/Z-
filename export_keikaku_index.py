@@ -3,8 +3,10 @@
 AI Q&Aが「会社の経営方針は？」「重点施策は？」「MF-TOKYOって何を目指してる？」
 などの質問に、経営計画書を根拠に章名付きで答えられるようにする。
 
-対象: KEIKAKU_DIR (既定: Y:\\経営企画\\中期経営計画\\中期経営計画26-29) 配下の .docx
-      複数年版を置いた場合は全て取り込む(ファイル名が文書名になる)。
+対象: KEIKAKU_DIR (既定: Y:\\経営企画\\中期経営計画\\中期経営計画26-29) 配下のうち
+      ファイル名が「中期経営計画書*.docx」のものだけ(KEIKAKU_GLOBで変更可)。
+      同じフォルダにある個人宛・人事関連などの文書を誤って公開しないための
+      ホワイトリスト方式(2026-08-02)。複数年版は全て取り込む。
 方式: 【…】見出しで章分割し、長い章は番号見出し(1）/1．)でさらに分割 →
       photo-index に media_type="keikaku" で全量入れ替えupsert。
       改定時に再実行するだけでよい(run_keikaku_index.bat)。
@@ -34,6 +36,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 KEIKAKU_DIR = Path(os.environ.get(
     "KEIKAKU_DIR", r"Y:\経営企画\中期経営計画\中期経営計画26-29"))
+# 取り込むファイル名のパターン(これ以外は読まない。個人宛文書等の誤公開防止)
+KEIKAKU_GLOB = os.environ.get("KEIKAKU_GLOB", "中期経営計画書*.docx")
 MEDIA_TYPE = "keikaku"
 CHUNK_MAX = 1000
 BATCH = 100
@@ -99,8 +103,12 @@ def main() -> int:
                   f"        フォルダを作成してdocxを置くか、--file で指定してください。",
                   file=sys.stderr)
             return 1
-        files = sorted(p for p in KEIKAKU_DIR.rglob("*.docx")
+        files = sorted(p for p in KEIKAKU_DIR.rglob(KEIKAKU_GLOB)
                        if not p.name.startswith("~$"))
+        skipped = sorted(p.name for p in KEIKAKU_DIR.rglob("*.docx")
+                         if not p.name.startswith("~$") and p not in files)
+        if skipped:
+            print(f"[SKIP] パターン外のため対象外: {', '.join(skipped)}")
     if not files:
         print("[ERROR] 対象docxがありません", file=sys.stderr)
         return 1
