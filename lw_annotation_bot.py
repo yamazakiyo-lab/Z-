@@ -1242,7 +1242,7 @@ def _calculate_photo_ranking(period: str) -> tuple[list[dict], str]:
 
 
 def _format_photo_ranking_message(ranking: list[dict], label: str) -> str:
-    lines = [f"【作業写真投稿ランキング {label}】📸"]
+    lines = [f"【作業写真・動画投稿ランキング {label}】📸"]
     if not ranking:
         lines.append("まだ投稿データがありません。")
     else:
