@@ -168,23 +168,33 @@ def _fetch_user_events(token: str, user_id: str, range_start: str,
 
 
 def fetch_all(days: int = 183) -> list[dict]:
-    """登録ユーザー全員の予定(今日0:00〜+days日)を取得する。繰り返しは展開済み。"""
+    """登録ユーザー全員の予定(今日0:00〜+days日)を取得する。繰り返しは展開済み。
+    
+    LW APIは31日以内のクエリのみ受け付けるため、期間を分割してクエリ。
+    """
     token = _cal_token()
     users = _load_annotation_state().get("users", [])
     names = _load_user_names()
     start_d = datetime.now(JST).replace(hour=0, minute=0, second=0, microsecond=0)
     end_d = start_d + timedelta(days=days)
-    rs = start_d.isoformat(timespec="seconds")
-    re_ = end_d.isoformat(timespec="seconds")
     win_start = start_d.replace(tzinfo=None)
     win_end = end_d.replace(tzinfo=None)
+    
     events: list[dict] = []
-    for uid in users:
-        for e in _fetch_user_events(token, uid, rs, re_, win_start, win_end):
-            e["user_id"] = uid
-            e["user_name"] = names.get(uid, "")
-            events.append(e)
-        time.sleep(0.2)
+    # API最大31日以内のクエリで複数回に分割
+    chunk_days = 31
+    d = start_d
+    while d < end_d:
+        d_end = min(d + timedelta(days=chunk_days), end_d)
+        rs = d.isoformat(timespec="seconds")
+        re_ = d_end.isoformat(timespec="seconds")
+        for uid in users:
+            for e in _fetch_user_events(token, uid, rs, re_, win_start, win_end):
+                e["user_id"] = uid
+                e["user_name"] = names.get(uid, "")
+                events.append(e)
+            time.sleep(0.1)
+        d = d_end
     events.sort(key=lambda e: e.get("start") or "")
     return events
 
