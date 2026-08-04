@@ -87,12 +87,12 @@ div.stButton > button:hover {
 st.subheader("検索メニュー")
 
 _MENUS = [
+    ("💬 AI Q&A", "技術・業務・人事総務の質問にAIが回答(工番実績・規程・在庫・予定・経営計画も参照)", "app_pages/ai_qa.py"),
     ("🔍 FMP SEARCH", "写真・動画・過去の指令書PDFを検索", "app_pages/fmp_search.py"),
     ("🔎 工番検索", "工事名・納入先・工番の一部から工番を探す", "app_pages/koban_search.py"),
     ("🏢 顧客検索", "顧客(会社名)からその取引先の工番・写真を探す", "app_pages/nyunyusaki_search.py"),
     ("📦 部品在庫検索", "貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す", "app_pages/zaiko_search.py"),
     ("🛠️ 動治工具・測定具・消耗品検索", "寄居・綾瀬の工具/測定具/消耗品を品名・型式から探す", "app_pages/tools_search.py"),
-    ("💬 AI Q&A", "技術・業務・人事総務の質問にAIが回答(工番実績・社内規程も参照)", "app_pages/ai_qa.py"),
 ]
 for _i, (_title, _desc, _page) in enumerate(_MENUS):
     if st.button(f"**{_title}**\n{_desc}", key=f"menu_{_i}", use_container_width=True):

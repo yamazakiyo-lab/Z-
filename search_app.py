@@ -123,7 +123,8 @@ tools_search = st.Page("app_pages/tools_search.py", title="動治工具・測定
 ai_qa = st.Page("app_pages/ai_qa.py", title="AI Q&A", icon="💬")
 manual = st.Page("app_pages/manual.py", title="利用者マニュアル", icon="📖")
 
-_pages = [home, fmp_search, koban_search, nyunyusaki_search, zaiko_search, tools_search, ai_qa, manual]
+# AI Q&Aを筆頭に(2026-08-04: 利用促進のためメニュー最上段へ)
+_pages = [home, ai_qa, fmp_search, koban_search, nyunyusaki_search, zaiko_search, tools_search, manual]
 
 # AI Q&Aログは管理者(QA_LOG_ADMINS)だけメニューに表示する
 # ※氏名は「山嵜 絵里」のようにスペースが入る表記ゆれがあるため、
