@@ -318,10 +318,12 @@ def _find_unannotated_docs(state: dict) -> list[tuple[str, str]]:
 # ── Blob URL 生成 ─────────────────────────────────────────────────────────────
 def _to_blob_url(file_path: str) -> str:
     try:
+        from urllib.parse import quote
         rel = Path(file_path).relative_to(TARGET_91_ROOT)
         rel_str = str(rel).replace("\\", "/")
         sas = f"?{BLOB_SAS_TOKEN}" if BLOB_SAS_TOKEN else ""
-        return f"{PHOTOS_BLOB_ENDPOINT}/{rel_str}{sas}"
+        # 日本語・スペースをURLエンコード(PC版LWクライアントの取得失敗対策)
+        return f"{PHOTOS_BLOB_ENDPOINT}/{quote(rel_str, safe='/')}{sas}"
     except ValueError:
         return ""
 
@@ -330,10 +332,15 @@ def _upload_thumbnail(file_path: str) -> str:
     """画像をリサイズ・圧縮してBlobにアップロードし、SAS URLを返す。
     既にアップロード済みの場合はそのURLを返す。失敗時は空文字。"""
     try:
+        import posixpath
+        from urllib.parse import quote
         from PIL import Image as _PILImage
         rel = Path(file_path).relative_to(TARGET_91_ROOT)
         rel_str = str(rel).replace("\\", "/")
-        thumb_name = str(Path(rel_str).with_suffix("")) + "_thumb.jpg"
+        # 注意: Path().with_suffix() を使うとWindowsで区切りが \ に戻り、
+        #   Blob名に \ が混ざってPC版LWクライアントで画像が表示されない
+        #   (2026-08-05 内山さん報告)。posixpathで / のまま組み立てる。
+        thumb_name = posixpath.splitext(rel_str)[0] + "_thumb.jpg"
 
         if not BLOB_CONN_STR:
             return ""
@@ -345,7 +352,8 @@ def _upload_thumbnail(file_path: str) -> str:
         try:
             blob_client.get_blob_properties()
             sas = f"?{BLOB_SAS_TOKEN}" if BLOB_SAS_TOKEN else ""
-            return f"https://{client.account_name}.blob.core.windows.net/{PHOTOS_CONTAINER}/{thumb_name}{sas}"
+            return (f"https://{client.account_name}.blob.core.windows.net/"
+                    f"{PHOTOS_CONTAINER}/{quote(thumb_name, safe='/')}{sas}")
         except Exception:
             pass
 
@@ -368,7 +376,8 @@ def _upload_thumbnail(file_path: str) -> str:
         )
         logger.info(f"サムネイルアップロード: {thumb_name} (quality={quality})")
         sas = f"?{BLOB_SAS_TOKEN}" if BLOB_SAS_TOKEN else ""
-        return f"https://{client.account_name}.blob.core.windows.net/{PHOTOS_CONTAINER}/{thumb_name}{sas}"
+        return (f"https://{client.account_name}.blob.core.windows.net/"
+                f"{PHOTOS_CONTAINER}/{quote(thumb_name, safe='/')}{sas}")
     except Exception as e:
         logger.warning(f"サムネイル生成失敗 ({file_path}): {e}")
         return ""
