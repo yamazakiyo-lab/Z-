@@ -223,19 +223,34 @@ def _calendar_context(question: str, asker: str = "") -> str:
         except Exception:
             return None
 
-    end = None
-    if "今月" in question:
-        end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-    elif "来月" in question:
-        end = None  # スナップショット全域(31日)を渡す
-    elif "来週" in question:
+    # 期間の解釈: 今月/来月/N月/来週/今週/明日 → 該当範囲。指定なしは1か月先まで
+    qn = question.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    start_d, end = today, None
+    month = year = None
+    if "今月" in qn:
+        month, year = today.month, today.year
+    elif "来月" in qn:
+        month = today.month % 12 + 1
+        year = today.year + (1 if today.month == 12 else 0)
+    else:
+        m = re.search(r"(\d{1,2})月", qn)
+        if m and 1 <= int(m.group(1)) <= 12:
+            month = int(m.group(1))
+            year = today.year if month >= today.month else today.year + 1
+    if month:
+        first = _dt.date(year, month, 1)
+        start_d = max(today, first)
+        end = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    elif "来週" in qn:
         end = today + timedelta(days=14)
-    elif "今週" in question:
+    elif "今週" in qn:
         end = today + timedelta(days=7)
-    elif "明日" in question or "明後日" in question or "あす" in question:
+    elif "明日" in qn or "明後日" in qn or "あす" in qn:
         end = today + timedelta(days=3)
+    else:
+        end = today + timedelta(days=31)
     sel = [e for e in events
-           if (d := _ev_date(e)) and d >= today and (end is None or d <= end)]
+           if (d := _ev_date(e)) and start_d <= d <= end]
 
     # 人物の絞り込み: 質問中の実在人名 > 「俺/私/自分」=質問者
     names = {e.get("user_name", "") for e in sel if e.get("user_name")}

@@ -73,9 +73,64 @@ def _cal_token() -> str:
     return _tok
 
 
+def _parse_naive(s: str):
+    """予定の開始/終了文字列→naive datetime。失敗時None。"""
+    s = (s or "")[:19]
+    if not s:
+        return None
+    try:
+        return datetime.fromisoformat(s if "T" in s else s + "T00:00:00")
+    except ValueError:
+        return None
+
+
+def _expand_event(ev: dict, win_start: datetime, win_end: datetime) -> list[dict]:
+    """繰り返し予定を期間内の発生日に展開する。単発は期間内ならそのまま。
+
+    LW APIは繰り返し予定を「系列の初回日付+recurrence(RRULE)」で返すため、
+    そのままだと年次点検などが2024年の日付のまま出てしまう(2026-08-04対応)。
+    """
+    s = _parse_naive(ev.get("start"))
+    if s is None:
+        return []
+    e = _parse_naive(ev.get("end")) or s
+    dur = e - s
+    rules = [r.strip() for r in (ev.get("recurrence") or [])
+             if isinstance(r, str) and r.strip()]
+    base = {k: v for k, v in ev.items() if k != "recurrence"}
+    if not rules:
+        return [base] if (e >= win_start and s <= win_end) else []
+    try:
+        from dateutil.rrule import rrulestr
+        norm = []
+        for r in rules:
+            if not r.upper().startswith(("RRULE", "EXDATE", "RDATE", "EXRULE", "DTSTART")):
+                r = "RRULE:" + r
+            # UNTILのZ(UTC)はnaive比較エラーになるため落とす(日単位精度で十分)
+            r = re.sub(r"(UNTIL=[0-9T]+)Z", r"\1", r)
+            norm.append(r)
+        rs = rrulestr("\n".join(norm), dtstart=s, forceset=True)
+        occs = rs.between(win_start - dur, win_end, inc=True)
+    except Exception as ex:
+        logger.warning(f"繰り返し展開失敗({ev.get('summary')}): {ex}")
+        return [base] if (e >= win_start and s <= win_end) else []
+    out = []
+    for o in occs[:190]:
+        oc = dict(base)
+        if ev.get("all_day"):
+            oc["start"] = o.date().isoformat()
+            oc["end"] = (o + dur).date().isoformat()
+        else:
+            oc["start"] = o.isoformat(timespec="seconds")
+            oc["end"] = (o + dur).isoformat(timespec="seconds")
+        out.append(oc)
+    return out
+
+
 def _fetch_user_events(token: str, user_id: str, range_start: str,
-                       range_end: str) -> list[dict]:
-    """1ユーザーの既定カレンダーから予定を取得し、平坦なdictに正規化する。"""
+                       range_end: str, win_start: datetime,
+                       win_end: datetime) -> list[dict]:
+    """1ユーザーの既定カレンダーから予定を取得し、繰り返しを展開して正規化する。"""
     try:
         r = requests.get(
             LW_CAL_EVENTS_URL.format(user_id=user_id),
@@ -100,18 +155,20 @@ def _fetch_user_events(token: str, user_id: str, range_start: str,
         for c in comps:
             st = c.get("start") or {}
             en = c.get("end") or {}
-            out.append({
+            raw = {
                 "summary": (c.get("summary") or "").strip(),
                 "start": st.get("dateTime") or st.get("date") or "",
                 "end": en.get("dateTime") or en.get("date") or "",
                 "all_day": bool(st.get("date")) and not st.get("dateTime"),
                 "location": (c.get("location") or "").strip(),
-            })
+                "recurrence": c.get("recurrence") or [],
+            }
+            out.extend(_expand_event(raw, win_start, win_end))
     return out
 
 
-def fetch_all(days: int = 7) -> list[dict]:
-    """登録ユーザー全員の予定(今日0:00〜+days日)を取得する。"""
+def fetch_all(days: int = 183) -> list[dict]:
+    """登録ユーザー全員の予定(今日0:00〜+days日)を取得する。繰り返しは展開済み。"""
     token = _cal_token()
     users = _load_annotation_state().get("users", [])
     names = _load_user_names()
@@ -119,9 +176,11 @@ def fetch_all(days: int = 7) -> list[dict]:
     end_d = start_d + timedelta(days=days)
     rs = start_d.isoformat(timespec="seconds")
     re_ = end_d.isoformat(timespec="seconds")
+    win_start = start_d.replace(tzinfo=None)
+    win_end = end_d.replace(tzinfo=None)
     events: list[dict] = []
     for uid in users:
-        for e in _fetch_user_events(token, uid, rs, re_):
+        for e in _fetch_user_events(token, uid, rs, re_, win_start, win_end):
             e["user_id"] = uid
             e["user_name"] = names.get(uid, "")
             events.append(e)
@@ -175,7 +234,7 @@ def users_on_leave(target: date | None = None) -> set[str]:
     }
 
 
-def cmd_export(days: int = 31) -> int:
+def cmd_export(days: int = 183) -> int:
     """AI Q&A用スナップショットを lw-raw/calendar_events.json へ保存。"""
     events = fetch_all(days=days)
     payload = {
@@ -203,8 +262,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="LINE WORKS カレンダー連携")
     ap.add_argument("--check", action="store_true", help="接続テスト(今日の予定を表示)")
     ap.add_argument("--export", action="store_true", help="Blobへスナップショット保存")
-    # 31日分: 「今月の休みは？」型の質問に答えられるように(2026-08-03拡大)
-    ap.add_argument("--days", type=int, default=31)
+    # 183日分(半年): 「今月の休み」「9月の予定」型の質問に答えられるように
+    ap.add_argument("--days", type=int, default=183)
     args = ap.parse_args()
 
     if args.check:
