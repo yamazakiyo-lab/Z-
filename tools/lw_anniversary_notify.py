@@ -29,7 +29,8 @@ import requests
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from lw_annotation_bot import _get_access_token, _send_text, logger  # noqa: E402
+from lw_annotation_bot import (_get_access_token, _send_text, logger,  # noqa: E402
+                               _get_blob_container)
 
 JST = timezone(timedelta(hours=9))
 NOTIFY_NAMES = [n.strip() for n in
@@ -68,6 +69,41 @@ def _display_name(u: dict) -> str:
     return f"{n.get('lastName', '')}{n.get('firstName', '')}".strip()
 
 
+def _export_members_prof(users: list[dict]) -> None:
+    """AI Q&A用にメンバーの誕生日(月日のみ)・入社日をBlobへ保存。
+
+    誕生日は年齢が分からないよう月日だけに落とす。失敗しても通知本体に影響させない。
+    """
+    import json
+    prof = {}
+    for u in users:
+        name = _display_name(u)
+        if not name:
+            continue
+        b = _parse_date(u.get("birthday"))
+        h = _parse_date(u.get("hiredDate") or u.get("hireDate"))
+        entry = {}
+        if b:
+            entry["birthday"] = f"{b[1]:02d}-{b[2]:02d}"  # 月日のみ
+        if h and h[0]:
+            entry["hired"] = f"{h[0]}-{h[1]:02d}-{h[2]:02d}"
+        if entry:
+            prof[name.replace(" ", "")] = entry
+    try:
+        container = _get_blob_container()
+        if container is None:
+            return
+        payload = {"generated_at": datetime.now(JST).isoformat(timespec="seconds"),
+                   "members": prof}
+        container.upload_blob(
+            "members_prof.json",
+            json.dumps(payload, ensure_ascii=False, indent=1).encode("utf-8"),
+            overwrite=True)
+        logger.info(f"members_prof.json 更新: {len(prof)} 名")
+    except Exception as e:
+        logger.warning(f"members_prof.json 保存失敗: {e}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="誕生日・入社記念日の当日通知")
     ap.add_argument("--check", action="store_true", help="登録状況の一覧表示のみ")
@@ -76,6 +112,9 @@ def main() -> int:
 
     users = _fetch_users_full()
     today = datetime.now(JST).date()
+
+    # AI Q&A用のプロフィールスナップショットを毎回更新(--check時も)
+    _export_members_prof(users)
 
     if args.check:
         print(f"{'氏名':<12} {'誕生日':<12} 入社日")

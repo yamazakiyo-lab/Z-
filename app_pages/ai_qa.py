@@ -43,6 +43,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - 会社の経営方針・企業理念・重点施策・業務方針に関する質問には、[経営計画]のチャンクを根拠に、章名を示して答えること(例: 「中期経営計画書2026『重点施策』によると…」)。
 - 社員の予定・出張・休暇の質問に[社内予定]が渡された場合は、それを根拠に答え、スナップショット時点の情報であることを添えること。該当が無ければ「カレンダーに予定が見当たらない」と答え、推測しないこと。
 - [質問者]が渡された場合、質問文の「俺」「私」「自分」は質問者本人を指す。予定などの質問では質問者本人の情報を答えること。
+- 誕生日・入社日の質問には[メンバー情報]を根拠に答えること。誕生日は月日のみのデータであり、生年・年齢は答えられない(推測もしない)。
 - 在庫の質問に[在庫データ]が渡された場合は、その数量・棚番を根拠に直接答えること。ただし「昨晩時点のデータ」であることを添え、最新・詳細は「部品在庫検索」「動治工具・測定具・消耗品検索」メニューでの確認を必ず案内すること。[在庫データ]に該当が無い品は、数を推測せず在庫は不明としてメニューを案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
@@ -289,6 +290,49 @@ def _calendar_context(question: str, asker: str = "") -> str:
     span = cal.get("days") or 31
     return (f"[社内予定(LINE WORKSカレンダー、{gen}時点・今日から{span}日分より抜粋)] "
             + " ｜ ".join(lines))
+
+
+@st.cache_data(ttl=21600)
+def _load_members_prof() -> dict:
+    """メンバーの誕生日(月日のみ)・入社日(members_prof.json)をBlobから読む。
+
+    毎朝8:00の記念日通知タスクが更新する。誕生日は年齢が出ないよう月日のみ。
+    """
+    try:
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        if not conn:
+            return {}
+        from azure.storage.blob import BlobServiceClient
+        svc = BlobServiceClient.from_connection_string(conn)
+        raw = svc.get_blob_client(QA_LOG_CONTAINER, "members_prof.json") \
+            .download_blob().readall()
+        return json.loads(raw.decode("utf-8")).get("members", {})
+    except Exception:
+        return {}
+
+
+_PROF_INTENT = re.compile(r"誕生日|バースデー|入社日|勤続|何年目|入社した")
+
+
+def _members_prof_context(question: str) -> str:
+    """誕生日・入社日の質問なら、メンバープロフィールを文脈として返す。"""
+    if not _PROF_INTENT.search(question):
+        return ""
+    prof = _load_members_prof()
+    if not prof:
+        return ""
+    lines = []
+    for name, p in prof.items():
+        parts = []
+        if p.get("birthday"):
+            parts.append(f"誕生日{p['birthday'].replace('-', '/')}")
+        if p.get("hired"):
+            parts.append(f"入社{p['hired']}")
+        if parts:
+            lines.append(f"{name}: {'、'.join(parts)}")
+    if not lines:
+        return ""
+    return "[メンバー情報(誕生日は月日のみ)] " + " ｜ ".join(lines)
 
 
 @st.cache_data(ttl=3600)
@@ -562,6 +606,12 @@ def main() -> None:
                 _cal_ctx = ""
             if _cal_ctx:
                 context = f"{context}\n{_cal_ctx}"
+            try:
+                _prof_ctx = _members_prof_context(question)
+            except Exception:
+                _prof_ctx = ""
+            if _prof_ctx:
+                context = f"{context}\n{_prof_ctx}"
             _asker = _current_upn()
             if _asker:
                 context = f"{context}\n[質問者: {_asker}]"
