@@ -196,7 +196,17 @@ def fetch_all(days: int = 183) -> list[dict]:
             time.sleep(0.1)
         d = d_end
     events.sort(key=lambda e: e.get("start") or "")
-    return events
+    # 分割クエリの重複除去: チャンク境界をまたぐ単発予定や、複数チャンクに
+    # 返る繰り返し系列(展開窓は常に全期間)が二重に入るのを防ぐ
+    seen: set = set()
+    uniq: list[dict] = []
+    for e in events:
+        k = (e.get("user_id"), e.get("summary"), e.get("start"), e.get("end"))
+        if k in seen:
+            continue
+        seen.add(k)
+        uniq.append(e)
+    return uniq
 
 
 def _is_on(e: dict, d: date) -> bool:
