@@ -46,7 +46,7 @@ TSEG のデスクトップ(KEIRI-PC)で動くスケジュールタスクの正�
 | TSEG_ログ掃除 | `<DIR>\run_log_cleanup.bat` | 毎日 12:30（ノート・デスクトップ両方に設定） |
 | TSEG_マスタCSV鮮度チェック | `<DIR>\run_master_csv_check.bat` | 毎週土曜 9:00（古ければ山嵜喜隆・山嵜絵里へLW通知） |
 | TSEG_CalendarExport | `<DIR>\run_cal_export_wrapper.bat` | 毎時 0分（LWカレンダー半年分をBlobへスナップショット。繰り返し予定は発生日に展開。AI Q&Aの予定回答用） |
-| TSEG_記念日通知 | `<DIR>\run_anniversary_wrapper.bat` | 毎日 8:00（誕生日・入社記念日を山嵜喜隆・山嵜絵里へLW通知。該当日のみ。マスタはLWメンバー情報の誕生日・入社日欄） |
+| TSEG_記念日通知 | `<DIR>\run_anniversary_wrapper.bat` | 毎日 8:00（誕生日・入社記念日の当日通知＋節目の30日前通知[勤続満3年・5年〜50年5年刻み／60歳役職定年・65歳定年]を山嵜喜隆・山嵜絵里へ。該当日のみ。マスタはLWメンバー情報。AI Q&A用members_prof.jsonもここで更新） |
 | LW_Bot_Receiver | `<DIR>\lw_venv\Scripts\python.exe -m uvicorn lineworks_bot_receiver:app --host 0.0.0.0 --port 8000`（Start In: `<DIR>`） | 起動時 |
 
 ---
