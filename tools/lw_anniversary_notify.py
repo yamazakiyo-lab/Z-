@@ -36,6 +36,19 @@ JST = timezone(timedelta(hours=9))
 NOTIFY_NAMES = [n.strip() for n in
                 os.getenv("ANNIV_NOTIFY_NAMES", "山嵜喜隆,山嵜絵里").split(",") if n.strip()]
 
+# 節目の事前通知(2026-08-04追加): 到達日の LEAD_DAYS 日前に管理者へ知らせる
+LEAD_DAYS = 30
+MILESTONE_YEARS = [3] + list(range(5, 51, 5))   # 勤続 満3年、5年、10年…50年
+AGE_MILESTONES = {60: "60歳(役職定年)", 65: "65歳(定年)"}
+
+
+def _add_years(d: date, n: int) -> date:
+    """n年後の同月同日(2/29生まれ等は2/28に丸め)。"""
+    try:
+        return d.replace(year=d.year + n)
+    except ValueError:
+        return d.replace(year=d.year + n, day=28)
+
 
 def _parse_date(v) -> tuple[int | None, int, int] | None:
     """'YYYY-MM-DD'/'MM-DD'/'YYYYMMDD' 等を (年 or None, 月, 日) に。不明はNone。"""
@@ -127,6 +140,7 @@ def main() -> int:
         return 0
 
     lines: list[str] = []
+    lead = today + timedelta(days=LEAD_DAYS)
     for u in users:
         name = _display_name(u)
         if not name:
@@ -143,6 +157,21 @@ def main() -> int:
                              f"({h[0]}年入社)")
             elif h[0] == today.year:
                 lines.append(f"🌸 本日 {name} さんが入社しました")
+        # ── 節目の30日前通知 ──────────────────────────────────────────
+        # 勤続 満3年・5年・10年…(5年刻み)
+        if h and h[0]:
+            hd = date(h[0], h[1], h[2])
+            for n in MILESTONE_YEARS:
+                if _add_years(hd, n) == lead:
+                    lines.append(f"🎖 {name} さんは {lead.month}/{lead.day} で"
+                                 f"勤続満{n}年になります({h[0]}年{h[1]}月入社・30日前のお知らせ)")
+        # 60歳(役職定年)・65歳(定年) ※誕生日に生年が登録されている人のみ判定可
+        if b and b[0]:
+            bd = date(b[0], b[1], b[2])
+            for age, label in AGE_MILESTONES.items():
+                if _add_years(bd, age) == lead:
+                    lines.append(f"⏰ {name} さんは {lead.month}/{lead.day} で"
+                                 f"{label}を迎えます(30日前のお知らせ)")
 
     if not lines:
         logger.info("本日の誕生日・入社記念日は該当なし")
