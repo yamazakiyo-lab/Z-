@@ -175,7 +175,7 @@ def users_on_leave(target: date | None = None) -> set[str]:
     }
 
 
-def cmd_export(days: int = 7) -> int:
+def cmd_export(days: int = 31) -> int:
     """AI Q&A用スナップショットを lw-raw/calendar_events.json へ保存。"""
     events = fetch_all(days=days)
     payload = {
@@ -203,7 +203,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="LINE WORKS カレンダー連携")
     ap.add_argument("--check", action="store_true", help="接続テスト(今日の予定を表示)")
     ap.add_argument("--export", action="store_true", help="Blobへスナップショット保存")
-    ap.add_argument("--days", type=int, default=7)
+    # 31日分: 「今月の休みは？」型の質問に答えられるように(2026-08-03拡大)
+    ap.add_argument("--days", type=int, default=31)
     args = ap.parse_args()
 
     if args.check:

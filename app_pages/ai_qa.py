@@ -42,6 +42,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - TSEG WORKS(このアプリ)や写真投稿botの使い方の質問には、【利用マニュアル】のチャンクを根拠に、章名を示して答えること(例: 「利用マニュアル『写真の投稿』によると…」)。
 - 会社の経営方針・企業理念・重点施策・業務方針に関する質問には、[経営計画]のチャンクを根拠に、章名を示して答えること(例: 「中期経営計画書2026『重点施策』によると…」)。
 - 社員の予定・出張・休暇の質問に[社内予定]が渡された場合は、それを根拠に答え、スナップショット時点の情報であることを添えること。該当が無ければ「カレンダーに予定が見当たらない」と答え、推測しないこと。
+- [質問者]が渡された場合、質問文の「俺」「私」「自分」は質問者本人を指す。予定などの質問では質問者本人の情報を答えること。
 - 在庫の質問に[在庫データ]が渡された場合は、その数量・棚番を根拠に直接答えること。ただし「昨晩時点のデータ」であることを添え、最新・詳細は「部品在庫検索」「動治工具・測定具・消耗品検索」メニューでの確認を必ず案内すること。[在庫データ]に該当が無い品は、数を推測せず在庫は不明としてメニューを案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
@@ -201,23 +202,64 @@ _CAL_INTENT = re.compile(
     r"予定|出張|カレンダー|スケジュール|休み|休暇|不在|在社|出社|出勤|どこに|来てる|いますか|いる？")
 
 
-def _calendar_context(question: str) -> str:
-    """予定の質問なら、スナップショットの予定一覧を文脈として返す。"""
+def _calendar_context(question: str, asker: str = "") -> str:
+    """予定の質問なら、期間・人物で絞ったスナップショットの予定一覧を文脈として返す。
+
+    スナップショットは今日から31日分。質問の「今月/来週/明日」等で期間を絞り、
+    質問中の人名(または「俺/私」なら質問者)に該当する人の予定を優先する。
+    """
     if not _CAL_INTENT.search(question):
         return ""
     cal = _load_calendar()
     events = cal.get("events") or []
     if not events:
         return ""
+    import datetime as _dt
+    today = datetime.now(JST).date()
+
+    def _ev_date(e):
+        try:
+            return _dt.date.fromisoformat((e.get("start") or "")[:10])
+        except Exception:
+            return None
+
+    end = None
+    if "今月" in question:
+        end = (today.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    elif "来月" in question:
+        end = None  # スナップショット全域(31日)を渡す
+    elif "来週" in question:
+        end = today + timedelta(days=14)
+    elif "今週" in question:
+        end = today + timedelta(days=7)
+    elif "明日" in question or "明後日" in question or "あす" in question:
+        end = today + timedelta(days=3)
+    sel = [e for e in events
+           if (d := _ev_date(e)) and d >= today and (end is None or d <= end)]
+
+    # 人物の絞り込み: 質問中の実在人名 > 「俺/私/自分」=質問者
+    names = {e.get("user_name", "") for e in sel if e.get("user_name")}
+    hit = [n for n in names if n in question or (len(n) >= 2 and n[:2] in question)]
+    if not hit and asker and re.search(r"俺|私|自分|わたし|僕", question):
+        a = asker.replace(" ", "")
+        hit = [n for n in names if n.replace(" ", "") in a or a in n.replace(" ", "")]
+    if hit:
+        pri = [e for e in sel if e.get("user_name") in hit]
+        if pri:
+            sel = pri
+    if not sel:
+        return ""
     lines = []
-    for e in events[:40]:
+    for e in sel[:40]:
         d = (e.get("start") or "")[:10]
         t = (e.get("start") or "")[11:16]
         when = f"{d[5:].replace('-', '/')}" + (f" {t}" if t and not e.get("all_day") else "")
         loc = f"({e['location']})" if e.get("location") else ""
         lines.append(f"{when} {e.get('user_name', '?')}: {e.get('summary', '')}{loc}")
     gen = (cal.get("generated_at") or "")[:16].replace("T", " ")
-    return (f"[社内予定(LINE WORKSカレンダー、{gen}時点の7日分)] " + " ｜ ".join(lines))
+    span = cal.get("days") or 31
+    return (f"[社内予定(LINE WORKSカレンダー、{gen}時点・今日から{span}日分より抜粋)] "
+            + " ｜ ".join(lines))
 
 
 @st.cache_data(ttl=3600)
@@ -486,11 +528,14 @@ def main() -> None:
             if inv_hits:
                 context = f"{context}\n{_inventory_context(inv_hits)}"
             try:
-                _cal_ctx = _calendar_context(question)
+                _cal_ctx = _calendar_context(question, _current_upn())
             except Exception:
                 _cal_ctx = ""
             if _cal_ctx:
                 context = f"{context}\n{_cal_ctx}"
+            _asker = _current_upn()
+            if _asker:
+                context = f"{context}\n[質問者: {_asker}]"
 
             history = st.session_state.qa_messages[-(MAX_HISTORY * 2):]
             messages = [{"role": "system", "content": SYSTEM_PROMPT}]
