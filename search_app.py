@@ -51,6 +51,17 @@ st.markdown(
     """
 <style>
 [data-testid="stElementToolbar"] { display: none !important; }
+/* AI Q&Aのチャット入力: スマホで送信ボタン(↑)が右端に食い込んで押しにくい対策。
+   下部コンテナに右余白を確保し、ボタンの当たり判定を大きくする(2026-08-04) */
+[data-testid="stBottomBlockContainer"] {
+    padding-left: 0.8rem !important;
+    padding-right: 1.4rem !important;
+}
+[data-testid="stChatInput"] button {
+    min-width: 2.8rem !important;
+    min-height: 2.8rem !important;
+    margin-right: 0.15rem !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
