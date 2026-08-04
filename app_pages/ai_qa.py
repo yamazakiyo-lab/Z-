@@ -217,11 +217,19 @@ def _calendar_context(question: str, asker: str = "") -> str:
     import datetime as _dt
     today = datetime.now(JST).date()
 
-    def _ev_date(e):
+    def _ev_range(e):
+        """予定の(開始日, 実質終了日)。終日予定のendは翌日日付(排他的)なので1日引く。"""
         try:
-            return _dt.date.fromisoformat((e.get("start") or "")[:10])
+            ds = _dt.date.fromisoformat((e.get("start") or "")[:10])
         except Exception:
             return None
+        try:
+            de = _dt.date.fromisoformat((e.get("end") or "")[:10])
+            if e.get("all_day") and de > ds:
+                de -= timedelta(days=1)
+        except Exception:
+            de = ds
+        return ds, max(ds, de)
 
     # 期間の解釈: 今月/来月/N月/来週/今週/明日 → 該当範囲。指定なしは1か月先まで
     qn = question.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
@@ -249,8 +257,9 @@ def _calendar_context(question: str, asker: str = "") -> str:
         end = today + timedelta(days=3)
     else:
         end = today + timedelta(days=31)
+    # 期間に「重なる」予定を採用(開始日が過去でも継続中なら拾う)
     sel = [e for e in events
-           if (d := _ev_date(e)) and start_d <= d <= end]
+           if (r := _ev_range(e)) and r[0] <= end and r[1] >= start_d]
 
     # 人物の絞り込み: 質問中の実在人名 > 「俺/私/自分」=質問者
     names = {e.get("user_name", "") for e in sel if e.get("user_name")}
@@ -266,9 +275,14 @@ def _calendar_context(question: str, asker: str = "") -> str:
         return ""
     lines = []
     for e in sel[:40]:
-        d = (e.get("start") or "")[:10]
+        r = _ev_range(e)
+        ds, de = r
         t = (e.get("start") or "")[11:16]
-        when = f"{d[5:].replace('-', '/')}" + (f" {t}" if t and not e.get("all_day") else "")
+        when = ds.strftime("%m/%d")
+        if t and not e.get("all_day"):
+            when += f" {t}"
+        if de > ds:
+            when += f"〜{de.strftime('%m/%d')}"  # 複数日は期間で明示
         loc = f"({e['location']})" if e.get("location") else ""
         lines.append(f"{when} {e.get('user_name', '?')}: {e.get('summary', '')}{loc}")
     gen = (cal.get("generated_at") or "")[:16].replace("T", " ")
