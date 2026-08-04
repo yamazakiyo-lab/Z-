@@ -192,7 +192,14 @@ def _send_text(user_id: str, text: str) -> bool:
         return False
 
 
-def _send_image(user_id: str, image_url: str) -> bool:
+def _send_image(user_id: str, image_url: str, original_url: str = "") -> bool:
+    """画像メッセージ送信。
+
+    previewImageUrl(トーク内サムネ)はSAS付き直URL、originalContentUrl(拡大表示)は
+    クエリ無しのreceiverリダイレクトURLを使い分ける。PC版クライアントは拡大時に
+    URL末尾でファイル種別を判定するため、?SAS付きだと「対応していないファイル」
+    になる(2026-08-04対応)。
+    """
     if DRY_RUN:
         logger.info(f"[DRY-RUN] 画像送信（ユーザー: {user_id}, URL: {image_url}）")
         return True
@@ -204,7 +211,7 @@ def _send_image(user_id: str, image_url: str) -> bool:
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={"content": {
                 "type": "image",
-                "originalContentUrl": image_url,
+                "originalContentUrl": original_url or image_url,
                 "previewImageUrl": image_url,
             }},
             timeout=10,
@@ -214,6 +221,15 @@ def _send_image(user_id: str, image_url: str) -> bool:
     except Exception as e:
         logger.error(f"画像送信失敗 ({user_id}): {e}")
         return False
+
+
+def _sas_url_to_media_redirect(url: str) -> str:
+    """SAS付き写真URL → receiver経由のクエリ無しリダイレクトURL(PC拡大表示用)。"""
+    try:
+        path = url.split(f"/{PHOTOS_CONTAINER}/", 1)[1].split("?", 1)[0]
+        return f"{LW_RECEIVER_BASE_URL}/media/{path}"
+    except Exception:
+        return url
 
 
 # ── Blob: annotation_state.json ───────────────────────────────────────────────
@@ -781,7 +797,7 @@ def _send_annotation_request(
         # サムネイル（1000px・200KB）を生成してから送信
         image_url = _upload_thumbnail(file_path) or _to_blob_url(file_path)
         if image_url:
-            ok = _send_image(user_id, image_url)
+            ok = _send_image(user_id, image_url, _sas_url_to_media_redirect(image_url))
             if not ok:
                 _send_text(user_id, f"📸 {file_name}")
         else:
@@ -986,16 +1002,22 @@ def cmd_send() -> None:
             return rel.parts[0] if rel.parts else ""
         except ValueError:
             return ""
-    state["unannotated_pool"] = [
-        {
+    def _pool_item(d: str, f: str) -> dict:
+        blob_url = _to_blob_url(f)
+        thumb_url = (_upload_thumbnail(f)
+                     if Path(f).suffix.lower() in VISION_SUPPORTED_EXT else "")
+        return {
             "doc_id": d,
             "file_path": f,
-            "blob_url": _to_blob_url(f),
-            "thumb_url": _upload_thumbnail(f) if Path(f).suffix.lower() in VISION_SUPPORTED_EXT else "",
+            "blob_url": blob_url,
+            "thumb_url": thumb_url,
+            # PC拡大表示用のクエリ無しリダイレクトURL(receiver経由)
+            "media_url": _sas_url_to_media_redirect(thumb_url or blob_url)
+                         if (thumb_url or blob_url) else "",
             "job_number": _job_number(f),
         }
-        for d, f in pool_sample
-    ]
+
+    state["unannotated_pool"] = [_pool_item(d, f) for d, f in pool_sample]
 
     # 送信ループに入る前に一度保存しておく。
     # 理由: 保存を最後に1回だけにしていると、送信中(23人×0.5秒)はBlobの pending が

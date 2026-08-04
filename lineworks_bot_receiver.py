@@ -347,7 +347,10 @@ def _send_text(channel_id: str, user_id: str, text: str) -> None:
 
 
 # ── LINE WORKS 画像送信 ────────────────────────────────────────────────────────
-def _send_image(channel_id: str, user_id: str, image_url: str) -> None:
+def _send_image(channel_id: str, user_id: str, image_url: str,
+                original_url: str = "") -> None:
+    """画像送信。previewはSAS直URL、original(拡大表示)はクエリ無しの
+    /mediaリダイレクトURLを使う(PC版の「対応していないファイル」対策)。"""
     try:
         token = _get_access_token()
         if channel_id:
@@ -359,7 +362,7 @@ def _send_image(channel_id: str, user_id: str, image_url: str) -> None:
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             json={"content": {
                 "type": "image",
-                "originalContentUrl": image_url,
+                "originalContentUrl": original_url or image_url,
                 "previewImageUrl": image_url,
             }},
             timeout=10,
@@ -395,7 +398,7 @@ def _send_annotation_media(channel_id: str, user_id: str, item: dict) -> None:
     else:
         url = item.get("thumb_url", "") or item.get("blob_url", "")
         if url:
-            _send_image(channel_id, user_id, url)
+            _send_image(channel_id, user_id, url, item.get("media_url", ""))
         else:
             _send_text(channel_id, user_id, f"📸 {name}")
         logger.info(f"学習協力 画像送信: {name}")
@@ -1154,8 +1157,13 @@ async def lineworks_callback(request: Request) -> Response:
 
 
 @app.get("/video/{blob_path:path}")
+@app.get("/media/{blob_path:path}")
 async def video_redirect(blob_path: str) -> RedirectResponse:
-    """動画BlobのSAS URLへリダイレクト（LINE WORKSがクエリ文字列を切り捨てる対策）。"""
+    """写真・動画BlobのSAS URLへリダイレクト。
+
+    LINE WORKSはURLのクエリ文字列を切り捨てたり、PC版が?SAS付きURLを
+    「対応していないファイル」と判定するため、クエリ無しURL→SAS付きへ302で逃がす。
+    /video は動画リンク用(既存)、/media は画像の拡大表示用(2026-08-04追加)。"""
     try:
         client = _get_blob_client()
         if client is None:
