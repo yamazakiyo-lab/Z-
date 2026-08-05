@@ -7,7 +7,7 @@ AI Q&Aが「○○社のNC1-110整備、過去いくらで出してる？」等�
 方式: xlsx見積の全シート(枚数無制限)から明細本文を、先頭シートから宛先・件名・
       日付・合計金額をヒューリスティックに抽出。複数シートのブックは1シート=
       1ドキュメントに分割して photo-index に media_type="mitsumori" でupsert。
-      旧xls・PDFは第2期(未対応。件数のみログ)。
+      旧xls(xlrd)・PDF(pypdf)も対応(2026-08-05第2期)。スキャンPDFは名前のみ。
 
 実行(デスクトップ):
     python export_mitsumori_index.py --dry-run --limit 20  # 抽出結果の確認
@@ -145,29 +145,142 @@ def _extract_normal(wb) -> dict:
             "body": body}
 
 
-def _docs_for(p: Path, rel: Path, indexed_at: str) -> tuple[list[dict], str]:
-    """1ファイル分の(検索ドキュメント群, 明細テキスト)を返す。
-
-    複数シートのブックは1シート=1ドキュメントに分割する(台帳型・機械加工型とも)。
-    見積日はシート名の6桁日付(ISS260220等) → シート内の日付 → ファイル更新日の
-    順で採用。金額はそのシート内の最大数値。単一シートのブックは従来どおり
-    1ファイル=1ドキュメント(IDも従来と同じ)。
-    """
+def _sheets_xlsx(p: Path) -> list[tuple[str, dict]]:
+    """xlsxの全シートを走査して(シート名, 抽出情報)のリストを返す。"""
     import openpyxl
     wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
     sheets: list[tuple[str, dict]] = []
     try:
-        customer = _customer_from_path(rel)
         for ws in wb.worksheets:
             info = _scan_sheet(ws, want_header=True)
             if info["lines"]:
                 sheets.append((ws.title, info))
     finally:
         wb.close()
+    return sheets
+
+
+def _sheets_xls(p: Path) -> list[tuple[str, dict]]:
+    """旧xls(Excel97-2003)の全シートを走査(xlrd使用)。構造はxlsx版と同じ。"""
+    import xlrd
+    wb = xlrd.open_workbook(str(p))
+    sheets: list[tuple[str, dict]] = []
+    for ws in wb.sheets():
+        atesaki = kenmei = date_s = ""
+        max_num = 0.0
+        label_next = False
+        lines: list[str] = []
+        for ri in range(min(ws.nrows, 400)):
+            row_texts: list[str] = []
+            for ci in range(min(ws.ncols, 20)):
+                cell = ws.cell(ri, ci)
+                v = cell.value
+                if v in ("", None):
+                    continue
+                if cell.ctype == 1:  # 文字列
+                    s = str(v).strip()
+                    if not s:
+                        continue
+                    if label_next:
+                        if not re.fullmatch(r"数\s*量|単\s*価|金\s*額|単\s*位|備\s*考", s):
+                            kenmei = kenmei or s[:60]
+                        label_next = False
+                    elif re.fullmatch(r"件\s*名|工事名|品\s*名", s):
+                        label_next = True
+                    row_texts.append(s)
+                    if ((s.endswith("様") or s.endswith("御中"))
+                            and not atesaki and 3 <= len(s) <= 40):
+                        atesaki = s
+                elif cell.ctype == 3 and not date_s:  # 日付
+                    try:
+                        date_s = xlrd.xldate_as_datetime(
+                            v, wb.datemode).strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+                elif cell.ctype == 2:  # 数値
+                    if v > max_num:
+                        max_num = float(v)
+            joined = " ".join(row_texts)
+            if len(joined) >= 4:
+                lines.append(joined)
+        if lines:
+            sheets.append((ws.name, {"lines": lines, "atesaki": atesaki,
+                                     "kenmei": kenmei, "date": date_s,
+                                     "max_num": max_num}))
+    return sheets
+
+
+RX_DATE_JP = re.compile(r"(20\d{2})[年/.\-]\s*(\d{1,2})[月/.\-]\s*(\d{1,2})")
+RX_MONEY = re.compile(r"(?<![\d,.])([1-9]\d{0,2}(?:,\d{3})+)(?!\d)")
+
+
+def _pdf_docs(p: Path, rel: Path, indexed_at: str,
+              customer: str, mtime_date: str) -> tuple[list[dict], str]:
+    """PDF見積を1ファイル=1ドキュメントで取り込む(先頭30ページ)。
+
+    スキャンPDF(テキスト無し)は件名=ファイル名のみで登録し、明細は空。
+    """
+    from pypdf import PdfReader
+    pages: list[str] = []
+    reader = PdfReader(str(p))
+    for pg in reader.pages[:30]:
+        try:
+            t = (pg.extract_text() or "").strip()
+        except Exception:
+            t = ""
+        if t:
+            pages.append(t)
+    body = "\n".join(pages)[:SHEET_BODY_MAX]
+    m_d = RX_DATE_JP.search(body)
+    date_s = (f"{m_d.group(1)}-{int(m_d.group(2)):02d}-{int(m_d.group(3)):02d}"
+              if m_d else mtime_date)
+    nums = [int(x.replace(",", "")) for x in RX_MONEY.findall(body)]
+    gokei = max(nums) if nums else 0
+    gs = f"{gokei:,}円" if gokei else "(金額抽出不可)"
+    atesaki = ""
+    for ln in body.splitlines():
+        s = ln.strip()
+        if (s.endswith("様") or s.endswith("御中")) and 3 <= len(s) <= 40:
+            atesaki = s
+            break
+    m_k = re.search(r"件\s*名[:：]?\s*(\S.{0,58})", body)
+    kenmei = (m_k.group(1).strip() if m_k else p.stem)
+    mw = RX_WORKNO.search(p.stem) or RX_WORKNO.search(kenmei)
+    workno = mw.group(1) if mw else ""
+    text = (f"【過去見積】顧客: {customer} / 宛先: {atesaki or '不明'} / "
+            f"件名: {kenmei} / 見積日: {date_s or '不明'} / 合計金額: {gs}"
+            + (f" / 工番: {workno}" if workno else "")
+            + f"\nファイル: {p}"
+            + (f"\n明細:\n{body}" if body else "\n(スキャンPDFのためテキスト抽出不可)"))
+    doc = {
+        "id": hashlib.sha256(f"mitsumori::{rel}".encode("utf-8")).hexdigest(),
+        "file_path": str(p), "file_name": p.name,
+        "workno": workno, "workno_name": f"{customer}/{kenmei}"[:100],
+        "phase": "", "media_type": MEDIA_TYPE, "capture_date": None,
+        "capture_date_raw": date_s, "extension": ".pdf",
+        "folder_path": str(p.parent), "indexed_at": indexed_at,
+        "content_text": text,
+    }
+    return [doc], body
+
+
+def _docs_for(p: Path, rel: Path, indexed_at: str) -> tuple[list[dict], str]:
+    """1ファイル分の(検索ドキュメント群, 明細テキスト)を返す。
+
+    xlsx/xls: 複数シートのブックは1シート=1ドキュメントに分割(台帳型・機械加工型
+    とも)。見積日はシート名の6桁日付(ISS260220等) → シート内の日付 → ファイル
+    更新日の順。金額はそのシート内の最大数値。単一シートは1ファイル=1ドキュメント。
+    pdf: 1ファイル=1ドキュメント(テキスト抽出、スキャンPDFはファイル名のみ)。
+    """
+    customer = _customer_from_path(rel)
     try:
         mtime_date = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
     except OSError:
         mtime_date = ""
+    suffix = p.suffix.lower()
+    if suffix == ".pdf":
+        return _pdf_docs(p, rel, indexed_at, customer, mtime_date)
+    sheets = _sheets_xls(p) if suffix == ".xls" else _sheets_xlsx(p)
     multi = len(sheets) > 1
     docs: list[dict] = []
     bodies: list[str] = []
@@ -237,14 +350,12 @@ def main() -> int:
                 continue
             low = fn.lower()
             p = Path(dirpath) / fn
+            if not low.endswith((".xlsx", ".xls", ".pdf")):
+                continue
             if low.endswith(".pdf"):
                 pdf_n += 1
-                continue
-            if low.endswith(".xls"):
+            elif low.endswith(".xls"):
                 xls_n += 1
-                continue
-            if not low.endswith(".xlsx"):
-                continue
             rel = p.relative_to(ROOT)
             key = str(rel)
             current_keys.add(key)
@@ -259,8 +370,8 @@ def main() -> int:
             targets.append((p, rel, mt))
 
     removed = [k for k in state if k not in current_keys]
-    print(f"[SCAN] 対象xlsx 新規/更新 {len(targets):,} 件 / 変更なし {skipped_old:,} 件 / "
-          f"削除 {len(removed):,} 件 (未対応: 旧xls {xls_n:,}・PDF {pdf_n:,})")
+    print(f"[SCAN] 対象 新規/更新 {len(targets):,} 件 / 変更なし {skipped_old:,} 件 / "
+          f"削除 {len(removed):,} 件 (全体のうち旧xls {xls_n:,}・PDF {pdf_n:,})")
 
     if args.dry_run:
         n = args.limit or 20
