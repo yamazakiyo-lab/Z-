@@ -603,6 +603,15 @@ try {
         }
     } catch {}
 
+    # ── 過去見積インデックスの差分更新（QUOTATION SEARCH / AI Q&A見積回答用）──
+    # 状態ファイルで差分管理。変更が無い夜はスキャンのみで数十秒。
+    try {
+        if ($cleanupPython) {
+            Write-Host "[MITSUMORI] 過去見積インデックスの差分更新..."
+            & $cleanupPython (Join-Path $pw 'export_mitsumori_index.py')
+        }
+    } catch {}
+
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
     $cutoff = (Get-Date).AddDays(-$logRetentionDays)
