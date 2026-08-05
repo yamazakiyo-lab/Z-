@@ -44,6 +44,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - 社員の予定・出張・休暇の質問に[社内予定]が渡された場合は、それを根拠に答え、スナップショット時点の情報であることを添えること。該当が無ければ「カレンダーに予定が見当たらない」と答え、推測しないこと。
 - [質問者]が渡された場合、質問文の「俺」「私」「自分」は質問者本人を指す。予定などの質問では質問者本人の情報を答えること。
 - 誕生日・入社日の質問には[メンバー情報]を根拠に答えること。誕生日は月日のみのデータであり、生年・年齢は答えられない(推測もしない)。[メンバー情報]に「開示できない」とある場合は、人事情報のため答えられない旨を丁寧に伝えること。
+- 過去の見積の質問に[過去見積]が渡された場合は、件名・見積日・合計金額・ファイルの場所を根拠に答えること。金額は抽出値のため「詳細はファイルで確認」を添えること。[過去見積]が無い場合、見積の金額に関する質問には「見積情報の閲覧権限がないか、該当が見つからない」旨を答え、推測しないこと。
 - 在庫の質問に[在庫データ]が渡された場合は、その数量・棚番を根拠に直接答えること。ただし「昨晩時点のデータ」であることを添え、最新・詳細は「部品在庫検索」「動治工具・測定具・消耗品検索」メニューでの確認を必ず案内すること。[在庫データ]に該当が無い品は、数を推測せず在庫は不明としてメニューを案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
@@ -311,6 +312,22 @@ def _load_members_prof() -> dict:
         return {}
 
 
+# 見積の質問に答えられるのは見積作成メンバー+管理者のみ(金額は営業機密)
+_MITSUMORI_ALLOWED = {n.strip() for n in os.getenv(
+    "QA_MITSUMORI_ALLOWED_NAMES",
+    "山嵜喜隆,山嵜絵里,昆哲郎,松尾崇,松﨑誠一,滝沢雄一").split(",") if n.strip()}
+_MITSUMORI_INTENT = re.compile(r"見積|いくらで|金額|値段|単価|価格|出してる|出した")
+
+
+def _norm_name(s: str) -> str:
+    return (s or "").replace(" ", "").replace("﨑", "崎")
+
+
+def _mitsumori_allowed(asker: str) -> bool:
+    a = _norm_name(asker)
+    return any(_norm_name(n) in a or a == _norm_name(n) for n in _MITSUMORI_ALLOWED)
+
+
 _PROF_INTENT = re.compile(r"誕生日|バースデー|入社日|勤続|何年目|入社した")
 # 誕生日・入社日は人事情報のため、AI Q&Aで答える相手を管理者に限定する
 _PROF_ALLOWED = {n.strip() for n in
@@ -463,7 +480,8 @@ def _extract_keywords(openai_client, question: str) -> str:
         return question
 
 
-def _search_internal(query: str, keywords: str = "") -> list[dict]:
+def _search_internal(query: str, keywords: str = "",
+                     include_mitsumori: bool = False) -> list[dict]:
     """規程と工番データを別枠で検索して統合する。
 
     1回の検索だと語の出現頻度で特定文書(例: 「休暇」「申請」が頻出する
@@ -488,9 +506,13 @@ def _search_internal(query: str, keywords: str = "") -> list[dict]:
 
     results = (_run("media_type eq 'kitei'", 4)
                + _run("media_type eq 'manual'", 2)
-               + _run("media_type ne 'kitei' and media_type ne 'manual'", 3))
+               + _run("media_type ne 'kitei' and media_type ne 'manual'"
+                      " and media_type ne 'mitsumori'", 3))
     # 経営計画は上記3枠目(その他)に含まれて返るが、専用の底上げは行わない
     # (経営方針系の質問ならキーワード一致で自然に上位に来るため)
+    # 見積は営業機密のため通常枠から除外し、許可された質問者のときだけ専用枠で検索
+    if include_mitsumori:
+        results += _run("media_type eq 'mitsumori'", 4)
 
     hits = []
     for r in results:
@@ -501,6 +523,7 @@ def _search_internal(query: str, keywords: str = "") -> list[dict]:
         is_kitei = mt == "kitei"
         is_manual = mt == "manual"
         is_keikaku = mt == "keikaku"
+        is_mitsumori = mt == "mitsumori"
         hits.append({
             "workno": r.get("workno") or "",
             "workno_name": r.get("workno_name") or "",
@@ -509,6 +532,7 @@ def _search_internal(query: str, keywords: str = "") -> list[dict]:
             "is_kitei": is_kitei,
             "is_manual": is_manual,
             "is_keikaku": is_keikaku,
+            "is_mitsumori": is_mitsumori,
             # 規程条文・マニュアル・経営計画は長めに渡す
             "text": txt[:1000 if (is_kitei or is_manual or is_keikaku) else 500],
         })
@@ -526,6 +550,8 @@ def _build_context(hits: list[dict]) -> str:
             head = f"[利用マニュアル: {h['workno_name']}]"
         elif h.get("is_keikaku"):
             head = f"[経営計画: {h['workno_name']}]"
+        elif h.get("is_mitsumori"):
+            head = f"[過去見積: {h['workno_name']}]"
         else:
             head = f"[工番 {h['workno']} {h['workno_name']}".strip() + (
                 f" / {h['phase']}]" if h["phase"] else "]")
@@ -598,7 +624,10 @@ def main() -> None:
                 keywords = _extract_keywords(_oai, question)
             except Exception:
                 keywords = ""
-            hits = _search_internal(question, keywords)
+            _incl_mitsumori = (_MITSUMORI_INTENT.search(question) is not None
+                               and _mitsumori_allowed(_current_upn()))
+            hits = _search_internal(question, keywords,
+                                    include_mitsumori=_incl_mitsumori)
             context = _build_context(hits)
             _terms_ctx = _kitei_terms_context()
             if _terms_ctx:
@@ -661,6 +690,9 @@ def main() -> None:
                         elif h.get("is_keikaku"):
                             st.markdown(
                                 f"- 📋 **{h['workno_name']}**(経営計画) — {h['text'][:120]}…")
+                        elif h.get("is_mitsumori"):
+                            st.markdown(
+                                f"- 💰 **{h['workno_name']}**(過去見積) — {h['text'][:120]}…")
                         else:
                             st.markdown(
                                 f"- **工番 {h['workno']}** {h['workno_name']} "
