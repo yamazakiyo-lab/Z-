@@ -68,7 +68,8 @@ def _extract(p: Path) -> dict:
 
     明細本文(body): 全シートの文字列セルを行単位で連結。機械加工見積のように
     10年分・30枚超のシートがあるブックにも対応(シート数無制限)。複数シート時は
-    「◆シート名」の見出し付き。シートごと400行×20列・2000字、全体60000字まで。
+    「◆シート名」の見出し付き。シートごと400行×20列・2000字、全体30万字まで
+    (ISS東京: 216シート・13万字の実例に対応)。
     """
     import openpyxl
     atesaki = kenmei = date_s = ""
@@ -117,11 +118,11 @@ def _extract(p: Path) -> dict:
                 if multi:
                     sheet_text = f"◆シート「{ws.title}」\n" + sheet_text
                 body_parts.append(sheet_text)
-            if sum(len(x) for x in body_parts) >= 60000:
+            if sum(len(x) for x in body_parts) >= 300000:
                 break
     finally:
         wb.close()
-    body = "\n".join(body_parts)[:60000]
+    body = "\n".join(body_parts)[:300000]
     return {"atesaki": atesaki, "kenmei": kenmei, "date": date_s,
             "gokei": int(max_num) if max_num >= 1000 else 0, "body": body}
 
