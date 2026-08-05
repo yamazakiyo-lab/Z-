@@ -86,6 +86,25 @@ div.stButton > button:hover {
 
 st.subheader("検索メニュー")
 
+def _quote_allowed() -> bool:
+    """QUOTATION SEARCHのカードを出すか(見積メンバーのみ。search_app.pyと同基準)。"""
+    import os as _os
+    try:
+        from urllib.parse import unquote as _unquote
+        hdrs = st.context.headers or {}
+        upn = (hdrs.get("X-MS-CLIENT-PRINCIPAL-NAME")
+               or hdrs.get("X-Ms-Client-Principal-Name") or "").strip()
+        upn = "".join(_unquote(upn).split()).replace("﨑", "崎").lower()
+    except Exception:
+        return False
+    allowed = {"".join(n.split()).replace("﨑", "崎").lower() for n in _os.getenv(
+        "QA_MITSUMORI_ALLOWED_NAMES",
+        "山嵜喜隆,山嵜絵里,昆哲郎,松尾崇,松﨑誠一,滝沢雄一").split(",") if n.strip()}
+    allowed |= {"専務", "matsuo", "ayase2", "yamazakiyo@tseg.co.jp",
+                "yamazakiyo", "t_user03", "s_user01", "s_user02", "昆", "滝沢"}
+    return any(a and (a in upn or upn == a or upn in a) for a in allowed)
+
+
 _MENUS = [
     ("💬 AI Q&A", "技術・業務・人事総務の質問にAIが回答(工番実績・規程・在庫・予定・経営計画も参照)", "app_pages/ai_qa.py"),
     ("🔍 FMP SEARCH", "写真・動画・過去の指令書PDFを検索", "app_pages/fmp_search.py"),
@@ -94,6 +113,10 @@ _MENUS = [
     ("📦 部品在庫検索", "貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す", "app_pages/zaiko_search.py"),
     ("🛠️ 動治工具・測定具・消耗品検索", "寄居・綾瀬の工具/測定具/消耗品を品名・型式から探す", "app_pages/tools_search.py"),
 ]
+if _quote_allowed():
+    _MENUS.insert(1, ("💰 QUOTATION SEARCH",
+                      "過去見積(2013〜)を顧客名・件名・型式・工番から検索(見積メンバー専用)",
+                      "app_pages/quotation_search.py"))
 for _i, (_title, _desc, _page) in enumerate(_MENUS):
     if st.button(f"**{_title}**\n{_desc}", key=f"menu_{_i}", use_container_width=True):
         st.switch_page(_page)
