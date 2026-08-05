@@ -109,7 +109,9 @@ STATE_REVIEW_Q1 = "review_q1"   # 評価(1-4)待ち
 STATE_REVIEW_Q2 = "review_q2"   # 課題分類(複数可)待ち
 STATE_REVIEW_Q3 = "review_q3"   # 次回受注判断(1-4)待ち
 STATE_REVIEW_Q4 = "review_q4"   # 自由コメント待ち
-REVIEW_STATES = {STATE_REVIEW_Q1, STATE_REVIEW_Q2, STATE_REVIEW_Q3, STATE_REVIEW_Q4}
+STATE_REVIEW_PICK = "review_pick"  # 依頼者の対象者選択待ち(「R工番」だけ打った場合)
+REVIEW_STATES = {STATE_REVIEW_Q1, STATE_REVIEW_Q2, STATE_REVIEW_Q3,
+                 STATE_REVIEW_Q4, STATE_REVIEW_PICK}
 # レビュー依頼を発火できるメンバー(見積メンバーと同じ既定)
 REVIEW_ADMIN_NAMES = {n.strip() for n in os.environ.get(
     "REVIEW_ADMIN_NAMES",
@@ -728,6 +730,44 @@ def _is_review_admin(user_id: str) -> bool:
         for n in REVIEW_ADMIN_NAMES)
 
 
+def _resolve_review_targets(arg: str, names_map: dict) -> tuple[list, list]:
+    """名前文字列(スペース/読点区切り)をuser_idに解決。(targets, 未解決名)を返す。"""
+    import re as _re
+    targets: list = []
+    unresolved: list = []
+    for nm in _re.split(r"[,、\s　]+", arg):
+        if not nm:
+            continue
+        nmk = nm.replace(" ", "")
+        uid = next((u for u, n in names_map.items()
+                    if nmk and n and (nmk in n.replace(" ", "")
+                                      or n.replace(" ", "") in nmk)), "")
+        if uid:
+            targets.append(uid)
+        else:
+            unresolved.append(nm)
+    return list(dict.fromkeys(targets)), unresolved
+
+
+def _fire_review(requester_id: str, channel_id: str, job_no: str, job_name: str,
+                 targets: list, unresolved: list) -> None:
+    """対象者へQ1を送り会話状態を張る。依頼者へ送信結果を返す。"""
+    names_map = _load_user_names()
+    req_name = names_map.get(requester_id, "")
+    for tid in targets:
+        intro = (f"📋 工番 {job_no}"
+                 + (f"「{job_name[:30]}」" if job_name else "")
+                 + f" の振り返り依頼です({req_name}さんより)。\n\n" + _REVIEW_Q1_TEXT)
+        _send_text("", tid, intro)
+        _conv[tid] = {"state": STATE_REVIEW_Q1, "channel_id": "",
+                      "job_no": job_no, "job_name": job_name,
+                      "requested_by": req_name}
+    msg = f"レビュー依頼を {len(targets)} 名に送りました(工番 {job_no})。"
+    if unresolved:
+        msg += f"\n※見つからなかった宛先: {'、'.join(unresolved)}"
+    _send_text(channel_id, requester_id, msg)
+
+
 def _append_job_review(rec: dict) -> None:
     """job_reviews.jsonl(Append Blob)に1件追記。将来のPhase7分析・工数差異分析の土台。"""
     try:
@@ -903,48 +943,40 @@ async def lineworks_callback(request: Request) -> Response:
         text = content.get("text", "").strip()
 
         # ── 工番レビュー依頼コマンド(見積メンバー限定) ──────────────────
-        # 「レビュー 4642-00 阿部 飯島」→ 指定者に4問フロー。名前省略=発火者本人。
+        # 「レビュー 4642-00 阿部 飯島」または短縮形「R4642-00 阿部 飯島」。
+        # 名前省略時は「誰に送りますか？」と聞き返す(二段階)。
         import re as _re
         _m_rev = _re.match(r"^(?:レビュー|レビュー依頼)[\s　]+(\S+)(?:[\s　]+(.+))?$", text)
+        if not _m_rev:
+            # 短縮形は誤爆防止のため工番の形のときだけ反応(RS-3030等のコメントを拾わない)
+            _m_rev = _re.match(
+                r"^[RrＲ][\s　]*([A-Za-z]{0,4}\d{3,6}-\d{2})(?:[\s　]+(.+))?$", text)
         if _m_rev and user_id and _is_review_admin(user_id):
-            names_map = _load_user_names()
-            req_name = names_map.get(user_id, "")
             job_raw = _m_rev.group(1)
             key, _looks, _hb = _normalize_koban(job_raw)
             job_no = key or job_raw
             master = _load_workno_master()
             job_name = ((master.get(job_no) or {}).get("name", "") or "") if master else ""
-            targets: list = []
-            unresolved: list = []
             arg = (_m_rev.group(2) or "").strip()
             if arg:
-                for nm in _re.split(r"[,、\s　]+", arg):
-                    if not nm:
-                        continue
-                    nmk = nm.replace(" ", "")
-                    uid = next((u for u, n in names_map.items()
-                                if nmk and n and (nmk in n.replace(" ", "")
-                                                  or n.replace(" ", "") in nmk)), "")
-                    if uid:
-                        targets.append(uid)
-                    else:
-                        unresolved.append(nm)
+                targets, unresolved = _resolve_review_targets(arg, _load_user_names())
+                if targets:
+                    _fire_review(user_id, channel_id, job_no, job_name,
+                                 targets, unresolved)
+                else:
+                    _send_text(channel_id, user_id,
+                               f"宛先が見つかりませんでした: {'、'.join(unresolved)}\n"
+                               f"「R{job_no} 阿部 飯島」のように苗字で指定してください。")
             else:
-                targets = [user_id]
-            targets = list(dict.fromkeys(targets))
-            for tid in targets:
-                intro = (f"📋 工番 {job_no}"
-                         + (f"「{job_name[:30]}」" if job_name else "")
-                         + f" の振り返り依頼です({req_name}さんより)。\n\n"
-                         + _REVIEW_Q1_TEXT)
-                _send_text("", tid, intro)
-                _conv[tid] = {"state": STATE_REVIEW_Q1, "channel_id": "",
-                              "job_no": job_no, "job_name": job_name,
-                              "requested_by": req_name}
-            msg = f"レビュー依頼を {len(targets)} 名に送りました(工番 {job_no})。"
-            if unresolved:
-                msg += f"\n※見つからなかった宛先: {'、'.join(unresolved)}"
-            _send_text(channel_id, user_id, msg)
+                _conv[user_id] = {"state": STATE_REVIEW_PICK,
+                                  "channel_id": channel_id,
+                                  "job_no": job_no, "job_name": job_name}
+                _send_text(channel_id, user_id,
+                           f"工番 {job_no}"
+                           + (f"「{job_name[:30]}」" if job_name else "")
+                           + " のレビューを誰に送りますか？\n"
+                           "名前をスペース区切りで入力してください(例: 阿部 飯島)。\n"
+                           "自分が答える場合は「自分」。中止は「X」。")
             return Response(content="OK", status_code=200)
 
         # _conv にない場合: annotation_state.json から pending を復元
@@ -1327,6 +1359,28 @@ async def lineworks_callback(request: Request) -> Response:
                     _send_text(ch, user_id,
                         "Y か N で答えてください 🙏\nY → 続ける　N → 今はここまで（定時または「T」で再開）"
                     )
+
+            # ── 工番レビュー: 依頼者の対象者選択待ち(二段階発火) ──────────
+            elif state == STATE_REVIEW_PICK:
+                if text.strip().lower() in {"x", "ｘ", "キャンセル", "中止"}:
+                    _conv.pop(user_id, None)
+                    _send_text(ch, user_id, "レビュー依頼を中止しました。")
+                else:
+                    _job_no = state_data.get("job_no", "")
+                    _job_name = state_data.get("job_name", "")
+                    if text.strip() in {"自分", "じぶん", "me", "ME", "Me"}:
+                        _targets, _unres = [user_id], []
+                    else:
+                        _targets, _unres = _resolve_review_targets(
+                            text, _load_user_names())
+                    if _targets:
+                        _conv.pop(user_id, None)
+                        _fire_review(user_id, ch, _job_no, _job_name,
+                                     _targets, _unres)
+                    else:
+                        _send_text(ch, user_id,
+                                   f"宛先が見つかりませんでした: {'、'.join(_unres)}\n"
+                                   "苗字で入力し直してください(自分なら「自分」、中止は「X」)。")
 
             # ── 工番レビュー Bot ステート(Phase5 MVP) ────────────────────
             elif state in REVIEW_STATES:
