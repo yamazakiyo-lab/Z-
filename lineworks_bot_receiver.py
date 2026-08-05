@@ -105,10 +105,9 @@ STATE_WAITING_BATCH        = "waiting_batch"          # まとめ保存 Y/N 待�
 STATE_WAITING_ANNOTATION   = "waiting_annotation"   # 写真コメント待ち
 STATE_WAITING_NEXT         = "waiting_next"          # 次の写真送るか Y/N 待ち
 # 工番レビュー Bot 用ステート(2026-08-05 Phase5 MVP)
-STATE_REVIEW_Q1 = "review_q1"   # 課題(自由記述)待ち
-STATE_REVIEW_Q2 = "review_q2"   # 実際の失敗・客先クレーム有無待ち
+STATE_REVIEW_Q1 = "review_q1"   # 課題・失敗・クレーム(自由記述)待ち
 STATE_REVIEW_PICK = "review_pick"  # 依頼者の対象者選択待ち(「R工番」だけ打った場合)
-REVIEW_STATES = {STATE_REVIEW_Q1, STATE_REVIEW_Q2, STATE_REVIEW_PICK}
+REVIEW_STATES = {STATE_REVIEW_Q1, STATE_REVIEW_PICK}
 # レビュー依頼を発火できるメンバー(見積メンバーと同じ既定)
 REVIEW_ADMIN_NAMES = {n.strip() for n in os.environ.get(
     "REVIEW_ADMIN_NAMES",
@@ -692,14 +691,11 @@ app = FastAPI(title="LINE WORKS Bot Receiver", version="0.3.0")
 
 # ── 工番レビューBot(Phase5 MVP、2026-08-05) ──────────────────────────────────
 # 発火: 見積メンバーがBotに「レビュー 4642-00 阿部 飯島」/「R4642-00 …」と送る。
-# 回答: Q1課題(自由記述)→Q2実際の失敗・客先クレーム→Blobに記録。
+# 回答: 1問(課題・失敗・客先クレームを自由記述)→Blobに記録。
 _REVIEW_Q1_TEXT = (
-    "振り返りにご協力をお願いします！(1〜2分で完了します)\n\n"
-    "Q1. 残しておきたい課題は何ですか？\n"
-    "(自由に記入してください。無ければ「なし」、中止は「X」)")
-_REVIEW_Q2_TEXT = (
-    "Q2. 実際の失敗又は客先クレームはありましたか？\n"
-    "(あれば内容を記入してください。無ければ「なし」)")
+    "振り返りにご協力をお願いします！(1分で完了します)\n\n"
+    "残しておきたい課題、実際の失敗や客先クレームがあれば記入してください。\n"
+    "(自由記述。無ければ「なし」、中止は「X」)")
 
 
 def _is_review_admin(user_id: str) -> bool:
@@ -772,7 +768,6 @@ def _finish_review(user_id: str, ch: str, sd: dict) -> None:
         "job_no": sd.get("job_no", ""),
         "job_name": sd.get("job_name", ""),
         "issues": sd.get("issues", ""),
-        "trouble": sd.get("trouble", ""),
         "reviewed_by": _load_user_names().get(user_id, user_id),
         "requested_by": sd.get("requested_by", ""),
         "reviewed_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
@@ -786,15 +781,8 @@ def _finish_review(user_id: str, ch: str, sd: dict) -> None:
 def _handle_review_answer(user_id: str, ch: str, sd: dict, text: str) -> None:
     t = text.strip()
     none_words = {"なし", "無し", "ナシ", "特になし", "特に無し", "-", "ー"}
-    state = sd["state"]
-    if state == STATE_REVIEW_Q1:
-        sd["issues"] = "" if t in none_words else t[:500]
-        sd["state"] = STATE_REVIEW_Q2
-        _send_text(ch, user_id, _REVIEW_Q2_TEXT)
-        return
-    if state == STATE_REVIEW_Q2:
-        sd["trouble"] = "" if t in none_words else t[:500]
-        _finish_review(user_id, ch, sd)
+    sd["issues"] = "" if t in none_words else t[:1000]
+    _finish_review(user_id, ch, sd)
 
 
 @app.post("/lineworks/callback")
