@@ -1,4 +1,5 @@
 streamlit>=1.36.0
+starlette>=1.0,<1.4  # 1.4.0はStreamlitと非互換(GZipResponder引数変更で全ページ500)。Streamlit対応後に解除
 Pillow>=10.0.0
 openpyxl>=3.1.0
 azure-search-documents>=11.4.0
