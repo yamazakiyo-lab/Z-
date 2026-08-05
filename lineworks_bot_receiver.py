@@ -691,7 +691,6 @@ def _save_meta(user_id: str, phase: str) -> None:
 app = FastAPI(title="LINE WORKS Bot Receiver", version="0.3.0")
 
 
-@app.post("/lineworks/callback")
 # ── 工番レビューBot(Phase5 MVP、2026-08-05) ──────────────────────────────────
 # 発火: 見積メンバーがBotに「レビュー 4642-00 阿部 飯島」と送る(名前省略=本人)。
 # 回答: Q1評価→(課題ありならQ2分類)→Q3次回判断→Q4自由コメント→Blobに記録。
@@ -810,6 +809,7 @@ def _handle_review_answer(user_id: str, ch: str, sd: dict, text: str) -> None:
         _finish_review(user_id, ch, sd)
 
 
+@app.post("/lineworks/callback")
 async def lineworks_callback(request: Request) -> Response:
     body = await request.body()
 
