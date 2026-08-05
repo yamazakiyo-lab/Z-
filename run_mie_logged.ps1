@@ -466,6 +466,29 @@ try {
             $results.AzCopy = 'FAIL'
         }
 
+        # ── インデックス・カタログ類の更新（2026-08-05 ここへ移設）──────────
+        # 従来はStop-Transcript後の後片付け節にあり、ログに残らず失敗が見えなかった。
+        # トランスクリプト記録中かつステータス書き込み前に実行する。
+        $idxPython = if ($ragPython -and (Test-Path -LiteralPath $ragPython)) { $ragPython } else { $launcher }
+        if ($idxPython) {
+            try {
+                Write-Host "[MANUAL] 利用マニュアルのインデックス更新..."
+                & $idxPython (Join-Path $pw 'export_manual_index.py')
+            } catch {}
+            try {
+                Write-Host "[GENBA] 現場用語カタログの更新..."
+                & $idxPython (Join-Path $pw 'tools\export_genba_terms.py')
+            } catch {}
+            try {
+                Write-Host "[CAL] カレンダースナップショット更新..."
+                & $idxPython (Join-Path $pw 'lw_calendar.py') --export
+            } catch {}
+            try {
+                Write-Host "[MITSUMORI] 過去見積インデックスの差分更新..."
+                & $idxPython (Join-Path $pw 'export_mitsumori_index.py')
+            } catch {}
+        }
+
         # ── [RESULT] 結果サマリー出力 ──────────────────────────────────
         $summaryMsg = "[RESULT] MIE=$($results.MIE), OTHER=$($results.OTHER), AzCopy=$($results.AzCopy)"
         Write-Host ""
@@ -577,40 +600,8 @@ try {
         }
     } catch {}
 
-    # ── 利用マニュアルをAI検索インデックスへ再取り込み（AI Q&Aの使い方回答用）──
-    try {
-        if ($cleanupPython) {
-            Write-Host "[MANUAL] 利用マニュアルのインデックス更新..."
-            & $cleanupPython (Join-Path $pw 'export_manual_index.py')
-        }
-    } catch {}
-
-    # ── 現場用語カタログの更新（写真コメント→AI Q&Aのキーワード変換強化）──
-    # コメントが溜まるほど賢くなる。抽出は機械的(正規表現)で人の精査は不要。
-    try {
-        if ($cleanupPython) {
-            Write-Host "[GENBA] 現場用語カタログの更新..."
-            & $cleanupPython (Join-Path $pw 'tools\export_genba_terms.py')
-        }
-    } catch {}
-
-    # ── LINE WORKSカレンダーのスナップショット（AI Q&Aの予定回答用）──
-    # 朝8:30の朝あいさつランでも更新される。スコープ未設定時は失敗するが続行。
-    try {
-        if ($cleanupPython) {
-            Write-Host "[CAL] カレンダースナップショット更新..."
-            & $cleanupPython (Join-Path $pw 'lw_calendar.py') --export
-        }
-    } catch {}
-
-    # ── 過去見積インデックスの差分更新（QUOTATION SEARCH / AI Q&A見積回答用）──
-    # 状態ファイルで差分管理。変更が無い夜はスキャンのみで数十秒。
-    try {
-        if ($cleanupPython) {
-            Write-Host "[MITSUMORI] 過去見積インデックスの差分更新..."
-            & $cleanupPython (Join-Path $pw 'export_mitsumori_index.py')
-        }
-    } catch {}
+    # ※[MANUAL][GENBA][CAL][MITSUMORI]の各更新は、ログに残すため本編
+    #   ([RESULT]サマリー直前)へ移設した(2026-08-05)。
 
     # ── 古いログの削除（保持期間: 7日、Y: とローカル両方） ──────────────
     $logRetentionDays = 7
