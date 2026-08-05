@@ -317,15 +317,26 @@ _MITSUMORI_ALLOWED = {n.strip() for n in os.getenv(
     "QA_MITSUMORI_ALLOWED_NAMES",
     "山嵜喜隆,山嵜絵里,昆哲郎,松尾崇,松﨑誠一,滝沢雄一").split(",") if n.strip()}
 _MITSUMORI_INTENT = re.compile(r"見積|いくらで|金額|値段|単価|価格|出してる|出した")
+# Easy Auth表示名の別名(実測: 専務=山嵜絵里、matsuo=松尾崇 等)
+_NAME_ALIAS = {"専務": "山嵜絵里", "matsuo": "松尾崇", "ayase2": "松﨑誠一",
+               "yamazakiyo@tseg.co.jp": "山嵜喜隆", "yamazakiyo": "山嵜喜隆",
+               "t_user03": "昆哲郎", "s_user01": "山嵜絵里", "s_user02": "滝沢雄一"}
 
 
 def _norm_name(s: str) -> str:
-    return (s or "").replace(" ", "").replace("﨑", "崎")
+    return (s or "").replace(" ", "").replace("　", "").replace("﨑", "崎").lower()
 
 
 def _mitsumori_allowed(asker: str) -> bool:
     a = _norm_name(asker)
-    return any(_norm_name(n) in a or a == _norm_name(n) for n in _MITSUMORI_ALLOWED)
+    for k, v in _NAME_ALIAS.items():
+        if _norm_name(k) == a:
+            a = _norm_name(v)
+            break
+    if not a:
+        return False
+    return any(_norm_name(n) in a or a in _norm_name(n)
+               for n in _MITSUMORI_ALLOWED if n)
 
 
 _PROF_INTENT = re.compile(r"誕生日|バースデー|入社日|勤続|何年目|入社した")

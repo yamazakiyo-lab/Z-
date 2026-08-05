@@ -154,5 +154,19 @@ except Exception:
 if _upn in _admins:
     _pages.append(st.Page("app_pages/ai_qa_log.py", title="AI Q&A ログ", icon="📋"))
 
+# QUOTATION SEARCH(過去見積検索)は見積メンバーだけメニューに表示する。
+# Easy Auth表示名の別名(専務/matsuo等)は空白除去+小文字で吸収。
+_quote_allowed_raw = _os.getenv(
+    "QA_MITSUMORI_ALLOWED_NAMES",
+    "山嵜喜隆,山嵜絵里,昆哲郎,松尾崇,松﨑誠一,滝沢雄一")
+_quote_allowed = {"".join(n.split()).replace("﨑", "崎").lower()
+                  for n in _quote_allowed_raw.split(",") if n.strip()}
+_quote_allowed |= {"専務", "matsuo", "ayase2", "yamazakiyo@tseg.co.jp",
+                   "yamazakiyo", "t_user03", "s_user01", "s_user02", "昆", "滝沢"}
+_upn_k = _upn.replace("﨑", "崎")
+if any(a and (a in _upn_k or _upn_k == a or _upn_k in a) for a in _quote_allowed):
+    _pages.insert(2, st.Page("app_pages/quotation_search.py",
+                             title="QUOTATION SEARCH", icon="💰"))
+
 nav = st.navigation(_pages)
 nav.run()
