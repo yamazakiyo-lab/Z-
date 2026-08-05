@@ -4,7 +4,7 @@ AI Q&Aが「○○社のNC1-110整備、過去いくらで出してる？」等�
 過去見積の件名・日付・金額・ファイル所在を根拠に答えられるようにする。
 回答できるのは見積作成メンバー(ai_qa.py側で質問者を制限)のみ。
 
-方式: xlsx見積の全シート(最大30枚)から明細本文を、先頭シートから宛先・件名・
+方式: xlsx見積の全シート(枚数無制限)から明細本文を、先頭シートから宛先・件名・
       日付・合計金額をヒューリスティックに抽出し、1見積=1ドキュメントで
       photo-index に media_type="mitsumori" でupsert。差分更新(状態ファイル)。
       旧xls・PDFは第2期(未対応。件数のみログ)。
@@ -66,10 +66,9 @@ def _customer_from_path(rel: Path) -> str:
 def _extract(p: Path) -> dict:
     """全シートから明細本文を、先頭シートから宛先・件名・日付・合計金額を抽出。
 
-    明細本文(body): 各シート(最大30枚)の文字列セルを行単位で連結。機械加工
-    見積のようにシートが大量にあるブックにも対応(2026-08-05: 従来は先頭シート
-    のみ・1800字で、2枚目以降の明細が検索に載っていなかった)。複数シート時は
-    「◆シート名」の見出し付き。シートごと300行×20列・2000字、全体9000字まで。
+    明細本文(body): 全シートの文字列セルを行単位で連結。機械加工見積のように
+    10年分・30枚超のシートがあるブックにも対応(シート数無制限)。複数シート時は
+    「◆シート名」の見出し付き。シートごと400行×20列・2000字、全体60000字まで。
     """
     import openpyxl
     atesaki = kenmei = date_s = ""
@@ -79,9 +78,9 @@ def _extract(p: Path) -> dict:
     wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
     try:
         multi = len(wb.worksheets) > 1
-        for si, ws in enumerate(wb.worksheets[:30]):
+        for si, ws in enumerate(wb.worksheets):
             lines: list[str] = []
-            for row in ws.iter_rows(min_row=1, max_row=300, max_col=20):
+            for row in ws.iter_rows(min_row=1, max_row=400, max_col=20):
                 row_texts: list[str] = []
                 for c in row:
                     v = c.value
@@ -118,11 +117,11 @@ def _extract(p: Path) -> dict:
                 if multi:
                     sheet_text = f"◆シート「{ws.title}」\n" + sheet_text
                 body_parts.append(sheet_text)
-            if sum(len(x) for x in body_parts) >= 9000:
+            if sum(len(x) for x in body_parts) >= 60000:
                 break
     finally:
         wb.close()
-    body = "\n".join(body_parts)[:9000]
+    body = "\n".join(body_parts)[:60000]
     return {"atesaki": atesaki, "kenmei": kenmei, "date": date_s,
             "gokei": int(max_num) if max_num >= 1000 else 0, "body": body}
 
