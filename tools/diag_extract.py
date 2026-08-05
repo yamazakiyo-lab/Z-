@@ -52,10 +52,8 @@ def main() -> int:
         print(f"[RAW] 「{term}」はブック内に {len(found)} 箇所:")
         for si, name, ri, ci, s in found[:10]:
             over = []
-            if si > 30:
-                over.append("シート31枚目以降")
-            if ri > 300:
-                over.append("301行目以降")
+            if ri > 400:
+                over.append("401行目以降")
             if ci > 20:
                 over.append("21列目以降")
             mark = f" ⚠{'・'.join(over)}" if over else ""
@@ -74,8 +72,8 @@ def main() -> int:
               f"トークン分割の問題 → diag_search_hits.py のトークン分割を確認。")
         print(f"  前後: …{body[max(0, pos - 60):pos + 60]}…")
     elif found:
-        print(f"[IDX] 「{term}」は取込本文に無し ⚠ 上限(シート30枚/行300/列20/"
-              f"シート2000字/全体9000字)で切れています。上限拡大が必要。")
+        print(f"[IDX] 「{term}」は取込本文に無し ⚠ 上限(行400/列20/"
+              f"シート2000字/全体60000字)で切れています。上限拡大が必要。")
     else:
         print(f"[IDX] 取込本文にも無し(ブックにも無いため表記違いを疑ってください)。")
     return 0
