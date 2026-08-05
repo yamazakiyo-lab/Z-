@@ -39,7 +39,7 @@ MEDIA_TYPE = "mitsumori"
 STATE_PATH = Path(__file__).with_name("mitsumori_index_state.json")
 BATCH = 100
 
-RX_GYO = re.compile(r"^[あかさたなはまやらわ]行$")
+RX_GYO = re.compile(r"^[あかさたなはまやらわ]行")  # 「あ行」「あ行(あいうえお)」の両対応
 RX_WORKNO = re.compile(r"([A-Z]{0,4}\d{3,6}-\d{2})", re.IGNORECASE)
 
 # ── 見積用語カタログ(明細から自動抽出→Blob mitsumori_terms.json) ─────────────
