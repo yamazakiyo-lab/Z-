@@ -105,13 +105,10 @@ STATE_WAITING_BATCH        = "waiting_batch"          # まとめ保存 Y/N 待�
 STATE_WAITING_ANNOTATION   = "waiting_annotation"   # 写真コメント待ち
 STATE_WAITING_NEXT         = "waiting_next"          # 次の写真送るか Y/N 待ち
 # 工番レビュー Bot 用ステート(2026-08-05 Phase5 MVP)
-STATE_REVIEW_Q1 = "review_q1"   # 評価(1-4)待ち
-STATE_REVIEW_Q2 = "review_q2"   # 課題分類(複数可)待ち
-STATE_REVIEW_Q3 = "review_q3"   # 次回受注判断(1-4)待ち
-STATE_REVIEW_Q4 = "review_q4"   # 自由コメント待ち
+STATE_REVIEW_Q1 = "review_q1"   # 課題(自由記述)待ち
+STATE_REVIEW_Q2 = "review_q2"   # 実際の失敗・客先クレーム有無待ち
 STATE_REVIEW_PICK = "review_pick"  # 依頼者の対象者選択待ち(「R工番」だけ打った場合)
-REVIEW_STATES = {STATE_REVIEW_Q1, STATE_REVIEW_Q2, STATE_REVIEW_Q3,
-                 STATE_REVIEW_Q4, STATE_REVIEW_PICK}
+REVIEW_STATES = {STATE_REVIEW_Q1, STATE_REVIEW_Q2, STATE_REVIEW_PICK}
 # レビュー依頼を発火できるメンバー(見積メンバーと同じ既定)
 REVIEW_ADMIN_NAMES = {n.strip() for n in os.environ.get(
     "REVIEW_ADMIN_NAMES",
@@ -694,31 +691,15 @@ app = FastAPI(title="LINE WORKS Bot Receiver", version="0.3.0")
 
 
 # ── 工番レビューBot(Phase5 MVP、2026-08-05) ──────────────────────────────────
-# 発火: 見積メンバーがBotに「レビュー 4642-00 阿部 飯島」と送る(名前省略=本人)。
-# 回答: Q1評価→(課題ありならQ2分類)→Q3次回判断→Q4自由コメント→Blobに記録。
+# 発火: 見積メンバーがBotに「レビュー 4642-00 阿部 飯島」/「R4642-00 …」と送る。
+# 回答: Q1課題(自由記述)→Q2実際の失敗・客先クレーム→Blobに記録。
 _REVIEW_Q1_TEXT = (
-    "振り返りに少しご協力をお願いします！(2〜3分で完了します)\n\n"
-    "Q1. この工番、どうでしたか？(番号で入力)\n"
-    "1 → 良かった・予定通り\n"
-    "2 → 普通\n"
-    "3 → 残念だった・課題があった\n"
-    "4 → まだ判断できない(保留)\n"
-    "(中止する場合は「X」)")
+    "振り返りにご協力をお願いします！(1〜2分で完了します)\n\n"
+    "Q1. 残しておきたい課題は何ですか？\n"
+    "(自由に記入してください。無ければ「なし」、中止は「X」)")
 _REVIEW_Q2_TEXT = (
-    "Q2. どの点が課題でしたか？(番号で入力・複数可 例: 1,3)\n"
-    "1 → 見積工数が足りなかった\n"
-    "2 → 仕入・外注費が想定より増えた\n"
-    "3 → 追加作業が売上に反映できなかった\n"
-    "4 → 現場の段取り・再訪問\n"
-    "5 → そもそも受けにくい案件だった\n"
-    "6 → その他")
-_REVIEW_Q3_TEXT = (
-    "Q3. 次回同種の案件は？(番号で入力)\n"
-    "1 → 積極的に受けたい\n"
-    "2 → 条件次第で受けたい\n"
-    "3 → 慎重に判断したい\n"
-    "4 → 受けない方がよい")
-_REVIEW_Q4_TEXT = "Q4. 次回見積に活かせることがあれば一言どうぞ。(無ければ「なし」)"
+    "Q2. 実際の失敗又は客先クレームはありましたか？\n"
+    "(あれば内容を記入してください。無ければ「なし」)")
 
 
 def _is_review_admin(user_id: str) -> bool:
@@ -781,7 +762,7 @@ def _append_job_review(rec: dict) -> None:
         except Exception:
             blob.create_append_blob()
             blob.append_block(line)
-        logger.info(f"工番レビュー記録: {rec.get('job_no')} rating={rec.get('rating')}")
+        logger.info(f"工番レビュー記録: {rec.get('job_no')} by {rec.get('reviewed_by')}")
     except Exception as e:
         logger.error(f"job_review保存失敗: {e}")
 
@@ -790,62 +771,29 @@ def _finish_review(user_id: str, ch: str, sd: dict) -> None:
     rec = {
         "job_no": sd.get("job_no", ""),
         "job_name": sd.get("job_name", ""),
-        "rating": sd.get("rating"),
-        "reason_codes": sd.get("reason_codes", ""),
-        "next_decision": sd.get("next_decision"),
-        "free_comment": sd.get("free_comment", ""),
+        "issues": sd.get("issues", ""),
+        "trouble": sd.get("trouble", ""),
         "reviewed_by": _load_user_names().get(user_id, user_id),
         "requested_by": sd.get("requested_by", ""),
         "reviewed_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
     }
     _append_job_review(rec)
     _conv.pop(user_id, None)
-    if rec["rating"] == 4:
-        _send_text(ch, user_id,
-                   "了解です、保留として記録しました。判断できる時期になったらまたお願いします🙏")
-    else:
-        _send_text(ch, user_id,
-                   "ありがとうございました！振り返りを記録しました📋 次回の見積・段取りに活かします。")
+    _send_text(ch, user_id,
+               "ありがとうございました！振り返りを記録しました📋 次回の見積・段取りに活かします。")
 
 
 def _handle_review_answer(user_id: str, ch: str, sd: dict, text: str) -> None:
-    import re as _re
-    t = text.strip().translate(str.maketrans("１２３４５６，", "123456,"))
+    t = text.strip()
+    none_words = {"なし", "無し", "ナシ", "特になし", "特に無し", "-", "ー"}
     state = sd["state"]
     if state == STATE_REVIEW_Q1:
-        if t not in {"1", "2", "3", "4"}:
-            _send_text(ch, user_id, "1〜4の番号で入力してください。(中止は「X」)")
-            return
-        sd["rating"] = int(t)
-        if t == "4":
-            _finish_review(user_id, ch, sd)
-        elif t == "3":
-            sd["state"] = STATE_REVIEW_Q2
-            _send_text(ch, user_id, _REVIEW_Q2_TEXT)
-        else:
-            sd["state"] = STATE_REVIEW_Q3
-            _send_text(ch, user_id, _REVIEW_Q3_TEXT)
+        sd["issues"] = "" if t in none_words else t[:500]
+        sd["state"] = STATE_REVIEW_Q2
+        _send_text(ch, user_id, _REVIEW_Q2_TEXT)
         return
     if state == STATE_REVIEW_Q2:
-        nums = _re.findall(r"[1-6]", t)
-        if not nums:
-            _send_text(ch, user_id, "1〜6の番号で入力してください(複数可 例: 1,3)。")
-            return
-        sd["reason_codes"] = ",".join(dict.fromkeys(nums))
-        sd["state"] = STATE_REVIEW_Q3
-        _send_text(ch, user_id, _REVIEW_Q3_TEXT)
-        return
-    if state == STATE_REVIEW_Q3:
-        if t not in {"1", "2", "3", "4"}:
-            _send_text(ch, user_id, "1〜4の番号で入力してください。")
-            return
-        sd["next_decision"] = int(t)
-        sd["state"] = STATE_REVIEW_Q4
-        _send_text(ch, user_id, _REVIEW_Q4_TEXT)
-        return
-    if state == STATE_REVIEW_Q4:
-        sd["free_comment"] = ("" if text.strip() in {"なし", "無し", "-"}
-                              else text.strip()[:300])
+        sd["trouble"] = "" if t in none_words else t[:500]
         _finish_review(user_id, ch, sd)
 
 
