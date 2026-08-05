@@ -45,6 +45,7 @@ SYSTEM_PROMPT = """あなたは株式会社TSEGの社内AIアシスタントで�
 - [質問者]が渡された場合、質問文の「俺」「私」「自分」は質問者本人を指す。予定などの質問では質問者本人の情報を答えること。
 - 誕生日・入社日の質問には[メンバー情報]を根拠に答えること。誕生日は月日のみのデータであり、生年・年齢は答えられない(推測もしない)。[メンバー情報]に「開示できない」とある場合は、人事情報のため答えられない旨を丁寧に伝えること。
 - 過去の見積の質問に[過去見積]が渡された場合は、件名・見積日・合計金額・ファイルの場所を根拠に答えること。金額は抽出値のため「詳細はファイルで確認」を添えること。[過去見積]が無い場合、見積の金額に関する質問には「見積情報の閲覧権限がないか、該当が見つからない」旨を答え、推測しないこと。
+- 建値・標準工数・チャージの質問に[建値表]が渡された場合は、その行を根拠にシート名(改定版)を添えて答えること。[建値表]に「開示できない」とある場合は、見積情報のため答えられない旨を丁寧に伝えること。
 - 在庫の質問に[在庫データ]が渡された場合は、その数量・棚番を根拠に直接答えること。ただし「昨晩時点のデータ」であることを添え、最新・詳細は「部品在庫検索」「動治工具・測定具・消耗品検索」メニューでの確認を必ず案内すること。[在庫データ]に該当が無い品は、数を推測せず在庫は不明としてメニューを案内すること。
 - 社内データに無い一般的な技術・業務の質問には、あなたの知識で普通に答えてよい。
 - わからないことは推測で断言せず、わからないと言うこと。
@@ -168,6 +169,49 @@ def _load_genba_terms() -> dict:
         return json.loads(raw.decode("utf-8"))
     except Exception:
         return {}
+
+
+@st.cache_data(ttl=21600)
+def _load_tatene() -> dict:
+    """建値表スナップショット(tatene.json)をBlobから読む。無ければ空。"""
+    try:
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        if not conn:
+            return {}
+        from azure.storage.blob import BlobServiceClient
+        svc = BlobServiceClient.from_connection_string(conn)
+        raw = svc.get_blob_client(QA_LOG_CONTAINER, "tatene.json") \
+            .download_blob().readall()
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+_TATENE_INTENT = re.compile(r"建値|工数|単価|価格表|標準.{0,4}(料金|価格|工数)|チャージ")
+
+
+def _tatene_context(question: str, keywords: str, allowed: bool) -> str:
+    """建値・標準工数の質問なら、建値表の該当行を文脈として返す(見積メンバー限定)。"""
+    if not _TATENE_INTENT.search(question):
+        return ""
+    if not allowed:
+        return ("[建値表] 建値・標準工数は見積情報のため、"
+                "この質問者には開示できない。丁寧にその旨を伝えること。")
+    t = _load_tatene()
+    lines = t.get("lines") or []
+    if not lines:
+        return ""
+    terms = [_inv_norm(w) for w in re.split(r"[\s、。,？?]+", f"{keywords} {question}")
+             if len(_inv_norm(w)) >= 2]
+    scored = []
+    for ln in lines:
+        h = _inv_norm(ln)
+        score = sum(1 for w in terms if w in h)
+        if score:
+            scored.append((score, ln))
+    scored.sort(key=lambda x: -x[0])
+    sel = [ln for _, ln in scored[:15]] or lines[:12]
+    return (f"[建値表({t.get('sheet','')}、見積メンバー限定)] " + " ｜ ".join(sel))
 
 
 @st.cache_data(ttl=21600)
@@ -687,6 +731,13 @@ def main() -> None:
                 _cal_ctx = ""
             if _cal_ctx:
                 context = f"{context}\n{_cal_ctx}"
+            try:
+                _tat_ctx = _tatene_context(question, keywords, _incl_mitsumori
+                                           or _mitsumori_allowed(_current_upn()))
+            except Exception:
+                _tat_ctx = ""
+            if _tat_ctx:
+                context = f"{context}\n{_tat_ctx}"
             try:
                 _prof_ctx = _members_prof_context(question, _current_upn())
             except Exception:

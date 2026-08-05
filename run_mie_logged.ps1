@@ -487,6 +487,10 @@ try {
                 Write-Host "[MITSUMORI] 過去見積インデックスの差分更新..."
                 & $idxPython (Join-Path $pw 'export_mitsumori_index.py')
             } catch {}
+            try {
+                Write-Host "[TATENE] 建値表スナップショット更新..."
+                & $idxPython (Join-Path $pw 'tools\export_tatene.py')
+            } catch {}
         }
 
         # ── [RESULT] 結果サマリー出力 ──────────────────────────────────
