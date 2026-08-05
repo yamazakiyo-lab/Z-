@@ -80,25 +80,40 @@ def main() -> None:
 
     col1, col2 = st.columns([3, 1])
     with col1:
-        q = st.text_input("検索キーワード(顧客名・件名・型式・工番など)",
-                          placeholder="例: サトー精機 NC1-110 / 4031-00 / オーバーホール")
+        q = st.text_input("検索キーワード(件名・型式・明細の品名・工番など)",
+                          placeholder="例: ツメ / NC1-110 / 4031-00 / オーバーホール")
     with col2:
+        cust = st.text_input("顧客で絞る(任意)", placeholder="例: リアライズ")
+    col3, col4 = st.columns([3, 1])
+    with col3:
+        sort_by = st.radio("表示順", ["関連度順(おすすめ)", "日付の新しい順"],
+                           horizontal=True, label_visibility="collapsed")
+    with col4:
         top = st.selectbox("表示件数", [20, 50, 100], index=1)
 
-    if not q:
-        st.info("キーワードを入力してください。スペース区切りで複数語も可。")
+    if not q and not cust:
+        st.info("キーワードを入力してください。スペース区切りで複数語も可。"
+                "顧客欄と組み合わせると狙い撃ちできます。")
         return
 
     client = _get_search_client()
+    search_text = " ".join(x for x in [q.strip(), cust.strip()] if x)
     try:
         results = list(client.search(
-            search_text=q, top=top,
+            search_text=search_text, top=top,
             filter="media_type eq 'mitsumori'",
             select=["workno", "workno_name", "file_name", "file_path",
                     "capture_date_raw", "content_text"]))
     except Exception as e:
         st.error(f"検索に失敗しました: {e}")
         return
+
+    # 顧客絞り込み: 顧客/件名(workno_name)とファイルパスに対する部分一致で確定絞り
+    if cust.strip():
+        ck = cust.strip().lower()
+        results = [r for r in results
+                   if ck in (r.get("workno_name") or "").lower()
+                   or ck in (r.get("file_path") or "").lower()]
 
     if not results:
         st.warning("該当する見積が見つかりませんでした。キーワードを短くしてみてください。")
@@ -116,9 +131,13 @@ def main() -> None:
             "ファイル名": r.get("file_name") or "",
             "_path": r.get("file_path") or "",
         })
-    rows.sort(key=lambda x: x["見積日"], reverse=True)
+    if sort_by == "日付の新しい順":
+        rows.sort(key=lambda x: x["見積日"], reverse=True)
+        order_note = "日付の新しい順に表示"
+    else:
+        order_note = "キーワードに近い順に表示"
 
-    st.write(f"{len(rows)} 件ヒット(関連度順に取得し、日付の新しい順に表示)")
+    st.write(f"{len(rows)} 件ヒット({order_note})")
     st.dataframe(
         [{k: v for k, v in row.items() if k != "_path"} for row in rows],
         use_container_width=True, hide_index=True)
