@@ -5,8 +5,8 @@ AI Q&Aが「○○社のNC1-110整備、過去いくらで出してる？」等�
 回答できるのは見積作成メンバー(ai_qa.py側で質問者を制限)のみ。
 
 方式: xlsx見積の全シート(枚数無制限)から明細本文を、先頭シートから宛先・件名・
-      日付・合計金額をヒューリスティックに抽出し、1見積=1ドキュメントで
-      photo-index に media_type="mitsumori" でupsert。差分更新(状態ファイル)。
+      日付・合計金額をヒューリスティックに抽出。複数シートのブックは1シート=
+      1ドキュメントに分割して photo-index に media_type="mitsumori" でupsert。
       旧xls・PDFは第2期(未対応。件数のみログ)。
 
 実行(デスクトップ):
@@ -41,6 +41,9 @@ BATCH = 100
 
 RX_GYO = re.compile(r"^[あかさたなはまやらわ]行")  # 「あ行」「あ行(あいうえお)」の両対応
 RX_WORKNO = re.compile(r"([A-Z]{0,4}\d{3,6}-\d{2})", re.IGNORECASE)
+# シート名の6桁日付(例: ISS260220 / ISS260804 (2))。あれば見積日として採用
+RX_SHEET_DATE = re.compile(r"^\D{0,10}(\d{6})(?:\s*\(\d+\))?$")
+SHEET_BODY_MAX = 20000  # 1シート(=1ドキュメント)の本文上限
 
 # ── 見積用語カタログ(明細から自動抽出→Blob mitsumori_terms.json) ─────────────
 # 規程・現場カタログに続く4つ目の辞書。AI Q&Aのキーワード変換に注入される。
@@ -63,105 +66,151 @@ def _customer_from_path(rel: Path) -> str:
     return parts[0] if len(parts) > 1 else ""
 
 
-def _extract(p: Path) -> dict:
-    """全シートから明細本文を、先頭シートから宛先・件名・日付・合計金額を抽出。
-
-    明細本文(body): 全シートの文字列セルを行単位で連結。機械加工見積のように
-    10年分・30枚超のシートがあるブックにも対応(シート数無制限)。複数シート時は
-    「◆シート名」の見出し付き。シートごと400行×20列・2000字、全体30万字まで
-    (ISS東京: 216シート・13万字の実例に対応)。
-    """
-    import openpyxl
+def _scan_sheet(ws, want_header: bool) -> dict:
+    """1シートを走査(400行×20列)して本文行とヘッダー情報(宛先・件名・日付・最大数値)を返す。"""
     atesaki = kenmei = date_s = ""
     max_num = 0.0
     label_next = False
-    body_parts: list[str] = []
+    lines: list[str] = []
+    for row in ws.iter_rows(min_row=1, max_row=400, max_col=20):
+        row_texts: list[str] = []
+        for c in row:
+            v = c.value
+            if v is None:
+                continue
+            if want_header and label_next and isinstance(v, str) and v.strip():
+                cand = v.strip()
+                # 表ヘッダー行(品名 数量 単価…)の隣接セルを件名と誤認しない
+                if not re.fullmatch(r"数\s*量|単\s*価|金\s*額|単\s*位|備\s*考", cand):
+                    kenmei = kenmei or cand[:60]
+                label_next = False
+            s = str(v).strip()
+            if not s:
+                continue
+            if isinstance(v, str):
+                row_texts.append(s)
+            if want_header:
+                if ((s.endswith("様") or s.endswith("御中"))
+                        and not atesaki and 3 <= len(s) <= 40):
+                    atesaki = s
+                if isinstance(v, str) and re.fullmatch(r"件\s*名|工事名|品\s*名", s):
+                    label_next = True  # 次の非空セルを件名とみなす
+                if hasattr(v, "year") and not date_s:
+                    try:
+                        date_s = v.strftime("%Y-%m-%d")
+                    except Exception:
+                        pass
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    if v > max_num:
+                        max_num = float(v)
+        joined = " ".join(row_texts)
+        if len(joined) >= 4:
+            lines.append(joined)
+    return {"lines": lines, "atesaki": atesaki, "kenmei": kenmei,
+            "date": date_s, "max_num": max_num}
+
+
+def _extract(p: Path) -> dict:
+    """通常ブック用: 全シートから明細本文、先頭シートからヘッダー情報を抽出。
+
+    シート数無制限・シートごと400行×20列・2000字・全体30万字まで。
+    """
+    import openpyxl
     wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
     try:
-        multi = len(wb.worksheets) > 1
-        for si, ws in enumerate(wb.worksheets):
-            lines: list[str] = []
-            for row in ws.iter_rows(min_row=1, max_row=400, max_col=20):
-                row_texts: list[str] = []
-                for c in row:
-                    v = c.value
-                    if v is None:
-                        continue
-                    if si == 0 and label_next and isinstance(v, str) and v.strip():
-                        kenmei = kenmei or v.strip()[:60]
-                        label_next = False
-                    s = str(v).strip()
-                    if not s:
-                        continue
-                    if isinstance(v, str):
-                        row_texts.append(s)
-                    if si == 0:
-                        # ヘッダー情報は先頭シートからのみ抽出
-                        if ((s.endswith("様") or s.endswith("御中"))
-                                and not atesaki and len(s) <= 40):
-                            atesaki = s
-                        if isinstance(v, str) and re.fullmatch(r"件\s*名|工事名|品\s*名", s):
-                            label_next = True  # 次の非空セルを件名とみなす
-                        if hasattr(v, "year") and not date_s:
-                            try:
-                                date_s = v.strftime("%Y-%m-%d")
-                            except Exception:
-                                pass
-                        if isinstance(v, (int, float)) and not isinstance(v, bool):
-                            if v > max_num:
-                                max_num = float(v)
-                joined = " ".join(row_texts)
-                if len(joined) >= 4:
-                    lines.append(joined)
-            if lines:
-                sheet_text = "\n".join(lines)[:2000]
-                if multi:
-                    sheet_text = f"◆シート「{ws.title}」\n" + sheet_text
-                body_parts.append(sheet_text)
-            if sum(len(x) for x in body_parts) >= 300000:
-                break
+        return _extract_normal(wb)
     finally:
         wb.close()
+
+
+def _extract_normal(wb) -> dict:
+    body_parts: list[str] = []
+    hdr: dict = {}
+    multi = len(wb.worksheets) > 1
+    for si, ws in enumerate(wb.worksheets):
+        info = _scan_sheet(ws, want_header=(si == 0))
+        if si == 0:
+            hdr = info
+        if info["lines"]:
+            sheet_text = "\n".join(info["lines"])[:2000]
+            if multi:
+                sheet_text = f"◆シート「{ws.title}」\n" + sheet_text
+            body_parts.append(sheet_text)
+        if sum(len(x) for x in body_parts) >= 300000:
+            break
     body = "\n".join(body_parts)[:300000]
-    return {"atesaki": atesaki, "kenmei": kenmei, "date": date_s,
-            "gokei": int(max_num) if max_num >= 1000 else 0, "body": body}
+    return {"atesaki": hdr.get("atesaki", ""), "kenmei": hdr.get("kenmei", ""),
+            "date": hdr.get("date", ""),
+            "gokei": int(hdr.get("max_num", 0)) if hdr.get("max_num", 0) >= 1000 else 0,
+            "body": body}
 
 
-def _doc_for(p: Path, rel: Path, indexed_at: str) -> tuple[dict, str]:
-    """(検索ドキュメント, 明細テキスト) を返す。"""
-    info = _extract(p)
-    customer = _customer_from_path(rel)
-    kenmei = info["kenmei"] or p.stem
-    date_s = info["date"]
-    if not date_s:
-        try:
-            date_s = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
-        except OSError:
-            date_s = ""
-    m = RX_WORKNO.search(p.stem) or RX_WORKNO.search(kenmei)
-    workno = m.group(1) if m else ""
-    gokei = f"{info['gokei']:,}円" if info["gokei"] else "(金額抽出不可)"
-    text = (f"【過去見積】顧客: {customer} / 宛先: {info['atesaki'] or '不明'} / "
-            f"件名: {kenmei} / 見積日: {date_s or '不明'} / 合計金額: {gokei}"
-            + (f" / 工番: {workno}" if workno else "")
-            + f"\nファイル: {p}"
-            + (f"\n明細:\n{info['body']}" if info.get("body") else ""))
-    doc = {
-        "id": hashlib.sha256(f"mitsumori::{rel}".encode("utf-8")).hexdigest(),
-        "file_path": str(p),
-        "file_name": p.name,
-        "workno": workno,
-        "workno_name": f"{customer}/{kenmei}"[:100],
-        "phase": "",
-        "media_type": MEDIA_TYPE,
-        "capture_date": None,
-        "capture_date_raw": date_s,
-        "extension": p.suffix.lower(),
-        "folder_path": str(p.parent),
-        "indexed_at": indexed_at,
-        "content_text": text,
-    }
-    return doc, info.get("body", "")
+def _docs_for(p: Path, rel: Path, indexed_at: str) -> tuple[list[dict], str]:
+    """1ファイル分の(検索ドキュメント群, 明細テキスト)を返す。
+
+    複数シートのブックは1シート=1ドキュメントに分割する(台帳型・機械加工型とも)。
+    見積日はシート名の6桁日付(ISS260220等) → シート内の日付 → ファイル更新日の
+    順で採用。金額はそのシート内の最大数値。単一シートのブックは従来どおり
+    1ファイル=1ドキュメント(IDも従来と同じ)。
+    """
+    import openpyxl
+    wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
+    sheets: list[tuple[str, dict]] = []
+    try:
+        customer = _customer_from_path(rel)
+        for ws in wb.worksheets:
+            info = _scan_sheet(ws, want_header=True)
+            if info["lines"]:
+                sheets.append((ws.title, info))
+    finally:
+        wb.close()
+    try:
+        mtime_date = datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d")
+    except OSError:
+        mtime_date = ""
+    multi = len(sheets) > 1
+    docs: list[dict] = []
+    bodies: list[str] = []
+    for title, info in sheets:
+        body = "\n".join(info["lines"])[:SHEET_BODY_MAX]
+        m_d = RX_SHEET_DATE.match(title.strip())
+        date_s = ""
+        if m_d:
+            try:
+                date_s = datetime.strptime(
+                    "20" + m_d.group(1), "%Y%m%d").strftime("%Y-%m-%d")
+            except ValueError:
+                date_s = ""
+        date_s = date_s or info["date"] or mtime_date
+        kenmei = info["kenmei"] or (f"{p.stem}◆{title}" if multi else p.stem)
+        mw = (RX_WORKNO.search(p.stem) or RX_WORKNO.search(title)
+              or RX_WORKNO.search(kenmei))
+        workno = mw.group(1) if mw else ""
+        gokei = int(info["max_num"]) if info["max_num"] >= 1000 else 0
+        gs = f"{gokei:,}円" if gokei else "(金額抽出不可)"
+        text = (f"【過去見積】顧客: {customer} / 宛先: {info['atesaki'] or '不明'} / "
+                f"件名: {kenmei} / 見積日: {date_s or '不明'} / 合計金額: {gs}"
+                + (f" / 工番: {workno}" if workno else "")
+                + f"\nファイル: {p}" + (f" (シート: {title})" if multi else "")
+                + (f"\n明細:\n{body}" if body else ""))
+        id_src = f"mitsumori::{rel}::{title}" if multi else f"mitsumori::{rel}"
+        docs.append({
+            "id": hashlib.sha256(id_src.encode("utf-8")).hexdigest(),
+            "file_path": str(p),
+            "file_name": f"{p.name}◆{title}" if multi else p.name,
+            "workno": workno,
+            "workno_name": f"{customer}/{kenmei}"[:100],
+            "phase": "",
+            "media_type": MEDIA_TYPE,
+            "capture_date": None,
+            "capture_date_raw": date_s,
+            "extension": p.suffix.lower(),
+            "folder_path": str(p.parent),
+            "indexed_at": indexed_at,
+            "content_text": text,
+        })
+        bodies.append(body)
+    return docs, "\n".join(bodies)[:300000]
 
 
 def main() -> int:
@@ -203,7 +252,8 @@ def main() -> int:
                 mt = p.stat().st_mtime
             except OSError:
                 continue
-            if state.get(key) == mt:
+            prev = state.get(key)
+            if (prev.get("mt") if isinstance(prev, dict) else prev) == mt:
                 skipped_old += 1
                 continue
             targets.append((p, rel, mt))
@@ -217,10 +267,12 @@ def main() -> int:
         indexed_at = datetime.now(timezone.utc).isoformat()
         for p, rel, _ in targets[:n]:
             try:
-                d, body = _doc_for(p, rel, indexed_at)
-                print(f"--- {rel}\n    {d['content_text'].splitlines()[0]}")
-                if body:
-                    print(f"    明細冒頭: {body[:120]}")
+                ds, body = _docs_for(p, rel, indexed_at)
+                print(f"--- {rel} → {len(ds)}ドキュメント")
+                for d in ds[:3]:
+                    print(f"    {d['content_text'].splitlines()[0][:130]}")
+                if len(ds) > 3:
+                    print(f"    …ほか{len(ds) - 3}シート")
             except Exception as e:
                 print(f"--- {rel}\n    [失敗] {type(e).__name__}: {e}")
         return 0
@@ -243,15 +295,24 @@ def main() -> int:
         state = {}
 
     indexed_at = datetime.now(timezone.utc).isoformat()
-    docs, ok, err = [], 0, 0
+    docs, ok, err, doc_total = [], 0, 0, 0
     processed_bodies: list[str] = []
+    stale_ids: list[str] = []
     for p, rel, mt in targets:
         try:
-            d, body = _doc_for(p, rel, indexed_at)
-            docs.append(d)
+            ds, body = _docs_for(p, rel, indexed_at)
+            docs.extend(ds)
+            doc_total += len(ds)
             if body:
                 processed_bodies.append(body)
-            state[str(rel)] = mt
+            # 前回登録したが今回消えたドキュメント(削除されたシート等)を削除対象に
+            new_ids = {d["id"] for d in ds}
+            prev = state.get(str(rel))
+            prev_ids = (prev.get("ids", []) if isinstance(prev, dict)
+                        else ([hashlib.sha256(f"mitsumori::{rel}".encode("utf-8"))
+                               .hexdigest()] if prev else []))
+            stale_ids += [i for i in prev_ids if i not in new_ids]
+            state[str(rel)] = {"mt": mt, "ids": sorted(new_ids)}
             ok += 1
         except Exception as e:
             err += 1
@@ -261,19 +322,32 @@ def main() -> int:
             client.merge_or_upload_documents(docs)
             docs = []
             if ok % 500 < BATCH:
-                print(f"  ... {ok:,} 件登録")
+                print(f"  ... {ok:,} ファイル / {doc_total:,} ドキュメント登録")
     if docs:
         client.merge_or_upload_documents(docs)
 
+    # 消されたシートの旧ドキュメントを削除
+    if stale_ids:
+        for i in range(0, len(stale_ids), BATCH):
+            client.delete_documents([{"id": x} for x in stale_ids[i:i + BATCH]])
+        print(f"[DELETE] 消えたシート等の旧ドキュメント {len(stale_ids):,} 件を削除")
+
     # 削除されたファイルをインデックスからも削除
     if removed:
-        del_ids = [{"id": hashlib.sha256(f"mitsumori::{k}".encode()).hexdigest()}
-                   for k in removed]
+        del_ids = []
+        for k in removed:
+            prev = state.get(k)
+            if isinstance(prev, dict):
+                del_ids += [{"id": i} for i in prev.get("ids", [])]
+            else:
+                del_ids.append({"id": hashlib.sha256(
+                    f"mitsumori::{k}".encode()).hexdigest()})
         for i in range(0, len(del_ids), BATCH):
             client.delete_documents(del_ids[i:i + BATCH])
         for k in removed:
             state.pop(k, None)
-        print(f"[DELETE] 削除ファイル分 {len(removed):,} 件をインデックスから削除")
+        print(f"[DELETE] 削除ファイル {len(removed):,} 件分 "
+              f"{len(del_ids):,} ドキュメントをインデックスから削除")
 
     STATE_PATH.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
 
@@ -283,7 +357,7 @@ def main() -> int:
     except Exception as e:
         print(f"[WARN] 用語カタログ更新失敗: {e}")
 
-    print(f"[DONE] 登録 {ok:,} 件 / 失敗 {err:,} 件。"
+    print(f"[DONE] 登録 {ok:,} ファイル ({doc_total:,} ドキュメント) / 失敗 {err:,} 件。"
           f"AI Q&A(見積メンバー限定)で過去見積に答えられます。")
     return 0
 
