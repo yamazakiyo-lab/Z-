@@ -4,9 +4,9 @@ AI Q&Aが「○○社のNC1-110整備、過去いくらで出してる？」等�
 過去見積の件名・日付・金額・ファイル所在を根拠に答えられるようにする。
 回答できるのは見積作成メンバー(ai_qa.py側で質問者を制限)のみ。
 
-方式: xlsx見積の先頭シートから宛先・件名・日付・合計金額らしき値を
-      ヒューリスティックに抽出し、1見積=1ドキュメントで photo-index に
-      media_type="mitsumori" でupsert。差分更新(状態ファイルで管理)。
+方式: xlsx見積の全シート(最大30枚)から明細本文を、先頭シートから宛先・件名・
+      日付・合計金額をヒューリスティックに抽出し、1見積=1ドキュメントで
+      photo-index に media_type="mitsumori" でupsert。差分更新(状態ファイル)。
       旧xls・PDFは第2期(未対応。件数のみログ)。
 
 実行(デスクトップ):
@@ -64,51 +64,65 @@ def _customer_from_path(rel: Path) -> str:
 
 
 def _extract(p: Path) -> dict:
-    """先頭シートから宛先・件名・日付・合計金額と明細本文を抽出(120行×14列)。
+    """全シートから明細本文を、先頭シートから宛先・件名・日付・合計金額を抽出。
 
-    明細本文(body): 文字列セルを行単位で連結した全文。検索を見積の中身
-    (品名・作業内容)に当てるために content_text へ含める(2026-08-05強化)。
+    明細本文(body): 各シート(最大30枚)の文字列セルを行単位で連結。機械加工
+    見積のようにシートが大量にあるブックにも対応(2026-08-05: 従来は先頭シート
+    のみ・1800字で、2枚目以降の明細が検索に載っていなかった)。複数シート時は
+    「◆シート名」の見出し付き。シートごと300行×20列・2000字、全体9000字まで。
     """
     import openpyxl
     atesaki = kenmei = date_s = ""
     max_num = 0.0
     label_next = False
-    body_lines: list[str] = []
+    body_parts: list[str] = []
     wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
     try:
-        ws = wb.worksheets[0]
-        for row in ws.iter_rows(min_row=1, max_row=120, max_col=14):
-            row_texts: list[str] = []
-            for c in row:
-                v = c.value
-                if v is None:
-                    continue
-                if label_next and isinstance(v, str) and v.strip():
-                    kenmei = kenmei or v.strip()[:60]
-                    label_next = False
-                s = str(v).strip()
-                if not s:
-                    continue
-                if isinstance(v, str):
-                    row_texts.append(s)
-                if (s.endswith("様") or s.endswith("御中")) and not atesaki and len(s) <= 40:
-                    atesaki = s
-                if isinstance(v, str) and re.fullmatch(r"件\s*名|工事名|品\s*名", s):
-                    label_next = True  # 次の非空セルを件名とみなす
-                if hasattr(v, "year") and not date_s:
-                    try:
-                        date_s = v.strftime("%Y-%m-%d")
-                    except Exception:
-                        pass
-                if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    if v > max_num:
-                        max_num = float(v)
-            joined = " ".join(row_texts)
-            if len(joined) >= 4:
-                body_lines.append(joined)
+        multi = len(wb.worksheets) > 1
+        for si, ws in enumerate(wb.worksheets[:30]):
+            lines: list[str] = []
+            for row in ws.iter_rows(min_row=1, max_row=300, max_col=20):
+                row_texts: list[str] = []
+                for c in row:
+                    v = c.value
+                    if v is None:
+                        continue
+                    if si == 0 and label_next and isinstance(v, str) and v.strip():
+                        kenmei = kenmei or v.strip()[:60]
+                        label_next = False
+                    s = str(v).strip()
+                    if not s:
+                        continue
+                    if isinstance(v, str):
+                        row_texts.append(s)
+                    if si == 0:
+                        # ヘッダー情報は先頭シートからのみ抽出
+                        if ((s.endswith("様") or s.endswith("御中"))
+                                and not atesaki and len(s) <= 40):
+                            atesaki = s
+                        if isinstance(v, str) and re.fullmatch(r"件\s*名|工事名|品\s*名", s):
+                            label_next = True  # 次の非空セルを件名とみなす
+                        if hasattr(v, "year") and not date_s:
+                            try:
+                                date_s = v.strftime("%Y-%m-%d")
+                            except Exception:
+                                pass
+                        if isinstance(v, (int, float)) and not isinstance(v, bool):
+                            if v > max_num:
+                                max_num = float(v)
+                joined = " ".join(row_texts)
+                if len(joined) >= 4:
+                    lines.append(joined)
+            if lines:
+                sheet_text = "\n".join(lines)[:2000]
+                if multi:
+                    sheet_text = f"◆シート「{ws.title}」\n" + sheet_text
+                body_parts.append(sheet_text)
+            if sum(len(x) for x in body_parts) >= 9000:
+                break
     finally:
         wb.close()
-    body = "\n".join(body_lines)[:1800]
+    body = "\n".join(body_parts)[:9000]
     return {"atesaki": atesaki, "kenmei": kenmei, "date": date_s,
             "gokei": int(max_num) if max_num >= 1000 else 0, "body": body}
 
