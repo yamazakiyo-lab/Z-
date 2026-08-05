@@ -127,7 +127,6 @@ def main() -> None:
             "見積日": r.get("capture_date_raw") or "",
             "顧客/件名": r.get("workno_name") or "",
             "金額": m_g.group(1) + "円" if m_g else "",
-            "工番": r.get("workno") or "",
             "ファイル名": r.get("file_name") or "",
             "_path": r.get("file_path") or "",
         })
@@ -143,15 +142,19 @@ def main() -> None:
         use_container_width=True, hide_index=True)
 
     st.divider()
-    st.subheader("ファイルの場所")
-    st.caption("開きたい見積のパスをコピーして、エクスプローラーのアドレス欄に貼り付けてください。")
-    detail_map = {(r.get("file_path") or ""): (r.get("content_text") or "")
+    st.subheader("見積のプレビュー")
+    st.caption("展開すると見積の中身(明細)を表示します。実ファイルはパスをコピーして"
+               "エクスプローラーのアドレス欄に貼り付けて開いてください。")
+    detail_map = {(r.get("file_name") or ""): (r.get("content_text") or "")
                   for r in results}
     for row in rows[:20]:
         with st.expander(f"{row['見積日']} {row['顧客/件名']} {row['金額']}"):
-            body = detail_map.get(row["_path"], "")
+            body = detail_map.get(row["ファイル名"], "")
             if "明細:" in body:
-                st.text(body.split("明細:", 1)[1].strip()[:800])
+                with st.container(height=380):
+                    st.text(body.split("明細:", 1)[1].strip())
+            elif "テキスト抽出不可" in body:
+                st.info("スキャンPDFのため中身のプレビューはできません。ファイル本体を開いてください。")
             st.code(row["_path"], language=None)
 
 
