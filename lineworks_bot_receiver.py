@@ -104,6 +104,17 @@ STATE_WAITING_BATCH        = "waiting_batch"          # まとめ保存 Y/N 待�
 # 学習協力 Bot 用ステート
 STATE_WAITING_ANNOTATION   = "waiting_annotation"   # 写真コメント待ち
 STATE_WAITING_NEXT         = "waiting_next"          # 次の写真送るか Y/N 待ち
+# 工番レビュー Bot 用ステート(2026-08-05 Phase5 MVP)
+STATE_REVIEW_Q1 = "review_q1"   # 評価(1-4)待ち
+STATE_REVIEW_Q2 = "review_q2"   # 課題分類(複数可)待ち
+STATE_REVIEW_Q3 = "review_q3"   # 次回受注判断(1-4)待ち
+STATE_REVIEW_Q4 = "review_q4"   # 自由コメント待ち
+REVIEW_STATES = {STATE_REVIEW_Q1, STATE_REVIEW_Q2, STATE_REVIEW_Q3, STATE_REVIEW_Q4}
+# レビュー依頼を発火できるメンバー(見積メンバーと同じ既定)
+REVIEW_ADMIN_NAMES = {n.strip() for n in os.environ.get(
+    "REVIEW_ADMIN_NAMES",
+    "山嵜喜隆,山嵜絵里,昆哲郎,松尾崇,松﨑誠一,滝沢雄一").split(",") if n.strip()}
+JOB_REVIEW_BLOB = "job_reviews.jsonl"
 
 # 写真アップロードフローの全ステート(放置リセット判定に使う)
 UPLOAD_STATES = {
@@ -681,6 +692,124 @@ app = FastAPI(title="LINE WORKS Bot Receiver", version="0.3.0")
 
 
 @app.post("/lineworks/callback")
+# ── 工番レビューBot(Phase5 MVP、2026-08-05) ──────────────────────────────────
+# 発火: 見積メンバーがBotに「レビュー 4642-00 阿部 飯島」と送る(名前省略=本人)。
+# 回答: Q1評価→(課題ありならQ2分類)→Q3次回判断→Q4自由コメント→Blobに記録。
+_REVIEW_Q1_TEXT = (
+    "振り返りに少しご協力をお願いします！(2〜3分で完了します)\n\n"
+    "Q1. この工番、どうでしたか？(番号で入力)\n"
+    "1 → 良かった・予定通り\n"
+    "2 → 普通\n"
+    "3 → 残念だった・課題があった\n"
+    "4 → まだ判断できない(保留)\n"
+    "(中止する場合は「X」)")
+_REVIEW_Q2_TEXT = (
+    "Q2. どの点が課題でしたか？(番号で入力・複数可 例: 1,3)\n"
+    "1 → 見積工数が足りなかった\n"
+    "2 → 仕入・外注費が想定より増えた\n"
+    "3 → 追加作業が売上に反映できなかった\n"
+    "4 → 現場の段取り・再訪問\n"
+    "5 → そもそも受けにくい案件だった\n"
+    "6 → その他")
+_REVIEW_Q3_TEXT = (
+    "Q3. 次回同種の案件は？(番号で入力)\n"
+    "1 → 積極的に受けたい\n"
+    "2 → 条件次第で受けたい\n"
+    "3 → 慎重に判断したい\n"
+    "4 → 受けない方がよい")
+_REVIEW_Q4_TEXT = "Q4. 次回見積に活かせることがあれば一言どうぞ。(無ければ「なし」)"
+
+
+def _is_review_admin(user_id: str) -> bool:
+    name = (_load_user_names().get(user_id) or "").replace(" ", "").replace("﨑", "崎")
+    if not name:
+        return False
+    return any(
+        (n2 := n.replace(" ", "").replace("﨑", "崎")) and (n2 in name or name in n2)
+        for n in REVIEW_ADMIN_NAMES)
+
+
+def _append_job_review(rec: dict) -> None:
+    """job_reviews.jsonl(Append Blob)に1件追記。将来のPhase7分析・工数差異分析の土台。"""
+    try:
+        client = _get_blob_client()
+        if client is None:
+            return
+        blob = client.get_blob_client(BLOB_CONTAINER, JOB_REVIEW_BLOB)
+        line = (json.dumps(rec, ensure_ascii=False) + "\n").encode("utf-8")
+        try:
+            blob.append_block(line)
+        except Exception:
+            blob.create_append_blob()
+            blob.append_block(line)
+        logger.info(f"工番レビュー記録: {rec.get('job_no')} rating={rec.get('rating')}")
+    except Exception as e:
+        logger.error(f"job_review保存失敗: {e}")
+
+
+def _finish_review(user_id: str, ch: str, sd: dict) -> None:
+    rec = {
+        "job_no": sd.get("job_no", ""),
+        "job_name": sd.get("job_name", ""),
+        "rating": sd.get("rating"),
+        "reason_codes": sd.get("reason_codes", ""),
+        "next_decision": sd.get("next_decision"),
+        "free_comment": sd.get("free_comment", ""),
+        "reviewed_by": _load_user_names().get(user_id, user_id),
+        "requested_by": sd.get("requested_by", ""),
+        "reviewed_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+    }
+    _append_job_review(rec)
+    _conv.pop(user_id, None)
+    if rec["rating"] == 4:
+        _send_text(ch, user_id,
+                   "了解です、保留として記録しました。判断できる時期になったらまたお願いします🙏")
+    else:
+        _send_text(ch, user_id,
+                   "ありがとうございました！振り返りを記録しました📋 次回の見積・段取りに活かします。")
+
+
+def _handle_review_answer(user_id: str, ch: str, sd: dict, text: str) -> None:
+    import re as _re
+    t = text.strip().translate(str.maketrans("１２３４５６，", "123456,"))
+    state = sd["state"]
+    if state == STATE_REVIEW_Q1:
+        if t not in {"1", "2", "3", "4"}:
+            _send_text(ch, user_id, "1〜4の番号で入力してください。(中止は「X」)")
+            return
+        sd["rating"] = int(t)
+        if t == "4":
+            _finish_review(user_id, ch, sd)
+        elif t == "3":
+            sd["state"] = STATE_REVIEW_Q2
+            _send_text(ch, user_id, _REVIEW_Q2_TEXT)
+        else:
+            sd["state"] = STATE_REVIEW_Q3
+            _send_text(ch, user_id, _REVIEW_Q3_TEXT)
+        return
+    if state == STATE_REVIEW_Q2:
+        nums = _re.findall(r"[1-6]", t)
+        if not nums:
+            _send_text(ch, user_id, "1〜6の番号で入力してください(複数可 例: 1,3)。")
+            return
+        sd["reason_codes"] = ",".join(dict.fromkeys(nums))
+        sd["state"] = STATE_REVIEW_Q3
+        _send_text(ch, user_id, _REVIEW_Q3_TEXT)
+        return
+    if state == STATE_REVIEW_Q3:
+        if t not in {"1", "2", "3", "4"}:
+            _send_text(ch, user_id, "1〜4の番号で入力してください。")
+            return
+        sd["next_decision"] = int(t)
+        sd["state"] = STATE_REVIEW_Q4
+        _send_text(ch, user_id, _REVIEW_Q4_TEXT)
+        return
+    if state == STATE_REVIEW_Q4:
+        sd["free_comment"] = ("" if text.strip() in {"なし", "無し", "-"}
+                              else text.strip()[:300])
+        _finish_review(user_id, ch, sd)
+
+
 async def lineworks_callback(request: Request) -> Response:
     body = await request.body()
 
@@ -761,12 +890,62 @@ async def lineworks_callback(request: Request) -> Response:
                     "学習協力の回答が終わっていません 📸\n"
                     "先にコメントを入力してから写真を送ってください。"
                 )
+            elif current_state in REVIEW_STATES:
+                _send_text(channel_id, user_id,
+                    "工番レビューの回答が途中です 📋\n"
+                    "先に番号で回答するか、「X」で中止してから写真を送ってください。"
+                )
             else:
                 _start_inquiry(user_id, channel_id, file_blob)
 
     # ── テキスト受信（会話ステート処理） ─────────────────────────────────
     elif msg_type == "text":
         text = content.get("text", "").strip()
+
+        # ── 工番レビュー依頼コマンド(見積メンバー限定) ──────────────────
+        # 「レビュー 4642-00 阿部 飯島」→ 指定者に4問フロー。名前省略=発火者本人。
+        import re as _re
+        _m_rev = _re.match(r"^(?:レビュー|レビュー依頼)[\s　]+(\S+)(?:[\s　]+(.+))?$", text)
+        if _m_rev and user_id and _is_review_admin(user_id):
+            names_map = _load_user_names()
+            req_name = names_map.get(user_id, "")
+            job_raw = _m_rev.group(1)
+            key, _looks, _hb = _normalize_koban(job_raw)
+            job_no = key or job_raw
+            master = _load_workno_master()
+            job_name = ((master.get(job_no) or {}).get("name", "") or "") if master else ""
+            targets: list = []
+            unresolved: list = []
+            arg = (_m_rev.group(2) or "").strip()
+            if arg:
+                for nm in _re.split(r"[,、\s　]+", arg):
+                    if not nm:
+                        continue
+                    nmk = nm.replace(" ", "")
+                    uid = next((u for u, n in names_map.items()
+                                if nmk and n and (nmk in n.replace(" ", "")
+                                                  or n.replace(" ", "") in nmk)), "")
+                    if uid:
+                        targets.append(uid)
+                    else:
+                        unresolved.append(nm)
+            else:
+                targets = [user_id]
+            targets = list(dict.fromkeys(targets))
+            for tid in targets:
+                intro = (f"📋 工番 {job_no}"
+                         + (f"「{job_name[:30]}」" if job_name else "")
+                         + f" の振り返り依頼です({req_name}さんより)。\n\n"
+                         + _REVIEW_Q1_TEXT)
+                _send_text("", tid, intro)
+                _conv[tid] = {"state": STATE_REVIEW_Q1, "channel_id": "",
+                              "job_no": job_no, "job_name": job_name,
+                              "requested_by": req_name}
+            msg = f"レビュー依頼を {len(targets)} 名に送りました(工番 {job_no})。"
+            if unresolved:
+                msg += f"\n※見つからなかった宛先: {'、'.join(unresolved)}"
+            _send_text(channel_id, user_id, msg)
+            return Response(content="OK", status_code=200)
 
         # _conv にない場合: annotation_state.json から pending を復元
         _skip_state = False  # T トリガーで即開始した場合は後続ステート処理をスキップ
@@ -1148,6 +1327,14 @@ async def lineworks_callback(request: Request) -> Response:
                     _send_text(ch, user_id,
                         "Y か N で答えてください 🙏\nY → 続ける　N → 今はここまで（定時または「T」で再開）"
                     )
+
+            # ── 工番レビュー Bot ステート(Phase5 MVP) ────────────────────
+            elif state in REVIEW_STATES:
+                if text.strip().lower() in {"x", "ｘ", "キャンセル", "中止"}:
+                    _conv.pop(user_id, None)
+                    _send_text(ch, user_id, "レビューを中止しました。")
+                else:
+                    _handle_review_answer(user_id, ch, state_data, text)
 
     # 会話状態に最終活動時刻を記録(放置リセット判定用)
     if user_id in _conv:
