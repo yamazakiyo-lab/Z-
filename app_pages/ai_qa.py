@@ -170,6 +170,37 @@ def _load_genba_terms() -> dict:
         return {}
 
 
+@st.cache_data(ttl=21600)
+def _load_mitsumori_terms() -> dict:
+    """見積用語カタログ(mitsumori_terms.json)をBlobから読む。無ければ空。
+
+    見積明細から夜間ランが自動抽出する品名・型式・作業語(金額は含まない)。
+    語彙は機密ではないため全員のキーワード変換に注入してよい。
+    """
+    try:
+        conn = os.getenv("AZURE_BLOB_CONNECTION_STRING", "")
+        if not conn:
+            return {}
+        from azure.storage.blob import BlobServiceClient
+        svc = BlobServiceClient.from_connection_string(conn)
+        raw = svc.get_blob_client(QA_LOG_CONTAINER, "mitsumori_terms.json") \
+            .download_blob().readall()
+        return json.loads(raw.decode("utf-8"))
+    except Exception:
+        return {}
+
+
+def _mitsumori_terms_hint() -> str:
+    """キーワード変換用: 見積明細で実際に使われる品名・作業語を検索語に使わせる。"""
+    terms = _load_mitsumori_terms()
+    lines = [f"{c}: {' '.join(terms[c][:20])}"
+             for c in ("カタカナ", "型式", "作業") if terms.get(c)]
+    if not lines:
+        return ""
+    return ("\n\n見積・作業指示で実際に使われる語(品名・型式・作業名。関連する語は"
+            "この表記のまま検索語に含めること):\n" + "\n".join(lines))
+
+
 def _genba_terms_hint() -> str:
     """キーワード変換用: 現場写真コメントで実際に使われる語を検索語に使わせる。"""
     terms = _load_genba_terms()
@@ -479,6 +510,7 @@ def _extract_keywords(openai_client, question: str) -> str:
                     + _synonyms_hint()
                     + _kitei_terms_hint()
                     + _genba_terms_hint()
+                    + _mitsumori_terms_hint()
                     + "\n\n質問: " + question
                 ),
             }],

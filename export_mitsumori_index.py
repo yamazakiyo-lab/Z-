@@ -42,6 +42,19 @@ BATCH = 100
 RX_GYO = re.compile(r"^[あかさたなはまやらわ]行$")
 RX_WORKNO = re.compile(r"([A-Z]{0,4}\d{3,6}-\d{2})", re.IGNORECASE)
 
+# ── 見積用語カタログ(明細から自動抽出→Blob mitsumori_terms.json) ─────────────
+# 規程・現場カタログに続く4つ目の辞書。AI Q&Aのキーワード変換に注入される。
+TERMS_COUNTS_PATH = Path(__file__).with_name("mitsumori_terms_counts.json")
+TERMS_BLOB = "mitsumori_terms.json"
+TERMS_MIN_COUNT = 3   # 明細は繰り返しが多いためノイズ除けに3回以上
+RX_KATAKANA = re.compile(r"[ァ-ヴー]{3,}")
+RX_MODEL = re.compile(r"[A-Za-z][A-Za-z\-]{0,8}[0-9][A-Za-z0-9\-]{0,14}")
+RX_WORK = re.compile(
+    r"[一-龠ァ-ヴーA-Za-z0-9]{1,8}"
+    r"(?:交換|整備|修理|組立|組付|分解|洗浄|塗装|溶接|研磨|研削|調整|点検|測定|"
+    r"芯出し|取付|取外し|加工|補修|清掃|据付|搬入|搬出|改造|更新)")
+TERMS_STOP = {"ミツモリ", "ゴウケイ", "ショウヒゼイ"}
+
 
 def _customer_from_path(rel: Path) -> str:
     parts = rel.parts
@@ -51,15 +64,21 @@ def _customer_from_path(rel: Path) -> str:
 
 
 def _extract(p: Path) -> dict:
-    """先頭シートから宛先・件名・日付・合計金額を推定(50行×14列)。"""
+    """先頭シートから宛先・件名・日付・合計金額と明細本文を抽出(120行×14列)。
+
+    明細本文(body): 文字列セルを行単位で連結した全文。検索を見積の中身
+    (品名・作業内容)に当てるために content_text へ含める(2026-08-05強化)。
+    """
     import openpyxl
     atesaki = kenmei = date_s = ""
     max_num = 0.0
     label_next = False
+    body_lines: list[str] = []
     wb = openpyxl.load_workbook(p, read_only=True, data_only=True)
     try:
         ws = wb.worksheets[0]
-        for row in ws.iter_rows(min_row=1, max_row=50, max_col=14):
+        for row in ws.iter_rows(min_row=1, max_row=120, max_col=14):
+            row_texts: list[str] = []
             for c in row:
                 v = c.value
                 if v is None:
@@ -70,6 +89,8 @@ def _extract(p: Path) -> dict:
                 s = str(v).strip()
                 if not s:
                     continue
+                if isinstance(v, str):
+                    row_texts.append(s)
                 if (s.endswith("様") or s.endswith("御中")) and not atesaki and len(s) <= 40:
                     atesaki = s
                 if isinstance(v, str) and re.fullmatch(r"件\s*名|工事名|品\s*名", s):
@@ -82,13 +103,18 @@ def _extract(p: Path) -> dict:
                 if isinstance(v, (int, float)) and not isinstance(v, bool):
                     if v > max_num:
                         max_num = float(v)
+            joined = " ".join(row_texts)
+            if len(joined) >= 4:
+                body_lines.append(joined)
     finally:
         wb.close()
+    body = "\n".join(body_lines)[:1800]
     return {"atesaki": atesaki, "kenmei": kenmei, "date": date_s,
-            "gokei": int(max_num) if max_num >= 1000 else 0}
+            "gokei": int(max_num) if max_num >= 1000 else 0, "body": body}
 
 
-def _doc_for(p: Path, rel: Path, indexed_at: str) -> dict:
+def _doc_for(p: Path, rel: Path, indexed_at: str) -> tuple[dict, str]:
+    """(検索ドキュメント, 明細テキスト) を返す。"""
     info = _extract(p)
     customer = _customer_from_path(rel)
     kenmei = info["kenmei"] or p.stem
@@ -104,8 +130,9 @@ def _doc_for(p: Path, rel: Path, indexed_at: str) -> dict:
     text = (f"【過去見積】顧客: {customer} / 宛先: {info['atesaki'] or '不明'} / "
             f"件名: {kenmei} / 見積日: {date_s or '不明'} / 合計金額: {gokei}"
             + (f" / 工番: {workno}" if workno else "")
-            + f"\nファイル: {p}")
-    return {
+            + f"\nファイル: {p}"
+            + (f"\n明細:\n{info['body']}" if info.get("body") else ""))
+    doc = {
         "id": hashlib.sha256(f"mitsumori::{rel}".encode("utf-8")).hexdigest(),
         "file_path": str(p),
         "file_name": p.name,
@@ -120,6 +147,7 @@ def _doc_for(p: Path, rel: Path, indexed_at: str) -> dict:
         "indexed_at": indexed_at,
         "content_text": text,
     }
+    return doc, info.get("body", "")
 
 
 def main() -> int:
@@ -175,8 +203,10 @@ def main() -> int:
         indexed_at = datetime.now(timezone.utc).isoformat()
         for p, rel, _ in targets[:n]:
             try:
-                d = _doc_for(p, rel, indexed_at)
+                d, body = _doc_for(p, rel, indexed_at)
                 print(f"--- {rel}\n    {d['content_text'].splitlines()[0]}")
+                if body:
+                    print(f"    明細冒頭: {body[:120]}")
             except Exception as e:
                 print(f"--- {rel}\n    [失敗] {type(e).__name__}: {e}")
         return 0
@@ -200,9 +230,13 @@ def main() -> int:
 
     indexed_at = datetime.now(timezone.utc).isoformat()
     docs, ok, err = [], 0, 0
+    processed_bodies: list[str] = []
     for p, rel, mt in targets:
         try:
-            docs.append(_doc_for(p, rel, indexed_at))
+            d, body = _doc_for(p, rel, indexed_at)
+            docs.append(d)
+            if body:
+                processed_bodies.append(body)
             state[str(rel)] = mt
             ok += 1
         except Exception as e:
@@ -228,9 +262,63 @@ def main() -> int:
         print(f"[DELETE] 削除ファイル分 {len(removed):,} 件をインデックスから削除")
 
     STATE_PATH.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+
+    # ── 見積用語カタログの更新(処理したファイルの明細から語彙を累積) ────────
+    try:
+        _update_terms_catalog(processed_bodies, full=args.full)
+    except Exception as e:
+        print(f"[WARN] 用語カタログ更新失敗: {e}")
+
     print(f"[DONE] 登録 {ok:,} 件 / 失敗 {err:,} 件。"
           f"AI Q&A(見積メンバー限定)で過去見積に答えられます。")
     return 0
+
+
+def _update_terms_catalog(bodies: list[str], full: bool = False) -> None:
+    """明細テキストから語彙を抽出し、累積カウントを更新してBlobへ出力する。
+
+    カウントはローカル(mitsumori_terms_counts.json)に累積。--full時は作り直し。
+    出現TERMS_MIN_COUNT回以上の語だけをBlobのカタログに載せる(金額は含まない)。
+    """
+    from collections import Counter
+    counts = {"カタカナ": {}, "型式": {}, "作業": {}}
+    if TERMS_COUNTS_PATH.exists() and not full:
+        counts = json.loads(TERMS_COUNTS_PATH.read_text(encoding="utf-8"))
+    kata, model, work = (Counter(counts.get("カタカナ", {})),
+                         Counter(counts.get("型式", {})),
+                         Counter(counts.get("作業", {})))
+    for body in bodies:
+        for m in RX_KATAKANA.findall(body):
+            if m not in TERMS_STOP:
+                kata[m] += 1
+        for m in RX_MODEL.findall(body):
+            m = m.upper().rstrip("-")
+            if len(m) >= 3:
+                model[m] += 1
+        for m in RX_WORK.findall(body):
+            if not m.startswith(("の", "を", "は", "と", "が")):
+                work[m] += 1
+    TERMS_COUNTS_PATH.write_text(json.dumps(
+        {"カタカナ": dict(kata), "型式": dict(model), "作業": dict(work)},
+        ensure_ascii=False), encoding="utf-8")
+
+    catalog = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "カタカナ": [w for w, c in kata.most_common(300) if c >= TERMS_MIN_COUNT],
+        "型式": [w for w, c in model.most_common(300) if c >= TERMS_MIN_COUNT],
+        "作業": [w for w, c in work.most_common(300) if c >= TERMS_MIN_COUNT],
+    }
+    conn = os.environ.get("AZURE_BLOB_CONNECTION_STRING", "")
+    if not conn:
+        print("[WARN] AZURE_BLOB_CONNECTION_STRING未設定のため用語カタログ未出力")
+        return
+    from azure.storage.blob import BlobServiceClient
+    BlobServiceClient.from_connection_string(conn) \
+        .get_blob_client(os.environ.get("LW_BLOB_CONTAINER", "lw-raw"), TERMS_BLOB) \
+        .upload_blob(json.dumps(catalog, ensure_ascii=False, indent=1).encode("utf-8"),
+                     overwrite=True)
+    print(f"[TERMS] 見積用語カタログ更新: カタカナ{len(catalog['カタカナ'])}種 / "
+          f"型式{len(catalog['型式'])}種 / 作業{len(catalog['作業'])}種")
 
 
 if __name__ == "__main__":

@@ -103,3 +103,4 @@ rag/qa_synonyms_draft.json
 qa_review.log
 logs/qa_review_*.md
 mitsumori_index_state.json
+mitsumori_terms_counts.json

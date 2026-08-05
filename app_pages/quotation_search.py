@@ -126,8 +126,13 @@ def main() -> None:
     st.divider()
     st.subheader("ファイルの場所")
     st.caption("開きたい見積のパスをコピーして、エクスプローラーのアドレス欄に貼り付けてください。")
+    detail_map = {(r.get("file_path") or ""): (r.get("content_text") or "")
+                  for r in results}
     for row in rows[:20]:
         with st.expander(f"{row['見積日']} {row['顧客/件名']} {row['金額']}"):
+            body = detail_map.get(row["_path"], "")
+            if "明細:" in body:
+                st.text(body.split("明細:", 1)[1].strip()[:800])
             st.code(row["_path"], language=None)
 
 
