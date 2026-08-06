@@ -22,8 +22,17 @@ DEFAULT_ROOT = os.environ.get("ZENKAKU_ROOT", r"Z:\takachiho")
 SKIP_DIRS = {"$RECYCLE.BIN", "System Volume Information", ".runtime"}
 
 
+import re
+
+RX_E_DIGIT = re.compile(r"\)_E(?=\d)")      # )_E12345 → )E_12345 (旧番号は_を残す)
+RX_E_CJK = re.compile(r"\)_E(?=[぀-ヿ㐀-䶿一-鿿])")  # )_E電気… → )E電気…
+
+
 def _fix(name: str) -> str:
-    return name.replace(")_-", ")-")
+    name = name.replace(")_-", ")-")
+    name = RX_E_DIGIT.sub(")E_", name)
+    name = RX_E_CJK.sub(")E", name)
+    return name
 
 
 def main() -> int:
