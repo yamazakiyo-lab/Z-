@@ -25,11 +25,13 @@ SKIP_DIRS = {"$RECYCLE.BIN", "System Volume Information", ".runtime"}
 import re
 
 RX_E_DIGIT = re.compile(r"\)_E(?=\d)")      # )_E12345 → )E_12345 (旧番号は_を残す)
+RX_E_US = re.compile(r"\)_E_(?=\d)")        # )_E_130108 → )E_130108
 RX_E_CJK = re.compile(r"\)_E(?=[぀-ヿ㐀-䶿一-鿿])")  # )_E電気… → )E電気…
 
 
 def _fix(name: str) -> str:
     name = name.replace(")_-", ")-")
+    name = RX_E_US.sub(")E_", name)
     name = RX_E_DIGIT.sub(")E_", name)
     name = RX_E_CJK.sub(")E", name)
     return name
