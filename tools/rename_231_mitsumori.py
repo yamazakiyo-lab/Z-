@@ -34,6 +34,8 @@ ROOT = Path(os.environ.get(
 RX_ASCII_MODEL = re.compile(r"[A-Za-z0-9()\-.×/ⅡⅢ+ ]+")
 RX_CJK_START = re.compile(r"^[぀-ヿ㐀-䶿一-鿿]")
 RX_8DIGIT = re.compile(r"20\d{6}")
+# 準拠済みの期間表記: 「_2506～」「_2506～12」「_2506～2612」(範囲の終わり付き)
+RX_PERIOD_OK = re.compile(r".+_\d{4}～(\d{2}|\d{4})?$")
 RX_PERIOD = re.compile(r"^(?P<h>.+?)[_ ]?(?:(?P<yy>\d{2})\.(?P<mm>\d{1,2})|(?P<yymm>\d{4}))\s*[~～]$")
 RX_TAIL = re.compile(r"^(?P<h>.+?[^\d_\- ])[_\- ]?(?P<d>\d{6})(?P<e>\d?)$")
 RX_MIDSUF = re.compile(r"^(?P<h>.+?[^\d_\- ])[_\- ]?(?P<d>\d{6})(?P<e>\d?)_(?P<suf>[A-Za-z0-9]{1,2})$")
@@ -63,6 +65,8 @@ def normalize(stem: str, mtime: datetime) -> tuple[str | None, str]:
     s = stem.replace("~", "～").strip()
     if RX_8DIGIT.search(s):
         return None, "8桁(手動)"
+    if RX_PERIOD_OK.match(s):
+        return (s if s != stem else None), "準拠(期間表記)"  # ~→～の置換のみ
     m = RX_PERIOD.match(s)
     if m:
         if m.group("yy"):
