@@ -491,6 +491,10 @@ try {
                 Write-Host "[TATENE] 建値表スナップショット更新..."
                 & $idxPython (Join-Path $pw 'tools\export_tatene.py')
             } catch {}
+            try {
+                Write-Host "[PAREN] 全角括弧の半角化(Z全体)..."
+                & $idxPython (Join-Path $pw 'tools\rename_zenkaku_paren.py') --apply
+            } catch {}
         }
 
         # ── [RESULT] 結果サマリー出力 ──────────────────────────────────
