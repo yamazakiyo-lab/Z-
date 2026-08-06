@@ -23,7 +23,8 @@ def p(msg: str):
 
 
 def sanitize_name(name: str) -> str:
-    name = re.sub(INVALID_WIN_CHARS, "_", str(name))
+    name = str(name).replace("（", "(").replace("）", ")")  # 全角括弧は半角に統一(2026-08-06)
+    name = re.sub(INVALID_WIN_CHARS, "_", name)
     name = name.strip().rstrip(".")
     return name or "untitled"
 

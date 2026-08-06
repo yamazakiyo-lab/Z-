@@ -62,7 +62,7 @@ def _norm_head(h: str) -> str:
 
 def normalize(stem: str, mtime: datetime) -> tuple[str | None, str]:
     """(新しいstem or None, ルール名) を返す。Noneは対象外(そのまま)。"""
-    s = stem.replace("~", "～").strip()
+    s = stem.replace("~", "～").replace("（", "(").replace("）", ")").strip()
     if RX_8DIGIT.search(s):
         return None, "8桁(手動)"
     if RX_PERIOD_OK.match(s):
