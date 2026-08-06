@@ -116,7 +116,8 @@ def main() -> int:
             if p.suffix.lower() not in (".xlsx", ".xls", ".pdf"):
                 continue
             if RX_8DIGIT.search(p.stem):
-                eight.append(str(p.relative_to(ROOT)))
+                if p.suffix.lower() != ".pdf":  # PDFの8桁日付は準拠扱い(2026-08-06)
+                    eight.append(str(p.relative_to(ROOT)))
                 continue
             try:
                 mtime = datetime.fromtimestamp(p.stat().st_mtime)
