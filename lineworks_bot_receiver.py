@@ -128,7 +128,8 @@ PHASE_MAP = {
     "1": "B1", "着手前": "B1", "b1": "B1",
     "2": "B2", "着手中": "B2", "b2": "B2",
     "3": "B3", "出荷以降": "B3", "b3": "B3",
-    "4": "F", "完成時": "F", "完成": "F", "f": "F",  # 完成時(2026-08-07新設)
+    "f": "F", "ｆ": "F", "完成時": "F", "完成": "F",  # 完成時(2026-08-07新設)
+    # ※「4」はB4整理前と紛らわしいため割り当てない
 }
 
 # Blob 上の annotation_state.json パス
@@ -1138,13 +1139,13 @@ async def lineworks_callback(request: Request) -> Response:
                     "1 → 着手前（入庫・受入時）\n"
                     "2 → 着手中（整備・加工中）\n"
                     "3 → 出荷以降（納入・引渡後）\n"
-                    "4 → 完成時（完成品の見せ写真）"
+                    "F → 完成時（完成品の見せ写真）"
                 )
 
             elif state == STATE_WAITING_PHASE:
                 phase = PHASE_MAP.get(text.strip().lower())
                 if not phase:
-                    _send_text(ch, user_id, "1〜4 のいずれかを入力してください。\n1 → 着手前　2 → 着手中　3 → 出荷以降　4 → 完成時")
+                    _send_text(ch, user_id, "1・2・3・F のいずれかを入力してください。\n1 → 着手前　2 → 着手中　3 → 出荷以降　F → 完成時")
                 else:
                     _save_meta(user_id, phase)
 
