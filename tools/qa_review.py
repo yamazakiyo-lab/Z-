@@ -37,6 +37,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / ".env", encoding="utf-8")
+except ImportError:
+    pass
+
 JST = timezone(timedelta(hours=9))
 QA_LOG_CONTAINER = os.getenv("LW_BLOB_CONTAINER", "lw-raw")
 
