@@ -296,12 +296,13 @@ class Organizer91:
 
     def _classify_folder_name_to_B(self, name: str) -> Optional[str]:
         n = unicodedata.normalize("NFKC", name)
-        # F(完成時)はB2キーワード「完成」より先に判定する(「完成時」は完成を含むため)
-        if any(k in n for k in ("F完成", "完成時", "完成品")):
+        # F(完成時)を最優先で判定。「完成」を含む名前はすべてF行き
+        # (2026-08-07: 従来B2キーワードだった「完成」をFへ移設)
+        if any(k in n for k in ("完成", "F完成", "完成時", "完成品")):
             return "F"
         if any(k in n for k in ("引取", "入庫", "入荷", "受入", "入庫時", "着手前")):
             return "B1"
-        if any(k in n for k in ("整備", "加工", "切削", "完成", "整備中", "着手中")):
+        if any(k in n for k in ("整備", "加工", "切削", "整備中", "着手中")):
             return "B2"
         if any(k in n for k in ("据付", "納入", "出荷", "引渡", "搬入", "出荷時")):
             return "B3"
