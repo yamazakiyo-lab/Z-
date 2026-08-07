@@ -113,9 +113,11 @@ def _normalize_koban(raw: str) -> str:
 def _video_duration(data: bytes) -> float | None:
     """mp4/movのmvhdから再生秒数を読む。読めなければNone。"""
     i = data.find(b"mvhd")
-    if i < 0 or i + 36 > len(data):
+    if i < 0 or i + 24 > len(data):
         return None
     ver = data[i + 4]
+    if ver == 1 and i + 36 > len(data):
+        return None
     try:
         if ver == 0:
             # version/flags(4) + ctime(4) + mtime(4) → timescale @+16, duration @+20
