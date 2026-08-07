@@ -32,6 +32,7 @@ RX_E_CJK = re.compile(r"\)_E(?=[぀-ヿ㐀-䶿一-鿿])")  # )_E電気… → )E
 def _fix(name: str) -> str:
     name = name.replace(")_-", ")-")
     name = name.replace(")_(E)", ")E")   # (1)_(E)中古機 → (1)E中古機
+    name = name.replace(")_用", ")用")    # (2)_用TCV → (2)用TCV
     name = RX_E_US.sub(")E_", name)
     name = RX_E_DIGIT.sub(")E_", name)
     name = RX_E_CJK.sub(")E", name)
