@@ -60,12 +60,20 @@ INTERNAL_PAT = re.compile(
     r"工番|実績|納期|見積|客先|社内|当社|うち(の|では))")
 
 
+# 権限ガード(意図的な非開示)の検出: 質問側と回答側の両方が合致したらミスではない
+# (誕生日=管理者2名限定、見積・建値=見積メンバー限定のゲートが正しく働いたケース)
+GATE_Q_PAT = re.compile(r"誕生日|入社日|何歳|年齢|生まれ|見積|建値|標準工数|チャージ|プロフィール")
+GATE_A_PAT = re.compile(r"人事情報|開示でき|閲覧権限|権限がな|限られた|公開されて(いま|おり)せん")
+
+
 def classify(rec: dict) -> str | None:
-    """1レコードを分類。ミスでなければ None。"""
+    """1レコードを分類。ミスでなければ None。GATED=権限ガード発動(正常動作)。"""
     a = rec.get("a") or ""
     q = rec.get("q") or ""
     if ERROR_PAT.search(a):
         return "ERROR"
+    if GATE_Q_PAT.search(q) and GATE_A_PAT.search(a):
+        return "GATED"
     if MISS_KITEI_PAT.search(a):
         return "MISS_KITEI"
     if MISS_UNKNOWN_PAT.search(a):
@@ -161,9 +169,12 @@ def main() -> None:
 
     recs = load_records(args.month, args.local)
     misses = []
+    gated = 0
     for r in recs:
         kind = classify(r)
-        if kind:
+        if kind == "GATED":
+            gated += 1  # 権限ガード発動=正常動作。ミスに数えない
+        elif kind:
             misses.append((kind, r))
 
     # 同じ質問の繰り返し(正規化: 全半角統一・空白と文末記号除去)= 優先度シグナル
@@ -181,7 +192,8 @@ def main() -> None:
         f"# AI Q&A レビュー {args.month}",
         "",
         f"- 総やり取り: {len(recs)}件 / うち未回答・ミス: {len(misses)}件"
-        f"({(len(misses) / len(recs) * 100):.1f}%)" if recs else "- ログなし",
+        f"({(len(misses) / len(recs) * 100):.1f}%) / 権限ガード発動: {gated}件(正常動作)"
+        if recs else "- ログなし",
         f"- 内訳: " + ", ".join(f"{k}: {v}件" for k, v in counts.most_common()) if misses else "",
         "",
         "| 日時 | 質問者 | 質問 | 分類 | 回数 | 索引照会 |",
@@ -220,7 +232,8 @@ def main() -> None:
                 msg = f"📊AI Q&A週次レビュー({args.month}): ログなし"
             elif not misses:
                 msg = (f"📊AI Q&A週次レビュー({args.month}): "
-                       f"やり取り{len(recs)}件、未回答ミスなし🎉")
+                       f"やり取り{len(recs)}件、未回答ミスなし🎉"
+                       + (f"(権限ガード{gated}件)" if gated else ""))
             else:
                 # 正規化キー→元の質問文(最初に出たもの)
                 orig = {}
@@ -230,7 +243,8 @@ def main() -> None:
                     f"「{orig.get(k, k)[:25]}」×{v}"
                     for k, v in freq.most_common(3))
                 msg = (f"📊AI Q&A週次レビュー({args.month}): "
-                       f"やり取り{len(recs)}件中ミス{len(misses)}件。"
+                       f"やり取り{len(recs)}件中ミス{len(misses)}件"
+                       + (f"(ほか権限ガード{gated}件=正常)" if gated else "") + "。"
                        f"上位: {tops}。詳細はデスクトップの {report.name} を確認。")
             _notify(msg, dry_run=False)
         except Exception as e:
