@@ -269,7 +269,7 @@ def main() -> None:
                     "コメント(作業内容・気づいたこと。検索とAIの学習に使われます)",
                     key=f"cm_{koban}", placeholder="例: 後メタル交換。当たり調整に時間がかかった")
                 phase = st.radio(
-                    "フェーズ", ["B1 着手前", "B2 着手中", "B3 出荷以降"],
+                    "フェーズ", ["B1 着手前", "B2 着手中", "B3 出荷以降", "F 完成時"],
                     index=1, horizontal=True, key=f"ph_{koban}")
                 if st.button(f"📦 {koban} を格納する", key=f"cmt_{koban}",
                              disabled=not comment.strip()):

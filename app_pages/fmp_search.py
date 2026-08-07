@@ -291,6 +291,7 @@ div[data-testid="stTextInput"] input:focus {
         show_b2 = st.checkbox("🟩 B2 着手中")
         show_b3 = st.checkbox("🟨 B3 出荷以降")
         show_b4 = st.checkbox("🟥 B4 整理前")
+        show_f = st.checkbox("🏁 F 完成時")
 
     # 状態(完成/未成)フィルタ（マスタに完成/未成データがある時だけ表示）
     kanryo_map = _load_kanryo_map()
@@ -316,6 +317,7 @@ div[data-testid="stTextInput"] input:focus {
     if show_b2: phases_val.append("B2")
     if show_b3: phases_val.append("B3")
     if show_b4: phases_val.append("B4")
+    if show_f: phases_val.append("F")
 
     # アクティブフィルタのサマリー表示
     active: List[str] = []

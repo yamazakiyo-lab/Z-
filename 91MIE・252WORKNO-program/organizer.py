@@ -296,6 +296,9 @@ class Organizer91:
 
     def _classify_folder_name_to_B(self, name: str) -> Optional[str]:
         n = unicodedata.normalize("NFKC", name)
+        # F(完成時)はB2キーワード「完成」より先に判定する(「完成時」は完成を含むため)
+        if any(k in n for k in ("F完成", "完成時", "完成品")):
+            return "F"
         if any(k in n for k in ("引取", "入庫", "入荷", "受入", "入庫時", "着手前")):
             return "B1"
         if any(k in n for k in ("整備", "加工", "切削", "完成", "整備中", "着手中")):
@@ -311,9 +314,10 @@ class Organizer91:
         b2 = a_folder / f"{workno}_B2着手中写真・動画"
         b3 = a_folder / f"{workno}_B3出荷以降写真・動画"
         b4 = a_folder / f"{workno}_B4整理前写真・動画"
-        for pth in (b1, b2, b3, b4):
+        ff = a_folder / f"{workno}_F完成写真・動画"  # 完成時(2026-08-07新設)
+        for pth in (b1, b2, b3, b4, ff):
             pth.mkdir(parents=True, exist_ok=True)
-        return {"B1": b1, "B2": b2, "B3": b3, "B4": b4}
+        return {"B1": b1, "B2": b2, "B3": b3, "B4": b4, "F": ff}
 
     def _collect_dirs_under(self, root: Path) -> List[Path]:
         out: List[Path] = []
@@ -643,6 +647,7 @@ class Organizer91:
         self._normalize_existing_names_recursive(a_folder)
         bmap = self._ensure_B_folders(a_folder, workno)
         b1, b2, b3, b4 = bmap["B1"], bmap["B2"], bmap["B3"], bmap["B4"]
+        ff = bmap["F"]
 
         subdirs = self._collect_dirs_under(a_folder)
         subdirs.sort(key=lambda pth: len(str(pth).split(os.sep)), reverse=True)
@@ -650,7 +655,8 @@ class Organizer91:
 
         classified = 0
         for d in subdirs:
-            if str(d).lower() in {str(b1).lower(), str(b2).lower(), str(b3).lower(), str(b4).lower()}:
+            if str(d).lower() in {str(b1).lower(), str(b2).lower(), str(b3).lower(),
+                                  str(b4).lower(), str(ff).lower()}:
                 continue
 
             k = self._classify_folder_name_to_B(d.name)
@@ -664,7 +670,7 @@ class Organizer91:
             # B4配下のサブフォルダ: フォルダ名でB1/B2/B3に振り分け、条件なしはB4直下に展開
             if d.parent == b4:
                 target_key = self._classify_folder_name_to_B(d.name)
-                if target_key in ("B1", "B2", "B3"):
+                if target_key in ("B1", "B2", "B3", "F"):
                     target_dir = bmap[target_key]
                     for item in list(d.iterdir()):
                         self.ops.safe_move(item, target_dir)
@@ -688,8 +694,8 @@ class Organizer91:
         self.log.info(f"[91:{workno}] 分類済みフォルダ数: {classified}")
         self._rehome_misfiled_phase_subdirs(bmap)
 
-        # B1/B2/B3 に混入している非メディアを B4 へ移動（B4 は ensure_B_folders によって作成済み）
-        for phase in (b1, b2, b3):
+        # B1/B2/B3/F に混入している非メディアを B4 へ移動（B4 は ensure_B_folders によって作成済み）
+        for phase in (b1, b2, b3, ff):
             self._extract_non_media_from_phase_to_b4(phase, b4)
 
         # B4 内サブフォルダにある非メディアを B4 ルートへ展開（ばらす）
@@ -707,8 +713,8 @@ class Organizer91:
             self.log.warn(f"A直下メディア移動失敗: {a_folder} -> {b4} ({e})")
         self.log.info(f"[91:{workno}] A直下->B4 移動数: {moved_root_media}")
 
-        # B1/B2/B3内の非メディアファイルはB4へ退避
-        for bx in (b1, b2, b3):
+        # B1/B2/B3/F内の非メディアファイルはB4へ退避
+        for bx in (b1, b2, b3, ff):
             try:
                 for item in list(bx.iterdir()):
                     if item.is_file() and not self.ops.is_media(item) and item.name not in self.cfg.junk_files and item.suffix.lower() != ".json":
@@ -718,7 +724,7 @@ class Organizer91:
 
 
         # メディアリネーム・圧縮
-        for b in (b1, b2, b3, b4):
+        for b in (b1, b2, b3, b4, ff):
             self._rename_media_to_seq_date(b, prefix=workno)
             try:
                 subs = [p for p in b.iterdir() if p.is_dir()]
@@ -730,7 +736,7 @@ class Organizer91:
         # B4配下の空サブフォルダも削除し、B4自体も再度空判定して削除
         self._remove_B4_and_empty_subdirs(b4)
         # 他Bも空なら削除
-        for bx in (b1, b2, b3):
+        for bx in (b1, b2, b3, ff):
             self._remove_dir_if_empty(bx)
         self.log.info(f"[91:{idx}/{total}] A処理完了: {a_folder}")
 

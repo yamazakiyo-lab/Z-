@@ -92,7 +92,8 @@ def _parse_a_folder(folder_name: str) -> Tuple[Optional[str], Optional[str]]:
 
 
 # ── B フォルダ（フェーズ）検出 ─────────────────────────────────────────────────
-_PHASE_PATTERNS = [("B1", "_B1"), ("B2", "_B2"), ("B3", "_B3"), ("B4", "_B4")]
+_PHASE_PATTERNS = [("B1", "_B1"), ("B2", "_B2"), ("B3", "_B3"), ("B4", "_B4"),
+                   ("F", "_F完成")]
 
 
 def _detect_phase(path: Path) -> Optional[str]:

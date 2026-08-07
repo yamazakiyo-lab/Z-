@@ -261,14 +261,16 @@ def _get_or_create_a_folder(
 
 def _find_b_folder(a_folder: Path, b_label: str) -> Path:
     """Aフォルダ内で b_label を含む既存サブフォルダを探して返す。
-    見つからない場合は b_label 名のパスを返す（作成はしない）。"""
+    見つからない場合は b_label 名のパスを返す（作成はしない）。
+    F(完成時)は1文字だと誤マッチするため「F完成」で照合する。"""
+    token = "F完成" if b_label == "F" else b_label
     try:
         for d in a_folder.iterdir():
-            if d.is_dir() and b_label in d.name:
+            if d.is_dir() and token in d.name:
                 return d
     except Exception:
         pass
-    return a_folder / b_label
+    return a_folder / ("F完成写真・動画" if b_label == "F" else b_label)
 
 
 # ── メイン処理 ────────────────────────────────────────────────────────────────
@@ -363,7 +365,7 @@ def sort_ld_extraction(dry_run: bool = False) -> None:
                     ).get("phase", "")
                 except Exception:
                     pass
-            b_label = phase if phase in ("B1", "B2", "B3") else "B4"
+            b_label = phase if phase in ("B1", "B2", "B3", "F") else "B4"
 
             # Aフォルダを取得/作成
             a_folder = _get_or_create_a_folder(workno or koban, koban, master, dry_run)

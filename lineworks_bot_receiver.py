@@ -128,6 +128,7 @@ PHASE_MAP = {
     "1": "B1", "着手前": "B1", "b1": "B1",
     "2": "B2", "着手中": "B2", "b2": "B2",
     "3": "B3", "出荷以降": "B3", "b3": "B3",
+    "4": "F", "完成時": "F", "完成": "F", "f": "F",  # 完成時(2026-08-07新設)
 }
 
 # Blob 上の annotation_state.json パス
@@ -672,7 +673,8 @@ def _save_meta(user_id: str, phase: str) -> None:
             "phase": phase,
             "queued_files": queued,
         }
-        phase_label = {"B1": "着手前", "B2": "着手中", "B3": "出荷以降"}.get(phase, phase)
+        phase_label = {"B1": "着手前", "B2": "着手中", "B3": "出荷以降",
+                       "F": "完成時"}.get(phase, phase)
         _send_text(channel_id, user_id,
             f"ありがとうございます！保存しました。\n\n"
             f"他に {len(queued)} 件のファイルが届いています。\n"
@@ -1135,13 +1137,14 @@ async def lineworks_callback(request: Request) -> Response:
                     "どのフェーズですか？\n"
                     "1 → 着手前（入庫・受入時）\n"
                     "2 → 着手中（整備・加工中）\n"
-                    "3 → 出荷以降（納入・引渡後）"
+                    "3 → 出荷以降（納入・引渡後）\n"
+                    "4 → 完成時（完成品の見せ写真）"
                 )
 
             elif state == STATE_WAITING_PHASE:
                 phase = PHASE_MAP.get(text.strip().lower())
                 if not phase:
-                    _send_text(ch, user_id, "1・2・3 のいずれかを入力してください。\n1 → 着手前　2 → 着手中　3 → 出荷以降")
+                    _send_text(ch, user_id, "1〜4 のいずれかを入力してください。\n1 → 着手前　2 → 着手中　3 → 出荷以降　4 → 完成時")
                 else:
                     _save_meta(user_id, phase)
 
