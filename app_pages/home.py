@@ -108,6 +108,7 @@ def _quote_allowed() -> bool:
 _MENUS = [
     ("💬 AI Q&A", "技術・業務・人事総務の質問にAIが回答(工番実績・規程・在庫・予定・経営計画も参照)", "app_pages/ai_qa.py"),
     ("🔍 FMP SEARCH", "写真・動画・過去の指令書PDFを検索", "app_pages/fmp_search.py"),
+    ("📸 FM POST(マイフォト)", "自分の作業写真・動画を工番別アルバムで管理し、作業完了後にコメント付きで格納", "app_pages/my_photos.py"),
     ("🔎 工番検索", "工事名・納入先・工番の一部から工番を探す", "app_pages/koban_search.py"),
     ("🏢 顧客検索", "顧客(会社名)からその取引先の工番・写真を探す", "app_pages/nyunyusaki_search.py"),
     ("📦 部品在庫検索", "貯蔵品(寄居・綾瀬)を型式・品名・メーカー等から探す", "app_pages/zaiko_search.py"),

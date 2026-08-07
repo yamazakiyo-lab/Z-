@@ -1197,6 +1197,42 @@ def cmd_morning_greeting() -> None:
 
 
 # ── コマンド: 夕方リマインダー ────────────────────────────────────────────────
+def _myphoto_pending_by_name(days: int = 3) -> dict:
+    """FM POST(マイフォト)の未格納アルバムを {正規化氏名: [(工番, 件数)]} で返す。
+
+    最新ファイルが days 日以上前のアルバムだけ対象(まだ撮り足している最中の
+    アルバムには知らせない)。お知らせ用であり警告ではない。
+    """
+    container = _get_blob_container()
+    if container is None:
+        return {}
+    albums: dict[tuple, list] = {}
+    metas: set = set()
+    try:
+        for b in container.list_blobs(name_starts_with="myphoto/"):
+            parts = b.name[len("myphoto/"):].split("/")
+            if len(parts) != 3:
+                continue
+            if b.name.endswith("_meta.json"):
+                metas.add(b.name)
+            else:
+                albums.setdefault((parts[0], parts[1]), []).append(
+                    (b.name, b.last_modified))
+    except Exception as e:
+        logger.warning(f"マイフォト未格納チェック失敗: {e}")
+        return {}
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    out: dict[str, list] = {}
+    for (user, koban), files in albums.items():
+        pend = [(n, t) for n, t in files
+                if n.rsplit(".", 1)[0] + "_meta.json" not in metas]
+        if not pend or max(t for _, t in pend) > cutoff:
+            continue
+        key = user.replace(" ", "").replace("　", "").replace("﨑", "崎")
+        out.setdefault(key, []).append((koban, len(pend)))
+    return out
+
+
 def cmd_evening_reminder() -> None:
     """会社稼働日（平日・非休暇日）の夕方にリマインダーを送信する。"""
     today = date.today()
@@ -1209,6 +1245,7 @@ def cmd_evening_reminder() -> None:
         logger.warning("登録ユーザーがいません。")
         return
     names = _load_user_names()
+    myphoto_pending = _myphoto_pending_by_name()
     ok = 0
     for user_id in users:
         name = names.get(user_id, "")
@@ -1217,6 +1254,13 @@ def cmd_evening_reminder() -> None:
             "今日の作業写真投稿はやりましたか？📷\n"
             f"{prefix}お疲れ様でした！"
         )
+        albs = myphoto_pending.get(
+            name.replace(" ", "").replace("　", "").replace("﨑", "崎"))
+        if albs:
+            s = "、".join(f"{k}({n}枚)" for k, n in sorted(albs)[:3])
+            msg += (f"\n\n📸 マイフォトに未格納のアルバムがあります: {s}\n"
+                    "作業が終わっていたら、TSEG WORKSの「FM POST」から格納を"
+                    "お願いします(急ぎではありません)。")
         if _send_text(user_id, msg):
             ok += 1
         time.sleep(0.3)
