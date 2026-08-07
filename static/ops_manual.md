@@ -214,7 +214,7 @@ photo_video_general の当日ログが空になることがあるが、これは
 
 - 括弧は半角()に統一。①既存分は tools/rename_zenkaku_paren.py で一括修復済み、②マスタ由来の名前は sanitize_name(utils.py)が読込時に半角化(マスタCSVが全角でも改名往復しない)、③夜間ランの[PAREN]工程がZ全体を毎晩掃除、④T-NEXUS側の名称も手修正(tools/list_master_zenkaku.py の一覧で対応)。
 
-- 旧リネームの残骸は tools/rename_paren_debris.py で修復済み(計438件): 「)_-」(型式仕様の_切れ、81件)・「)_E」3パターン(E機種サフィックスの_切れ: )_E+数字/)_E_数字→)E_、)_E+日本語→)E、177件)・「)_(E)」→)E(180件)。新パターンを見つけたら同ツールに追加してdry-run→apply。命名の健康診断は tools/survey_231_names.py・tools/survey_zenkaku_and_debris.py を随時実行。
+- 旧リネームの残骸は tools/rename_paren_debris.py で修復済み(累計483件、2026-08-07時点): 「)_-」(型式仕様の_切れ)・「)_E」3パターン(E機種サフィックス: )_E+数字/)_E_数字→)E_、)_E+日本語→)E)・「)_(E)」→)E・「)_用」→)用。※「)_説明」のような通常の区切り(NS2-3000(2)_分割フレーム機 等)は残骸ではないため触らない方針。新パターンを見つけたら同ツールに追加してdry-run→apply。命名の健康診断は tools/survey_231_names.py・tools/survey_zenkaku_and_debris.py を随時実行。
 
 - T-NEXUS側の名称修正リストは tools/list_master_zenkaku.py(工事一覧表・発注者一覧表)で出力。業者一覧表はマスタ設定3箇所(現金(仕入)・会社口座1/4)+業者個別22件のみで、修正リストCSVを2026-08-06に作成・依頼済み(内山・専務)。
 
