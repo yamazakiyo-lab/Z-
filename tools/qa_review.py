@@ -217,6 +217,8 @@ def main() -> None:
         "  rag/qa_synonyms.json へ採用(ai_qa.py が次回から検索語に反映)。",
         "- 「規程枠ヒット0」→ 規程が索引に未収録の可能性。indexer.py で取り込みを確認。",
         "- 回数が多い質問から優先的に対応。",
+        "- 規程に書かれていない事項(規程の穴)を見つけたら 規程改定_穴リスト.md に追記。"
+        "毎年7月の規程改定でまとめて反映する。",
     ]
     report.write_text("\n".join(lines), encoding="utf-8")
     print(f"レポート: {report}({len(misses)}/{len(recs)}件がミス)")
